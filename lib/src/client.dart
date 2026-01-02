@@ -138,11 +138,12 @@ class NostrMailClient {
     // Determine recipient pubkey and build email
     final recipientPubkey = await _resolveRecipient(to, from);
     final fromAddress = from ?? '$senderPubkey@nostr';
+    final toAddress = _formatAddressForRfc2822(to);
 
     // Build RFC 2822 email content
     final rawContent = _parser.build(
       from: fromAddress,
-      to: to,
+      to: toAddress,
       subject: subject,
       body: body,
       htmlBody: htmlBody,
@@ -203,6 +204,23 @@ class NostrMailClient {
     }
 
     throw RecipientResolutionException(to);
+  }
+
+  /// Format address for RFC 2822 compatibility
+  /// Adds @nostr suffix to npub/hex addresses that don't have a domain
+  String _formatAddressForRfc2822(String address) {
+    // Already has a domain
+    if (address.contains('@')) {
+      return address;
+    }
+
+    // npub or hex pubkey - add @nostr for RFC 2822 compatibility
+    if (address.startsWith('npub1') ||
+        RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(address)) {
+      return '$address@nostr';
+    }
+
+    return address;
   }
 
   /// Unwrap a NIP-59 gift-wrapped event
