@@ -262,29 +262,29 @@ void main() {
 
     test('resolveBridgePubkey returns pubkey for valid response', () async {
       final responseBody = jsonEncode({
-        'names': {
-          '_smtp': 'bridge-pubkey-123',
-        },
+        'names': {'_smtp': 'bridge-pubkey-123'},
       });
 
-      when(() => mockClient.get(any())).thenAnswer(
-        (_) async => http.Response(responseBody, 200),
-      );
+      when(
+        () => mockClient.get(any()),
+      ).thenAnswer((_) async => http.Response(responseBody, 200));
 
       final pubkey = await resolver.resolveBridgePubkey('example.com');
 
       expect(pubkey, 'bridge-pubkey-123');
       verify(
         () => mockClient.get(
-          Uri.https('example.com', '/.well-known/nostr.json', {'name': '_smtp'}),
+          Uri.https('example.com', '/.well-known/nostr.json', {
+            'name': '_smtp',
+          }),
         ),
       ).called(1);
     });
 
     test('resolveBridgePubkey throws for non-200 response', () async {
-      when(() => mockClient.get(any())).thenAnswer(
-        (_) async => http.Response('Not found', 404),
-      );
+      when(
+        () => mockClient.get(any()),
+      ).thenAnswer((_) async => http.Response('Not found', 404));
 
       expect(
         () => resolver.resolveBridgePubkey('example.com'),
@@ -294,14 +294,12 @@ void main() {
 
     test('resolveBridgePubkey throws when _smtp not in response', () async {
       final responseBody = jsonEncode({
-        'names': {
-          'other': 'some-pubkey',
-        },
+        'names': {'other': 'some-pubkey'},
       });
 
-      when(() => mockClient.get(any())).thenAnswer(
-        (_) async => http.Response(responseBody, 200),
-      );
+      when(
+        () => mockClient.get(any()),
+      ).thenAnswer((_) async => http.Response(responseBody, 200));
 
       expect(
         () => resolver.resolveBridgePubkey('example.com'),
@@ -311,21 +309,21 @@ void main() {
 
     test('resolveNip05 returns pubkey for valid identifier', () async {
       final responseBody = jsonEncode({
-        'names': {
-          'alice': 'alice-pubkey-456',
-        },
+        'names': {'alice': 'alice-pubkey-456'},
       });
 
-      when(() => mockClient.get(any())).thenAnswer(
-        (_) async => http.Response(responseBody, 200),
-      );
+      when(
+        () => mockClient.get(any()),
+      ).thenAnswer((_) async => http.Response(responseBody, 200));
 
       final pubkey = await resolver.resolveNip05('alice@example.com');
 
       expect(pubkey, 'alice-pubkey-456');
       verify(
         () => mockClient.get(
-          Uri.https('example.com', '/.well-known/nostr.json', {'name': 'alice'}),
+          Uri.https('example.com', '/.well-known/nostr.json', {
+            'name': 'alice',
+          }),
         ),
       ).called(1);
     });
@@ -338,9 +336,9 @@ void main() {
     });
 
     test('resolveNip05 returns null for non-200 response', () async {
-      when(() => mockClient.get(any())).thenAnswer(
-        (_) async => http.Response('Error', 500),
-      );
+      when(
+        () => mockClient.get(any()),
+      ).thenAnswer((_) async => http.Response('Error', 500));
 
       final result = await resolver.resolveNip05('user@example.com');
 
@@ -349,14 +347,12 @@ void main() {
 
     test('resolveNip05 returns null when name not found', () async {
       final responseBody = jsonEncode({
-        'names': {
-          'other': 'other-pubkey',
-        },
+        'names': {'other': 'other-pubkey'},
       });
 
-      when(() => mockClient.get(any())).thenAnswer(
-        (_) async => http.Response(responseBody, 200),
-      );
+      when(
+        () => mockClient.get(any()),
+      ).thenAnswer((_) async => http.Response(responseBody, 200));
 
       final result = await resolver.resolveNip05('missing@example.com');
 
@@ -376,20 +372,22 @@ void main() {
     late EmailStore store;
 
     setUp(() async {
-      final db = await databaseFactoryMemory.openDatabase('test_db_${DateTime.now().millisecondsSinceEpoch}');
+      final db = await databaseFactoryMemory.openDatabase(
+        'test_db_${DateTime.now().millisecondsSinceEpoch}',
+      );
       store = EmailStore(db);
     });
 
     Email createTestEmail(String id) => Email(
-          id: id,
-          from: 'from@test.com',
-          to: 'to@test.com',
-          subject: 'Subject $id',
-          body: 'Body $id',
-          date: DateTime.now(),
-          senderPubkey: 'pk-$id',
-          rawContent: 'raw-$id',
-        );
+      id: id,
+      from: 'from@test.com',
+      to: 'to@test.com',
+      subject: 'Subject $id',
+      body: 'Body $id',
+      date: DateTime.now(),
+      senderPubkey: 'pk-$id',
+      rawContent: 'raw-$id',
+    );
 
     test('saveEmail and getEmailById', () async {
       final email = createTestEmail('save-test');

@@ -18,13 +18,11 @@ class NostrMailClient {
   final EmailParser _parser;
   final BridgeResolver _bridgeResolver;
 
-  NostrMailClient({
-    required Ndk ndk,
-    required Database db,
-  }) : _ndk = ndk,
-       _store = EmailStore(db),
-       _parser = EmailParser(),
-       _bridgeResolver = BridgeResolver();
+  NostrMailClient({required Ndk ndk, required Database db})
+    : _ndk = ndk,
+      _store = EmailStore(db),
+      _parser = EmailParser(),
+      _bridgeResolver = BridgeResolver();
 
   /// Get cached emails from local DB
   Future<List<Email>> getEmails({int? limit, int? offset}) {
@@ -137,7 +135,8 @@ class NostrMailClient {
 
     // Determine recipient pubkey and build email
     final recipientPubkey = await _resolveRecipient(to, from);
-    final fromAddress = from ?? '$senderPubkey@nostr';
+    final senderNpub = Nip19.encodePubKey(senderPubkey);
+    final fromAddress = from ?? '$senderNpub@nostr';
     final toAddress = _formatAddressForRfc2822(to);
 
     // Build RFC 2822 email content
@@ -207,17 +206,22 @@ class NostrMailClient {
   }
 
   /// Format address for RFC 2822 compatibility
-  /// Adds @nostr suffix to npub/hex addresses that don't have a domain
+  /// Converts hex to npub and adds @nostr suffix for addresses without a domain
   String _formatAddressForRfc2822(String address) {
     // Already has a domain
     if (address.contains('@')) {
       return address;
     }
 
-    // npub or hex pubkey - add @nostr for RFC 2822 compatibility
-    if (address.startsWith('npub1') ||
-        RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(address)) {
+    // Already npub - add @nostr
+    if (address.startsWith('npub1')) {
       return '$address@nostr';
+    }
+
+    // Hex pubkey - convert to npub and add @nostr
+    if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(address)) {
+      final npub = Nip19.encodePubKey(address.toLowerCase());
+      return '$npub@nostr';
     }
 
     return address;

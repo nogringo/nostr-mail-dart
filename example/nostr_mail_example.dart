@@ -23,10 +23,7 @@ void main() async {
   );
 
   // Create the mail client
-  final client = NostrMailClient(
-    ndk: ndk,
-    db: db,
-  );
+  final client = NostrMailClient(ndk: ndk, db: db);
 
   // Sync emails from relays
   await client.sync();
