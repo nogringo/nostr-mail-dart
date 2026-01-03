@@ -10,7 +10,9 @@ class EmailParser {
     required String senderPubkey,
   }) {
     try {
-      final mimeMessage = MimeMessage.parseFromText(rawContent);
+      // Unfold headers: remove CRLF/LF followed by whitespace
+      final unfolded = rawContent.replaceAll(RegExp(r'\r?\n[ \t]+'), '');
+      final mimeMessage = MimeMessage.parseFromText(unfolded);
 
       final from = mimeMessage.fromEmail ?? '';
       final to = mimeMessage.to?.isNotEmpty == true
@@ -28,7 +30,7 @@ class EmailParser {
         body: body,
         date: date,
         senderPubkey: senderPubkey,
-        rawContent: rawContent,
+        rawContent: unfolded,
       );
     } catch (e) {
       throw EmailParseException(e.toString());
