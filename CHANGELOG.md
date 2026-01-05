@@ -1,3 +1,8 @@
+## 1.2.0
+
+- **Performance fix**: `watchInbox()` now uses `limit: 0` to only receive new real-time events, avoiding re-processing of historical gift wraps at startup
+- **New**: `sync()` now accepts optional `limit`, `since`, and `until` parameters for incremental sync
+
 ## 1.1.1
 
 - **Security fix**: Added `recipientPubkey` field to Email model to properly filter emails by recipient
