@@ -22,6 +22,7 @@ void main() {
         body: 'Test body content',
         date: DateTime.utc(2024, 1, 15, 10, 30),
         senderPubkey: 'abc123pubkey',
+        recipientPubkey: 'recipient123pubkey',
         rawContent: 'raw email content',
       );
 
@@ -34,6 +35,7 @@ void main() {
       expect(json['body'], 'Test body content');
       expect(json['date'], '2024-01-15T10:30:00.000Z');
       expect(json['senderPubkey'], 'abc123pubkey');
+      expect(json['recipientPubkey'], 'recipient123pubkey');
       expect(json['rawContent'], 'raw email content');
     });
 
@@ -46,6 +48,7 @@ void main() {
         'body': 'Test body content',
         'date': '2024-01-15T10:30:00.000Z',
         'senderPubkey': 'abc123pubkey',
+        'recipientPubkey': 'recipient123pubkey',
         'rawContent': 'raw email content',
       };
 
@@ -58,6 +61,7 @@ void main() {
       expect(email.body, 'Test body content');
       expect(email.date, DateTime.utc(2024, 1, 15, 10, 30));
       expect(email.senderPubkey, 'abc123pubkey');
+      expect(email.recipientPubkey, 'recipient123pubkey');
       expect(email.rawContent, 'raw email content');
     });
 
@@ -70,6 +74,7 @@ void main() {
         body: 'Body with special chars: é à ü',
         date: DateTime.utc(2024, 6, 20, 14, 45, 30),
         senderPubkey: 'pubkey123',
+        recipientPubkey: 'recipient456',
         rawContent: 'raw content here',
       );
 
@@ -82,6 +87,7 @@ void main() {
       expect(restored.body, original.body);
       expect(restored.date, original.date);
       expect(restored.senderPubkey, original.senderPubkey);
+      expect(restored.recipientPubkey, original.recipientPubkey);
       expect(restored.rawContent, original.rawContent);
     });
 
@@ -94,6 +100,7 @@ void main() {
         body: 'Body 1',
         date: DateTime.now(),
         senderPubkey: 'pk1',
+        recipientPubkey: 'rpk1',
         rawContent: 'raw1',
       );
 
@@ -105,6 +112,7 @@ void main() {
         body: 'Different Body',
         date: DateTime.now(),
         senderPubkey: 'pk2',
+        recipientPubkey: 'rpk2',
         rawContent: 'raw2',
       );
 
@@ -116,6 +124,7 @@ void main() {
         body: 'Body 1',
         date: DateTime.now(),
         senderPubkey: 'pk1',
+        recipientPubkey: 'rpk1',
         rawContent: 'raw1',
       );
 
@@ -133,6 +142,7 @@ void main() {
         body: 'Body',
         date: DateTime.now(),
         senderPubkey: 'pk',
+        recipientPubkey: 'rpk',
         rawContent: 'raw',
       );
 
@@ -178,6 +188,7 @@ void main() {
         rawContent: rawContent,
         eventId: 'event-123',
         senderPubkey: 'sender-pubkey-abc',
+        recipientPubkey: 'recipient-pubkey-xyz',
       );
 
       expect(email.id, 'event-123');
@@ -186,6 +197,7 @@ void main() {
       expect(email.subject, 'Important Message');
       expect(email.body, contains('This is the message body.'));
       expect(email.senderPubkey, 'sender-pubkey-abc');
+      expect(email.recipientPubkey, 'recipient-pubkey-xyz');
       expect(email.rawContent, rawContent);
     });
 
@@ -201,6 +213,7 @@ void main() {
         rawContent: rawContent,
         eventId: 'id',
         senderPubkey: 'pk',
+        recipientPubkey: 'rpk',
       );
 
       expect(email.subject, contains('Special'));
@@ -212,10 +225,12 @@ void main() {
         rawContent: 'not a valid email',
         eventId: 'id',
         senderPubkey: 'pk',
+        recipientPubkey: 'rpk',
       );
 
       expect(email.id, 'id');
       expect(email.senderPubkey, 'pk');
+      expect(email.recipientPubkey, 'rpk');
       // Fields are empty but no exception is thrown
       expect(email.from, isEmpty);
       expect(email.to, isEmpty);
@@ -238,12 +253,14 @@ void main() {
         rawContent: rawContent,
         eventId: 'rt-id',
         senderPubkey: 'rt-pk',
+        recipientPubkey: 'rt-rpk',
       );
 
       expect(email.from, from);
       expect(email.to, to);
       expect(email.subject, subject);
       expect(email.body, contains(body));
+      expect(email.recipientPubkey, 'rt-rpk');
     });
   });
 
@@ -386,6 +403,7 @@ void main() {
       body: 'Body $id',
       date: DateTime.now(),
       senderPubkey: 'pk-$id',
+      recipientPubkey: 'rpk-$id',
       rawContent: 'raw-$id',
     );
 
@@ -415,6 +433,7 @@ void main() {
         body: 'Body',
         date: DateTime.utc(2024, 1, 1),
         senderPubkey: 'pk',
+        recipientPubkey: 'rpk',
         rawContent: 'raw',
       );
       final email2 = Email(
@@ -425,6 +444,7 @@ void main() {
         body: 'Body',
         date: DateTime.utc(2024, 1, 3),
         senderPubkey: 'pk',
+        recipientPubkey: 'rpk',
         rawContent: 'raw',
       );
       final email3 = Email(
@@ -435,6 +455,7 @@ void main() {
         body: 'Body',
         date: DateTime.utc(2024, 1, 2),
         senderPubkey: 'pk',
+        recipientPubkey: 'rpk',
         rawContent: 'raw',
       );
 
@@ -470,6 +491,7 @@ void main() {
           body: 'Body',
           date: DateTime.utc(2024, 1, 5 - i), // Descending dates
           senderPubkey: 'pk',
+          recipientPubkey: 'rpk',
           rawContent: 'raw',
         );
         await store.saveEmail(email);
@@ -515,6 +537,7 @@ void main() {
         body: 'Original Body',
         date: DateTime.now(),
         senderPubkey: 'pk',
+        recipientPubkey: 'rpk',
         rawContent: 'raw',
       );
 
@@ -526,6 +549,7 @@ void main() {
         body: 'Updated Body',
         date: DateTime.now(),
         senderPubkey: 'pk',
+        recipientPubkey: 'rpk',
         rawContent: 'raw',
       );
 

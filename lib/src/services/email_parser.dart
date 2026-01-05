@@ -8,6 +8,7 @@ class EmailParser {
     required String rawContent,
     required String eventId,
     required String senderPubkey,
+    required String recipientPubkey,
   }) {
     try {
       // Unfold headers: remove CRLF/LF followed by whitespace
@@ -30,6 +31,7 @@ class EmailParser {
         body: body,
         date: date,
         senderPubkey: senderPubkey,
+        recipientPubkey: recipientPubkey,
         rawContent: unfolded,
       );
     } catch (e) {

@@ -6,6 +6,7 @@ class Email {
   final String body;
   final DateTime date;
   final String senderPubkey;
+  final String recipientPubkey;
   final String rawContent;
 
   Email({
@@ -16,6 +17,7 @@ class Email {
     required this.body,
     required this.date,
     required this.senderPubkey,
+    required this.recipientPubkey,
     required this.rawContent,
   });
 
@@ -27,6 +29,7 @@ class Email {
     'body': body,
     'date': date.toIso8601String(),
     'senderPubkey': senderPubkey,
+    'recipientPubkey': recipientPubkey,
     'rawContent': rawContent,
   };
 
@@ -38,6 +41,7 @@ class Email {
     body: json['body'] as String,
     date: DateTime.parse(json['date'] as String),
     senderPubkey: json['senderPubkey'] as String,
+    recipientPubkey: json['recipientPubkey'] as String? ?? '',
     rawContent: json['rawContent'] as String,
   );
 

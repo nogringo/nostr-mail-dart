@@ -66,6 +66,7 @@ class NostrMailClient {
           rawContent: unwrapped.content,
           eventId: unwrapped.id,
           senderPubkey: unwrapped.pubKey,
+          recipientPubkey: pubkey,
         );
 
         // Save to local DB and mark as processed
@@ -104,6 +105,7 @@ class NostrMailClient {
           rawContent: unwrapped.content,
           eventId: unwrapped.id,
           senderPubkey: unwrapped.pubKey,
+          recipientPubkey: pubkey,
         );
 
         await _store.saveEmail(email);
