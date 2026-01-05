@@ -59,7 +59,13 @@ class NostrMailClient {
       try {
         // Unwrap the gift-wrapped event
         final unwrapped = await _unwrapGiftWrap(event);
-        if (unwrapped == null || unwrapped.kind != _emailKind) continue;
+        if (unwrapped == null) continue;
+
+        // Mark as processed to avoid re-decrypting non-email gift wraps (DMs, etc.)
+        await _store.markProcessed(event.id);
+
+        // Only process email events (kind 1301)
+        if (unwrapped.kind != _emailKind) continue;
 
         // Parse the email from RFC 2822 content
         final email = _parser.parse(
@@ -69,9 +75,8 @@ class NostrMailClient {
           recipientPubkey: pubkey,
         );
 
-        // Save to local DB and mark as processed
+        // Save to local DB
         await _store.saveEmail(email);
-        await _store.markProcessed(event.id);
 
         yield email;
       } catch (e) {
@@ -99,7 +104,13 @@ class NostrMailClient {
 
       try {
         final unwrapped = await _unwrapGiftWrap(event);
-        if (unwrapped == null || unwrapped.kind != _emailKind) continue;
+        if (unwrapped == null) continue;
+
+        // Mark as processed to avoid re-decrypting non-email gift wraps (DMs, etc.)
+        await _store.markProcessed(event.id);
+
+        // Only process email events (kind 1301)
+        if (unwrapped.kind != _emailKind) continue;
 
         final email = _parser.parse(
           rawContent: unwrapped.content,
@@ -109,7 +120,6 @@ class NostrMailClient {
         );
 
         await _store.saveEmail(email);
-        await _store.markProcessed(event.id);
       } catch (e) {
         continue;
       }

@@ -1,3 +1,8 @@
+## 1.1.1
+
+- **Security fix**: Added `recipientPubkey` field to Email model to properly filter emails by recipient
+- **Performance fix**: Mark all gift wraps as processed after decryption to avoid re-decrypting DMs and other non-email content on each sync
+
 ## 1.1.0
 
 - RFC 2822 compatibility: addresses without domain now get `@nostr` suffix
