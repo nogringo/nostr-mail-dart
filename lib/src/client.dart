@@ -48,7 +48,11 @@ class NostrMailClient {
 
     final response = _ndk.requests.subscription(
       filters: [
-        ndk.Filter(kinds: [GiftWrap.kGiftWrapEventkind], pTags: [pubkey]),
+        ndk.Filter(
+          kinds: [GiftWrap.kGiftWrapEventkind],
+          pTags: [pubkey],
+          limit: 0,
+        ),
       ],
     );
 
