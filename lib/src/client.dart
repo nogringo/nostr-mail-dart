@@ -91,7 +91,7 @@ class NostrMailClient {
   }
 
   /// Sync emails from relays (fetch historical + store in DB)
-  Future<void> sync() async {
+  Future<void> sync({int? limit, int? since, int? until}) async {
     final pubkey = _ndk.accounts.getPublicKey();
     if (pubkey == null) {
       throw NostrMailException('No account configured in ndk');
@@ -99,7 +99,13 @@ class NostrMailClient {
 
     final response = _ndk.requests.query(
       filters: [
-        ndk.Filter(kinds: [GiftWrap.kGiftWrapEventkind], pTags: [pubkey]),
+        ndk.Filter(
+          kinds: [GiftWrap.kGiftWrapEventkind],
+          pTags: [pubkey],
+          limit: limit,
+          since: since,
+          until: until,
+        ),
       ],
     );
 
