@@ -1,3 +1,7 @@
+## 1.2.1
+
+- Use the new ndk version
+
 ## 1.2.0
 
 - **Performance fix**: `watchInbox()` now uses `limit: 0` to only receive new real-time events, avoiding re-processing of historical gift wraps at startup
