@@ -47,13 +47,11 @@ class NostrMailClient {
     }
 
     final response = _ndk.requests.subscription(
-      filters: [
-        ndk.Filter(
-          kinds: [GiftWrap.kGiftWrapEventkind],
-          pTags: [pubkey],
-          limit: 0,
-        ),
-      ],
+      filter: ndk.Filter(
+        kinds: [GiftWrap.kGiftWrapEventkind],
+        pTags: [pubkey],
+        limit: 0,
+      ),
     );
 
     await for (final event in response.stream) {
@@ -98,15 +96,13 @@ class NostrMailClient {
     }
 
     final response = _ndk.requests.query(
-      filters: [
-        ndk.Filter(
-          kinds: [GiftWrap.kGiftWrapEventkind],
-          pTags: [pubkey],
-          limit: limit,
-          since: since,
-          until: until,
-        ),
-      ],
+      filter: ndk.Filter(
+        kinds: [GiftWrap.kGiftWrapEventkind],
+        pTags: [pubkey],
+        limit: limit,
+        since: since,
+        until: until,
+      ),
     );
 
     await for (final event in response.stream) {
