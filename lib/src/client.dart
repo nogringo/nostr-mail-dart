@@ -11,6 +11,12 @@ import 'services/email_parser.dart';
 import 'storage/email_store.dart';
 
 const _emailKind = 1301;
+const _dmRelayListKind = 10050;
+const _defaultDmRelays = [
+  'wss://auth.nostr1.com',
+  'wss://nostr-01.uid.ovh',
+  'wss://nostr-02.uid.ovh',
+];
 
 class NostrMailClient {
   final Ndk _ndk;
@@ -40,11 +46,16 @@ class NostrMailClient {
   }
 
   /// Watch for new emails from relays (real-time)
+  ///
+  /// Subscribes to user's DM relays (NIP-17 kind 10050).
   Stream<Email> watchInbox() async* {
     final pubkey = _ndk.accounts.getPublicKey();
     if (pubkey == null) {
       throw NostrMailException('No account configured in ndk');
     }
+
+    // Get user's DM relays
+    final dmRelays = await _getDmRelays(pubkey);
 
     final response = _ndk.requests.subscription(
       filter: ndk.Filter(
@@ -52,6 +63,7 @@ class NostrMailClient {
         pTags: [pubkey],
         limit: 0,
       ),
+      explicitRelays: dmRelays,
     );
 
     await for (final event in response.stream) {
@@ -89,20 +101,66 @@ class NostrMailClient {
   }
 
   /// Sync emails from relays (fetch historical + store in DB)
-  Future<void> sync({int? limit, int? since, int? until}) async {
+  ///
+  /// Uses NDK's fetchedRanges to only fetch gaps (time ranges not yet synced).
+  /// Fetches from user's DM relays (NIP-17 kind 10050).
+  /// [until] defaults to now if not specified.
+  Future<void> sync({int? since, int? until}) async {
     final pubkey = _ndk.accounts.getPublicKey();
     if (pubkey == null) {
       throw NostrMailException('No account configured in ndk');
     }
 
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final effectiveSince = since;
+    final effectiveUntil = until ?? now;
+
+    // Get user's DM relays
+    final dmRelays = await _getDmRelays(pubkey);
+
+    final baseFilter = ndk.Filter(
+      kinds: [GiftWrap.kGiftWrapEventkind],
+      pTags: [pubkey],
+    );
+
+    // Check if we have any existing fetched ranges
+    final existingRanges = await _ndk.fetchedRanges.getForFilter(baseFilter);
+
+    if (existingRanges.isEmpty) {
+      // First sync - fetch the full range
+      final filter = baseFilter.clone()
+        ..since = effectiveSince
+        ..until = effectiveUntil;
+      await _fetchAndProcessEvents(filter, pubkey, relays: dmRelays);
+      return;
+    }
+
+    // Get optimized filters that cover only the gaps (unfetched ranges)
+    // since defaults to 0 (all history) for gap calculation
+    final optimizedFilters = await _ndk.fetchedRanges.getOptimizedFilters(
+      filter: baseFilter,
+      since: effectiveSince ?? 0,
+      until: effectiveUntil,
+    );
+
+    // If no gaps, nothing to sync
+    if (optimizedFilters.isEmpty) return;
+
+    // Fetch each gap
+    for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
+      await _fetchAndProcessEvents(gapFilter, pubkey, relays: dmRelays);
+    }
+  }
+
+  /// Fetch events from relays and process them
+  Future<void> _fetchAndProcessEvents(
+    ndk.Filter filter,
+    String pubkey, {
+    Iterable<String>? relays,
+  }) async {
     final response = _ndk.requests.query(
-      filter: ndk.Filter(
-        kinds: [GiftWrap.kGiftWrapEventkind],
-        pTags: [pubkey],
-        limit: limit,
-        since: since,
-        until: until,
-      ),
+      filter: filter,
+      explicitRelays: relays,
     );
 
     await for (final event in response.stream) {
@@ -271,5 +329,33 @@ class NostrMailClient {
     // Publish to relays
     final broadcast = _ndk.broadcast.broadcast(nostrEvent: giftWrapEvent);
     await broadcast.broadcastDoneFuture;
+  }
+
+  /// Get user's DM relays from NIP-17 kind 10050 event
+  ///
+  /// Falls back to default relays if user has none configured.
+  Future<List<String>> _getDmRelays(String pubkey) async {
+    final response = _ndk.requests.query(
+      filter: ndk.Filter(
+        kinds: [_dmRelayListKind],
+        authors: [pubkey],
+        limit: 1,
+      ),
+    );
+
+    final events = await response.future;
+    if (events.isEmpty) return _defaultDmRelays;
+
+    // Get the most recent event
+    final event = events.reduce(
+      (a, b) => a.createdAt > b.createdAt ? a : b,
+    );
+
+    final relays = event.tags
+        .where((t) => t.isNotEmpty && t[0] == 'relay')
+        .map((t) => t[1])
+        .toList();
+
+    return relays.isNotEmpty ? relays : _defaultDmRelays;
   }
 }
