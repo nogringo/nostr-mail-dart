@@ -1,3 +1,7 @@
+## 1.2.2
+
+- Use the new ndk version
+
 ## 1.2.1
 
 - Use the new ndk version
