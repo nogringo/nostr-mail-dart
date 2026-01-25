@@ -98,7 +98,8 @@ class NostrMailClient {
 
   /// Add a label to an email (NIP-32)
   ///
-  /// Publishes a kind 1985 label event to the user's write relays.
+  /// Saves locally and notifies listeners immediately, then broadcasts
+  /// to relays in background (local-first).
   Future<void> addLabel(String emailId, String label) async {
     final pubkey = _ndk.accounts.getPublicKey();
     if (pubkey == null) {
@@ -109,8 +110,6 @@ class NostrMailClient {
     if (await _labelStore.hasLabel(emailId, label)) {
       return;
     }
-
-    final writeRelays = await _getWriteRelays(pubkey);
 
     // Create NIP-32 label event
     final labelEvent = Nip01Event(
@@ -124,25 +123,31 @@ class NostrMailClient {
       content: '',
     );
 
-    // Sign and broadcast
+    // Sign to get event ID
     final signedEvent = await _ndk.accounts.sign(labelEvent);
-    final broadcast = _ndk.broadcast.broadcast(
-      nostrEvent: signedEvent,
-      specificRelays: writeRelays,
-    );
-    await broadcast.broadcastDoneFuture;
 
-    // Save to local cache
+    // Save locally FIRST
     await _labelStore.saveLabel(
       emailId: emailId,
       label: label,
       labelEventId: signedEvent.id,
     );
+
+    // Notify listeners immediately
+    _watchController?.add(
+      LabelAdded(emailId: emailId, label: label, labelEventId: signedEvent.id),
+    );
+
+    // Broadcast in background (don't await)
+    _getWriteRelays(pubkey).then((relays) {
+      _ndk.broadcast.broadcast(nostrEvent: signedEvent, specificRelays: relays);
+    });
   }
 
   /// Remove a label from an email
   ///
-  /// Publishes a NIP-09 deletion request for the label event.
+  /// Removes locally and notifies listeners immediately, then broadcasts
+  /// deletion to relays in background (local-first).
   Future<void> removeLabel(String emailId, String label) async {
     final pubkey = _ndk.accounts.getPublicKey();
     if (pubkey == null) {
@@ -155,7 +160,11 @@ class NostrMailClient {
       return; // Label doesn't exist
     }
 
-    final writeRelays = await _getWriteRelays(pubkey);
+    // Remove locally FIRST
+    await _labelStore.removeLabel(emailId, label);
+
+    // Notify listeners immediately
+    _watchController?.add(LabelRemoved(emailId: emailId, label: label));
 
     // Create NIP-09 deletion request
     final deletionEvent = Nip01Event(
@@ -168,16 +177,15 @@ class NostrMailClient {
       content: '',
     );
 
-    // Sign and broadcast
-    final signedEvent = await _ndk.accounts.sign(deletionEvent);
-    final broadcast = _ndk.broadcast.broadcast(
-      nostrEvent: signedEvent,
-      specificRelays: writeRelays,
-    );
-    await broadcast.broadcastDoneFuture;
-
-    // Remove from local cache
-    await _labelStore.removeLabel(emailId, label);
+    // Broadcast in background (don't await)
+    _ndk.accounts.sign(deletionEvent).then((signedEvent) {
+      _getWriteRelays(pubkey).then((relays) {
+        _ndk.broadcast.broadcast(
+          nostrEvent: signedEvent,
+          specificRelays: relays,
+        );
+      });
+    });
   }
 
   /// Get all labels for an email
