@@ -1,3 +1,14 @@
+## 1.3.0
+
+- **New**: NIP-32 labels system (`addLabel`, `removeLabel`, `moveToTrash`, `markAsRead`, `star`, etc.)
+- **New**: Unified `watch()` stream with `MailEvent` sealed class (`EmailReceived`, `EmailDeleted`, `LabelAdded`, `LabelRemoved`)
+- **New**: Convenience stream getters (`onEmail`, `onTrash`, `onRead`, `onStarred`, `onLabel`)
+- **New**: `getInboxEmails()` and `getSentEmails()` with pagination and `includeTrashed` option
+- **New**: `htmlBody` getter on `Email` (parsed on demand from rawContent)
+- **New**: `stopWatching()` method to close stream and cleanup resources
+- **Improvement**: Local-first labels (save and notify immediately, broadcast in background)
+- **Improvement**: Shared broadcast stream for `watch()` (multiple listeners share same subscriptions)
+
 ## 1.2.2
 
 - Use the new ndk version
