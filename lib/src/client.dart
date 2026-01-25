@@ -6,6 +6,7 @@ import 'package:sembast/sembast.dart';
 
 import 'exceptions.dart';
 import 'models/email.dart';
+import 'models/mail_event.dart';
 import 'services/bridge_resolver.dart';
 import 'services/email_parser.dart';
 import 'storage/email_store.dart';
@@ -30,6 +31,10 @@ class NostrMailClient {
   final LabelStore _labelStore;
   final EmailParser _parser;
   final BridgeResolver _bridgeResolver;
+
+  /// Cached broadcast stream for watch()
+  StreamController<MailEvent>? _watchController;
+  Stream<MailEvent>? _watchBroadcastStream;
 
   NostrMailClient({required Ndk ndk, required Database db})
     : _ndk = ndk,
@@ -238,55 +243,61 @@ class NostrMailClient {
     return _store.getEmailsByIds(ids);
   }
 
-  /// Sync labels from relays
-  ///
-  /// Fetches all NIP-32 label events from write relays and updates local cache.
-  /// Also handles deleted labels (kind 5 events).
-  Future<void> syncLabels() async {
-    final pubkey = _ndk.accounts.getPublicKey();
-    if (pubkey == null) {
-      throw NostrMailException('No account configured in ndk');
+  /// Sync labels from relays (internal)
+  Future<void> _syncLabels(
+    String pubkey,
+    List<String> writeRelays,
+    int? since,
+    int until,
+  ) async {
+    // Sync label additions
+    await _syncLabelAdditions(pubkey, writeRelays, since, until);
+
+    // Sync label deletions
+    await _syncLabelDeletions(pubkey, writeRelays, since, until);
+  }
+
+  Future<void> _syncLabelAdditions(
+    String pubkey,
+    List<String> writeRelays,
+    int? since,
+    int until,
+  ) async {
+    final baseFilter = ndk.Filter(kinds: [_labelKind], authors: [pubkey]);
+
+    final existingRanges = await _ndk.fetchedRanges.getForFilter(baseFilter);
+
+    if (existingRanges.isEmpty) {
+      final filter = baseFilter.clone()
+        ..since = since
+        ..until = until;
+      await _processLabelAdditions(filter, writeRelays);
+      return;
     }
 
-    final writeRelays = await _getWriteRelays(pubkey);
-
-    // Fetch all label events for this user with 'mail' namespace
-    final labelResponse = _ndk.requests.query(
-      filter: ndk.Filter(kinds: [_labelKind], authors: [pubkey]),
-      explicitRelays: writeRelays,
+    final optimizedFilters = await _ndk.fetchedRanges.getOptimizedFilters(
+      filter: baseFilter,
+      since: since ?? 0,
+      until: until,
     );
 
-    // Collect all label events
-    final labelEvents = <Nip01Event>[];
-    await for (final event in labelResponse.stream) {
-      labelEvents.add(event);
-    }
+    if (optimizedFilters.isEmpty) return;
 
-    // Fetch deletion events for labels (filter by #k tag = 1985)
-    final deletionFilter = ndk.Filter(
-      kinds: [_deletionRequestKind],
-      authors: [pubkey],
-    )..setTag('k', [_labelKind.toString()]);
-    final deletionResponse = _ndk.requests.query(
-      filter: deletionFilter,
-      explicitRelays: writeRelays,
+    for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
+      await _processLabelAdditions(gapFilter, writeRelays);
+    }
+  }
+
+  Future<void> _processLabelAdditions(
+    ndk.Filter filter,
+    List<String> relays,
+  ) async {
+    final response = _ndk.requests.query(
+      filter: filter,
+      explicitRelays: relays,
     );
 
-    // Collect deleted label event IDs
-    final deletedLabelIds = <String>{};
-    await for (final event in deletionResponse.stream) {
-      for (final tag in event.tags) {
-        if (tag.isNotEmpty && tag[0] == 'e') {
-          deletedLabelIds.add(tag[1]);
-        }
-      }
-    }
-
-    // Process label events (excluding deleted ones)
-    for (final event in labelEvents) {
-      // Skip deleted labels
-      if (deletedLabelIds.contains(event.id)) continue;
-
+    await for (final event in response.stream) {
       // Check if it's a 'mail' namespace label
       final namespaceTag = event.tags.firstWhere(
         (t) => t.isNotEmpty && t[0] == 'L' && t[1] == _labelNamespace,
@@ -319,19 +330,104 @@ class NostrMailClient {
     }
   }
 
-  /// Watch for new emails from relays (real-time)
+  Future<void> _syncLabelDeletions(
+    String pubkey,
+    List<String> writeRelays,
+    int? since,
+    int until,
+  ) async {
+    final baseFilter = ndk.Filter(
+      kinds: [_deletionRequestKind],
+      authors: [pubkey],
+    )..setTag('k', [_labelKind.toString()]);
+
+    final existingRanges = await _ndk.fetchedRanges.getForFilter(baseFilter);
+
+    if (existingRanges.isEmpty) {
+      final filter = baseFilter.clone()
+        ..since = since
+        ..until = until;
+      await _processLabelDeletions(filter, writeRelays);
+      return;
+    }
+
+    final optimizedFilters = await _ndk.fetchedRanges.getOptimizedFilters(
+      filter: baseFilter,
+      since: since ?? 0,
+      until: until,
+    );
+
+    if (optimizedFilters.isEmpty) return;
+
+    for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
+      await _processLabelDeletions(gapFilter, writeRelays);
+    }
+  }
+
+  Future<void> _processLabelDeletions(
+    ndk.Filter filter,
+    List<String> relays,
+  ) async {
+    final response = _ndk.requests.query(
+      filter: filter,
+      explicitRelays: relays,
+    );
+
+    await for (final event in response.stream) {
+      for (final tag in event.tags) {
+        if (tag.isNotEmpty && tag[0] == 'e') {
+          final deletedEventId = tag[1];
+
+          // Find and remove the label from local store
+          final labels = await _labelStore.getAllLabels();
+          for (final labelRecord in labels) {
+            if (labelRecord['labelEventId'] == deletedEventId) {
+              final emailId = labelRecord['emailId'] as String;
+              final label = labelRecord['label'] as String;
+              await _labelStore.removeLabel(emailId, label);
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /// Watch for all mail events (emails, labels) in real-time
   ///
-  /// Subscribes to user's DM relays (NIP-17 kind 10050).
-  Stream<Email> watchInbox() async* {
+  /// Returns a unified stream of [MailEvent] that includes:
+  /// - [EmailReceived] when a new email arrives
+  /// - [EmailDeleted] when an email is deleted
+  /// - [LabelAdded] when a label is added to an email
+  /// - [LabelRemoved] when a label is removed from an email
+  ///
+  /// The stream is shared (broadcast) - multiple listeners share the same
+  /// underlying Nostr subscriptions.
+  Stream<MailEvent> watch() {
+    // Return cached broadcast stream if it exists
+    if (_watchBroadcastStream != null) {
+      return _watchBroadcastStream!;
+    }
+
     final pubkey = _ndk.accounts.getPublicKey();
     if (pubkey == null) {
       throw NostrMailException('No account configured in ndk');
     }
 
-    // Get user's DM relays
-    final dmRelays = await _getDmRelays(pubkey);
+    _watchController = StreamController<MailEvent>.broadcast();
+    _watchBroadcastStream = _watchController!.stream;
 
-    final response = _ndk.requests.subscription(
+    // Setup subscriptions asynchronously
+    _setupWatchSubscriptions(pubkey);
+
+    return _watchBroadcastStream!;
+  }
+
+  /// Setup Nostr subscriptions for watching
+  Future<void> _setupWatchSubscriptions(String pubkey) async {
+    // Watch emails on DM relays
+    final dmRelays = await _getDmRelays(pubkey);
+    final emailResponse = _ndk.requests.subscription(
       filter: ndk.Filter(
         kinds: [GiftWrap.kGiftWrapEventkind],
         pTags: [pubkey],
@@ -340,22 +436,47 @@ class NostrMailClient {
       explicitRelays: dmRelays,
     );
 
-    await for (final event in response.stream) {
-      // Skip already processed events
-      if (await _store.isProcessed(event.id)) continue;
+    // Watch labels on write relays
+    final writeRelays = await _getWriteRelays(pubkey);
+    final labelResponse = _ndk.requests.subscription(
+      filter: ndk.Filter(kinds: [_labelKind], authors: [pubkey], limit: 0),
+      explicitRelays: writeRelays,
+    );
+
+    // Watch label deletions on write relays
+    final labelDeletionFilter = ndk.Filter(
+      kinds: [_deletionRequestKind],
+      authors: [pubkey],
+      limit: 0,
+    )..setTag('k', [_labelKind.toString()]);
+    final labelDeletionResponse = _ndk.requests.subscription(
+      filter: labelDeletionFilter,
+      explicitRelays: writeRelays,
+    );
+
+    // Watch email deletions on DM relays
+    final emailDeletionFilter = ndk.Filter(
+      kinds: [_deletionRequestKind],
+      authors: [pubkey],
+      limit: 0,
+    )..setTag('k', [_giftWrapKind.toString()]);
+    final emailDeletionResponse = _ndk.requests.subscription(
+      filter: emailDeletionFilter,
+      explicitRelays: dmRelays,
+    );
+
+    // Process emails
+    emailResponse.stream.listen((event) async {
+      if (await _store.isProcessed(event.id)) return;
 
       try {
-        // Unwrap the gift-wrapped event
         final unwrapped = await _unwrapGiftWrap(event);
-        if (unwrapped == null) continue;
+        if (unwrapped == null) return;
 
-        // Mark as processed to avoid re-decrypting non-email gift wraps (DMs, etc.)
         await _store.markProcessed(event.id);
 
-        // Only process email events (kind 1301)
-        if (unwrapped.kind != _emailKind) continue;
+        if (unwrapped.kind != _emailKind) return;
 
-        // Parse the email from RFC 2822 content
         final email = _parser.parse(
           rawContent: unwrapped.content,
           eventId: event.id,
@@ -363,21 +484,168 @@ class NostrMailClient {
           recipientPubkey: pubkey,
         );
 
-        // Save to local DB
         await _store.saveEmail(email);
 
-        yield email;
+        _watchController?.add(
+          EmailReceived(
+            emailId: email.id,
+            from: email.from,
+            subject: email.subject,
+            timestamp: email.date,
+          ),
+        );
       } catch (e) {
         // Skip malformed events
-        continue;
       }
-    }
+    });
+
+    // Process label additions
+    labelResponse.stream.listen((event) async {
+      // Check namespace
+      final namespaceTag = event.tags.firstWhere(
+        (t) => t.isNotEmpty && t[0] == 'L' && t[1] == _labelNamespace,
+        orElse: () => [],
+      );
+      if (namespaceTag.isEmpty) return;
+
+      // Get label value
+      final labelTag = event.tags.firstWhere(
+        (t) => t.length >= 3 && t[0] == 'l' && t[2] == _labelNamespace,
+        orElse: () => [],
+      );
+      if (labelTag.isEmpty) return;
+      final label = labelTag[1];
+
+      // Get email ID
+      final emailTag = event.tags.firstWhere(
+        (t) => t.isNotEmpty && t[0] == 'e',
+        orElse: () => [],
+      );
+      if (emailTag.isEmpty) return;
+      final emailId = emailTag[1];
+
+      // Skip if already have this label
+      if (await _labelStore.hasLabel(emailId, label)) return;
+
+      // Save locally
+      await _labelStore.saveLabel(
+        emailId: emailId,
+        label: label,
+        labelEventId: event.id,
+      );
+
+      _watchController?.add(
+        LabelAdded(
+          emailId: emailId,
+          label: label,
+          labelEventId: event.id,
+          timestamp: DateTime.fromMillisecondsSinceEpoch(
+            event.createdAt * 1000,
+          ),
+        ),
+      );
+    });
+
+    // Process label deletions
+    labelDeletionResponse.stream.listen((event) async {
+      for (final tag in event.tags) {
+        if (tag.isNotEmpty && tag[0] == 'e') {
+          final deletedEventId = tag[1];
+
+          // Find and remove the label from local store
+          // We need to find which label this event ID corresponds to
+          final labels = await _labelStore.getAllLabels();
+          for (final labelRecord in labels) {
+            if (labelRecord['labelEventId'] == deletedEventId) {
+              final emailId = labelRecord['emailId'] as String;
+              final label = labelRecord['label'] as String;
+
+              await _labelStore.removeLabel(emailId, label);
+
+              _watchController?.add(
+                LabelRemoved(
+                  emailId: emailId,
+                  label: label,
+                  timestamp: DateTime.fromMillisecondsSinceEpoch(
+                    event.createdAt * 1000,
+                  ),
+                ),
+              );
+              break;
+            }
+          }
+        }
+      }
+    });
+
+    // Process email deletions
+    emailDeletionResponse.stream.listen((event) async {
+      for (final tag in event.tags) {
+        if (tag.isNotEmpty && tag[0] == 'e') {
+          final emailId = tag[1];
+
+          // Check if we have this email locally
+          final email = await _store.getEmailById(emailId);
+          if (email != null) {
+            // Delete from local store
+            await _store.deleteEmail(emailId);
+            await _labelStore.deleteLabelsForEmail(emailId);
+
+            _watchController?.add(
+              EmailDeleted(
+                emailId: emailId,
+                timestamp: DateTime.fromMillisecondsSinceEpoch(
+                  event.createdAt * 1000,
+                ),
+              ),
+            );
+          }
+        }
+      }
+    });
   }
 
-  /// Sync emails from relays (fetch historical + store in DB)
+  /// Stop watching and close the stream
+  ///
+  /// Call this to clean up resources when you no longer need to watch for events.
+  /// After calling this, the next call to [watch] will create new subscriptions.
+  void stopWatching() {
+    _watchController?.close();
+    _watchController = null;
+    _watchBroadcastStream = null;
+  }
+
+  /// Stream of new emails
+  Stream<Email> get onEmail => watch()
+      .where((e) => e is EmailReceived)
+      .cast<EmailReceived>()
+      .asyncMap((e) async => (await getEmail(e.emailId))!);
+
+  /// Stream of label changes
+  Stream<MailEvent> get onLabel =>
+      watch().where((e) => e is LabelAdded || e is LabelRemoved);
+
+  /// Stream of trash events
+  Stream<MailEvent> get onTrash =>
+      onLabel.where((e) => _getLabelFromEvent(e) == 'folder:trash');
+
+  /// Stream of read state events
+  Stream<MailEvent> get onRead =>
+      onLabel.where((e) => _getLabelFromEvent(e) == 'state:read');
+
+  /// Stream of starred events
+  Stream<MailEvent> get onStarred =>
+      onLabel.where((e) => _getLabelFromEvent(e) == 'flag:starred');
+
+  String? _getLabelFromEvent(MailEvent e) {
+    if (e is LabelAdded) return e.label;
+    if (e is LabelRemoved) return e.label;
+    return null;
+  }
+
+  /// Sync all data from relays (emails, labels, deletions)
   ///
   /// Uses NDK's fetchedRanges to only fetch gaps (time ranges not yet synced).
-  /// Fetches from user's DM relays (NIP-17 kind 10050).
   /// [until] defaults to now if not specified.
   Future<void> sync({int? since, int? until}) async {
     final pubkey = _ndk.accounts.getPublicKey();
@@ -389,9 +657,27 @@ class NostrMailClient {
     final effectiveSince = since;
     final effectiveUntil = until ?? now;
 
-    // Get user's DM relays
+    // Get relays
     final dmRelays = await _getDmRelays(pubkey);
+    final writeRelays = await _getWriteRelays(pubkey);
 
+    // Sync emails
+    await _syncEmails(pubkey, dmRelays, effectiveSince, effectiveUntil);
+
+    // Sync email deletions
+    await _syncEmailDeletions(pubkey, dmRelays, effectiveSince, effectiveUntil);
+
+    // Sync labels (includes label deletions)
+    await _syncLabels(pubkey, writeRelays, effectiveSince, effectiveUntil);
+  }
+
+  /// Sync emails from relays (internal)
+  Future<void> _syncEmails(
+    String pubkey,
+    List<String> dmRelays,
+    int? since,
+    int until,
+  ) async {
     final baseFilter = ndk.Filter(
       kinds: [GiftWrap.kGiftWrapEventkind],
       pTags: [pubkey],
@@ -403,18 +689,17 @@ class NostrMailClient {
     if (existingRanges.isEmpty) {
       // First sync - fetch the full range
       final filter = baseFilter.clone()
-        ..since = effectiveSince
-        ..until = effectiveUntil;
-      await _fetchAndProcessEvents(filter, pubkey, relays: dmRelays);
+        ..since = since
+        ..until = until;
+      await _fetchAndProcessEmails(filter, pubkey, relays: dmRelays);
       return;
     }
 
     // Get optimized filters that cover only the gaps (unfetched ranges)
-    // since defaults to 0 (all history) for gap calculation
     final optimizedFilters = await _ndk.fetchedRanges.getOptimizedFilters(
       filter: baseFilter,
-      since: effectiveSince ?? 0,
-      until: effectiveUntil,
+      since: since ?? 0,
+      until: until,
     );
 
     // If no gaps, nothing to sync
@@ -422,12 +707,72 @@ class NostrMailClient {
 
     // Fetch each gap
     for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
-      await _fetchAndProcessEvents(gapFilter, pubkey, relays: dmRelays);
+      await _fetchAndProcessEmails(gapFilter, pubkey, relays: dmRelays);
+    }
+  }
+
+  /// Sync email deletions from relays (internal)
+  Future<void> _syncEmailDeletions(
+    String pubkey,
+    List<String> dmRelays,
+    int? since,
+    int until,
+  ) async {
+    final baseFilter = ndk.Filter(
+      kinds: [_deletionRequestKind],
+      authors: [pubkey],
+    )..setTag('k', [_giftWrapKind.toString()]);
+
+    // Check existing fetched ranges
+    final existingRanges = await _ndk.fetchedRanges.getForFilter(baseFilter);
+
+    if (existingRanges.isEmpty) {
+      final filter = baseFilter.clone()
+        ..since = since
+        ..until = until;
+      await _processEmailDeletions(filter, dmRelays);
+      return;
+    }
+
+    // Get optimized filters for gaps
+    final optimizedFilters = await _ndk.fetchedRanges.getOptimizedFilters(
+      filter: baseFilter,
+      since: since ?? 0,
+      until: until,
+    );
+
+    if (optimizedFilters.isEmpty) return;
+
+    for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
+      await _processEmailDeletions(gapFilter, dmRelays);
+    }
+  }
+
+  Future<void> _processEmailDeletions(
+    ndk.Filter filter,
+    List<String> relays,
+  ) async {
+    final response = _ndk.requests.query(
+      filter: filter,
+      explicitRelays: relays,
+    );
+
+    await for (final event in response.stream) {
+      for (final tag in event.tags) {
+        if (tag.isNotEmpty && tag[0] == 'e') {
+          final emailId = tag[1];
+          final email = await _store.getEmailById(emailId);
+          if (email != null) {
+            await _store.deleteEmail(emailId);
+            await _labelStore.deleteLabelsForEmail(emailId);
+          }
+        }
+      }
     }
   }
 
   /// Fetch events from relays and process them
-  Future<void> _fetchAndProcessEvents(
+  Future<void> _fetchAndProcessEmails(
     ndk.Filter filter,
     String pubkey, {
     Iterable<String>? relays,

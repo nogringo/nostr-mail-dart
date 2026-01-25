@@ -5,4 +5,5 @@ library;
 
 export 'src/client.dart' show NostrMailClient;
 export 'src/models/email.dart' show Email;
+export 'src/models/mail_event.dart';
 export 'src/exceptions.dart';

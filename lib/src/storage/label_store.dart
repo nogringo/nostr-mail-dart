@@ -68,5 +68,11 @@ class LabelStore {
     }
   }
 
+  /// Get all label records (for finding labels by event ID)
+  Future<List<Map<String, dynamic>>> getAllLabels() async {
+    final records = await _labelsStore.find(_db);
+    return records.map((r) => Map<String, dynamic>.from(r.value)).toList();
+  }
+
   String _makeKey(String emailId, String label) => '$emailId:$label';
 }

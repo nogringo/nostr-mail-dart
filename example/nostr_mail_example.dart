@@ -36,9 +36,27 @@ void main() async {
     print('---');
   }
 
-  // Watch for new emails in real-time
-  client.watchInbox().listen((email) {
-    print('New email from ${email.from}: ${email.subject}');
+  // Watch for all mail events in real-time
+  client.watch().listen((event) {
+    switch (event) {
+      case EmailReceived():
+        print('New email from ${event.from}: ${event.subject}');
+      case EmailDeleted():
+        print('Email deleted: ${event.emailId}');
+      case LabelAdded():
+        print('Label added: ${event.label} to ${event.emailId}');
+      case LabelRemoved():
+        print('Label removed: ${event.label} from ${event.emailId}');
+    }
+  });
+
+  // Or use convenience streams
+  client.onEmail.listen((email) {
+    print('New email: ${email.subject}');
+  });
+
+  client.onTrash.listen((event) {
+    print('Trash event: $event');
   });
 
   // Send to a Nostr user (npub)
