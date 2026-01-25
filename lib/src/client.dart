@@ -12,6 +12,8 @@ import 'storage/email_store.dart';
 
 const _emailKind = 1301;
 const _dmRelayListKind = 10050;
+const _deletionRequestKind = 5;
+const _giftWrapKind = 1059;
 const _defaultDmRelays = [
   'wss://auth.nostr1.com',
   'wss://nostr-01.uid.ovh',
@@ -40,9 +42,46 @@ class NostrMailClient {
     return _store.getEmailById(id);
   }
 
-  /// Delete email from local DB
-  Future<void> delete(String id) {
-    return _store.deleteEmail(id);
+  /// Delete email from local DB and request deletion from relays (NIP-09)
+  ///
+  /// Publishes a kind 5 deletion request event to the user's DM relays.
+  /// Per NIP-59, relays should delete kind 1059 events whose p-tag matches
+  /// the signer of the deletion request.
+  Future<void> delete(String id) async {
+    final pubkey = _ndk.accounts.getPublicKey();
+    if (pubkey == null) {
+      throw NostrMailException('No account configured in ndk');
+    }
+
+    // Get the email to find the gift wrap ID
+    final email = await _store.getEmailById(id);
+    if (email == null) {
+      throw NostrMailException('Email not found');
+    }
+
+    final dmRelays = await _getDmRelays(pubkey);
+
+    // Create NIP-09 deletion request event
+    final deletionEvent = Nip01Event(
+      pubKey: pubkey,
+      kind: _deletionRequestKind,
+      tags: [
+        ['e', email.id],
+        ['k', _giftWrapKind.toString()],
+      ],
+      content: '',
+    );
+
+    // Sign and broadcast
+    final signedEvent = await _ndk.accounts.sign(deletionEvent);
+    final broadcast = _ndk.broadcast.broadcast(
+      nostrEvent: signedEvent,
+      specificRelays: dmRelays,
+    );
+    await broadcast.broadcastDoneFuture;
+
+    // Delete from local DB
+    await _store.deleteEmail(id);
   }
 
   /// Watch for new emails from relays (real-time)
@@ -84,7 +123,7 @@ class NostrMailClient {
         // Parse the email from RFC 2822 content
         final email = _parser.parse(
           rawContent: unwrapped.content,
-          eventId: unwrapped.id,
+          eventId: event.id,
           senderPubkey: unwrapped.pubKey,
           recipientPubkey: pubkey,
         );
@@ -178,7 +217,7 @@ class NostrMailClient {
 
         final email = _parser.parse(
           rawContent: unwrapped.content,
-          eventId: unwrapped.id,
+          eventId: event.id,
           senderPubkey: unwrapped.pubKey,
           recipientPubkey: pubkey,
         );
