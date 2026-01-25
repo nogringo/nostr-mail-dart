@@ -1,3 +1,5 @@
+import 'package:enough_mail/enough_mail.dart';
+
 class Email {
   final String id;
   final String from;
@@ -44,6 +46,12 @@ class Email {
     recipientPubkey: json['recipientPubkey'] as String? ?? '',
     rawContent: json['rawContent'] as String,
   );
+
+  /// Get HTML body parsed on demand from rawContent
+  String? get htmlBody {
+    final mime = MimeMessage.parseFromText(rawContent);
+    return mime.decodeTextHtmlPart();
+  }
 
   @override
   String toString() =>
