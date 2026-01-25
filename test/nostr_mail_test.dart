@@ -7,6 +7,7 @@ import 'package:nostr_mail/src/services/bridge_resolver.dart';
 import 'package:nostr_mail/src/services/email_parser.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:nostr_mail/src/storage/email_store.dart';
+import 'package:nostr_mail/src/storage/label_store.dart';
 import 'package:test/test.dart';
 
 class MockHttpClient extends Mock implements http.Client {}
@@ -563,6 +564,83 @@ void main() {
       expect(retrieved!.subject, 'Updated Subject');
       expect(retrieved.from, 'updated@test.com');
     });
+
+    test('getEmailsByIds returns emails sorted by date descending', () async {
+      final email1 = Email(
+        id: 'batch-1',
+        from: 'a@a.com',
+        to: 'b@b.com',
+        subject: 'First',
+        body: 'Body',
+        date: DateTime.utc(2024, 1, 1),
+        senderPubkey: 'pk',
+        recipientPubkey: 'rpk',
+        rawContent: 'raw',
+      );
+      final email2 = Email(
+        id: 'batch-2',
+        from: 'a@a.com',
+        to: 'b@b.com',
+        subject: 'Second',
+        body: 'Body',
+        date: DateTime.utc(2024, 1, 3),
+        senderPubkey: 'pk',
+        recipientPubkey: 'rpk',
+        rawContent: 'raw',
+      );
+      final email3 = Email(
+        id: 'batch-3',
+        from: 'a@a.com',
+        to: 'b@b.com',
+        subject: 'Third',
+        body: 'Body',
+        date: DateTime.utc(2024, 1, 2),
+        senderPubkey: 'pk',
+        recipientPubkey: 'rpk',
+        rawContent: 'raw',
+      );
+
+      await store.saveEmail(email1);
+      await store.saveEmail(email2);
+      await store.saveEmail(email3);
+
+      final emails = await store.getEmailsByIds([
+        'batch-1',
+        'batch-3',
+        'batch-2',
+      ]);
+
+      expect(emails.length, 3);
+      expect(emails[0].id, 'batch-2'); // Most recent first
+      expect(emails[1].id, 'batch-3');
+      expect(emails[2].id, 'batch-1');
+    });
+
+    test('getEmailsByIds returns empty list for empty input', () async {
+      final emails = await store.getEmailsByIds([]);
+
+      expect(emails, isEmpty);
+    });
+
+    test('getEmailsByIds ignores non-existent IDs', () async {
+      final email = Email(
+        id: 'exists',
+        from: 'a@a.com',
+        to: 'b@b.com',
+        subject: 'Exists',
+        body: 'Body',
+        date: DateTime.utc(2024, 1, 1),
+        senderPubkey: 'pk',
+        recipientPubkey: 'rpk',
+        rawContent: 'raw',
+      );
+      await store.saveEmail(email);
+
+      final emails = await store.getEmailsByIds(['exists', 'does-not-exist']);
+
+      expect(emails.length, 1);
+      expect(emails[0].id, 'exists');
+    });
   });
 
   group('Exceptions', () {
@@ -595,6 +673,180 @@ void main() {
       final exception = RelayException('Connection failed');
 
       expect(exception.toString(), contains('Connection failed'));
+    });
+  });
+
+  group('LabelStore', () {
+    late LabelStore store;
+
+    setUp(() async {
+      final db = await databaseFactoryMemory.openDatabase(
+        'test_label_db_${DateTime.now().millisecondsSinceEpoch}',
+      );
+      store = LabelStore(db);
+    });
+
+    test('saveLabel and getLabelEventId', () async {
+      await store.saveLabel(
+        emailId: 'email-1',
+        label: 'folder:trash',
+        labelEventId: 'label-event-1',
+      );
+
+      final eventId = await store.getLabelEventId('email-1', 'folder:trash');
+
+      expect(eventId, 'label-event-1');
+    });
+
+    test('getLabelEventId returns null for non-existent label', () async {
+      final eventId = await store.getLabelEventId('email-1', 'folder:trash');
+
+      expect(eventId, isNull);
+    });
+
+    test('removeLabel deletes the label', () async {
+      await store.saveLabel(
+        emailId: 'email-1',
+        label: 'folder:trash',
+        labelEventId: 'label-event-1',
+      );
+
+      await store.removeLabel('email-1', 'folder:trash');
+      final eventId = await store.getLabelEventId('email-1', 'folder:trash');
+
+      expect(eventId, isNull);
+    });
+
+    test('getLabelsForEmail returns all labels for an email', () async {
+      await store.saveLabel(
+        emailId: 'email-1',
+        label: 'folder:trash',
+        labelEventId: 'label-event-1',
+      );
+      await store.saveLabel(
+        emailId: 'email-1',
+        label: 'state:read',
+        labelEventId: 'label-event-2',
+      );
+      await store.saveLabel(
+        emailId: 'email-1',
+        label: 'flag:starred',
+        labelEventId: 'label-event-3',
+      );
+      // Different email
+      await store.saveLabel(
+        emailId: 'email-2',
+        label: 'folder:archive',
+        labelEventId: 'label-event-4',
+      );
+
+      final labels = await store.getLabelsForEmail('email-1');
+
+      expect(labels.length, 3);
+      expect(labels, contains('folder:trash'));
+      expect(labels, contains('state:read'));
+      expect(labels, contains('flag:starred'));
+      expect(labels, isNot(contains('folder:archive')));
+    });
+
+    test(
+      'getEmailIdsWithLabel returns all emails with a specific label',
+      () async {
+        await store.saveLabel(
+          emailId: 'email-1',
+          label: 'folder:trash',
+          labelEventId: 'label-event-1',
+        );
+        await store.saveLabel(
+          emailId: 'email-2',
+          label: 'folder:trash',
+          labelEventId: 'label-event-2',
+        );
+        await store.saveLabel(
+          emailId: 'email-3',
+          label: 'folder:archive',
+          labelEventId: 'label-event-3',
+        );
+
+        final trashedIds = await store.getEmailIdsWithLabel('folder:trash');
+
+        expect(trashedIds.length, 2);
+        expect(trashedIds, contains('email-1'));
+        expect(trashedIds, contains('email-2'));
+        expect(trashedIds, isNot(contains('email-3')));
+      },
+    );
+
+    test('hasLabel returns true when label exists', () async {
+      await store.saveLabel(
+        emailId: 'email-1',
+        label: 'folder:trash',
+        labelEventId: 'label-event-1',
+      );
+
+      final hasTrash = await store.hasLabel('email-1', 'folder:trash');
+      final hasRead = await store.hasLabel('email-1', 'state:read');
+
+      expect(hasTrash, isTrue);
+      expect(hasRead, isFalse);
+    });
+
+    test('deleteLabelsForEmail removes all labels for an email', () async {
+      await store.saveLabel(
+        emailId: 'email-1',
+        label: 'folder:trash',
+        labelEventId: 'label-event-1',
+      );
+      await store.saveLabel(
+        emailId: 'email-1',
+        label: 'state:read',
+        labelEventId: 'label-event-2',
+      );
+      await store.saveLabel(
+        emailId: 'email-2',
+        label: 'folder:trash',
+        labelEventId: 'label-event-3',
+      );
+
+      await store.deleteLabelsForEmail('email-1');
+
+      final labels1 = await store.getLabelsForEmail('email-1');
+      final labels2 = await store.getLabelsForEmail('email-2');
+
+      expect(labels1, isEmpty);
+      expect(labels2.length, 1);
+      expect(labels2, contains('folder:trash'));
+    });
+
+    test('saveLabel updates existing label event ID', () async {
+      await store.saveLabel(
+        emailId: 'email-1',
+        label: 'folder:trash',
+        labelEventId: 'old-event-id',
+      );
+      await store.saveLabel(
+        emailId: 'email-1',
+        label: 'folder:trash',
+        labelEventId: 'new-event-id',
+      );
+
+      final eventId = await store.getLabelEventId('email-1', 'folder:trash');
+      final labels = await store.getLabelsForEmail('email-1');
+
+      expect(eventId, 'new-event-id');
+      expect(labels.length, 1); // Should not duplicate
+    });
+
+    test('getEmailIdsWithLabel returns empty list when no matches', () async {
+      final ids = await store.getEmailIdsWithLabel('folder:trash');
+
+      expect(ids, isEmpty);
+    });
+
+    test('getLabelsForEmail returns empty list when no labels', () async {
+      final labels = await store.getLabelsForEmail('email-without-labels');
+
+      expect(labels, isEmpty);
     });
   });
 }

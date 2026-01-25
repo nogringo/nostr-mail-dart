@@ -32,6 +32,19 @@ class EmailStore {
     return Email.fromJson(record as Map<String, dynamic>);
   }
 
+  /// Get multiple emails by IDs in a single batch query, sorted by date descending
+  Future<List<Email>> getEmailsByIds(List<String> ids) async {
+    if (ids.isEmpty) return [];
+    final finder = Finder(
+      filter: Filter.inList('id', ids),
+      sortOrders: [SortOrder('date', false)],
+    );
+    final records = await _emailsStore.find(_db, finder: finder);
+    return records
+        .map((r) => Email.fromJson(r.value as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<void> deleteEmail(String id) async {
     await _emailsStore.record(id).delete(_db);
   }
