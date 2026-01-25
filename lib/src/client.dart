@@ -53,6 +53,52 @@ class NostrMailClient {
     return _store.getEmailById(id);
   }
 
+  /// Get sent emails from local DB
+  ///
+  /// By default excludes trashed emails. Set [includeTrashed] to true to include them.
+  /// Note: pages may have fewer items if some are trashed.
+  Future<List<Email>> getSentEmails({
+    int? limit,
+    int? offset,
+    bool includeTrashed = false,
+  }) async {
+    final pubkey = _ndk.accounts.getPublicKey();
+    if (pubkey == null) {
+      throw NostrMailException('No account configured in ndk');
+    }
+    final emails = await _store.getEmailsBySender(
+      pubkey,
+      limit: limit,
+      offset: offset,
+    );
+    if (includeTrashed) return emails;
+    final trashedIds = await getTrashedEmailIds();
+    return emails.where((e) => !trashedIds.contains(e.id)).toList();
+  }
+
+  /// Get inbox emails from local DB (received, excluding sent)
+  ///
+  /// By default excludes trashed emails. Set [includeTrashed] to true to include them.
+  /// Note: pages may have fewer items if some are trashed.
+  Future<List<Email>> getInboxEmails({
+    int? limit,
+    int? offset,
+    bool includeTrashed = false,
+  }) async {
+    final pubkey = _ndk.accounts.getPublicKey();
+    if (pubkey == null) {
+      throw NostrMailException('No account configured in ndk');
+    }
+    final emails = await _store.getEmailsByRecipient(
+      pubkey,
+      limit: limit,
+      offset: offset,
+    );
+    if (includeTrashed) return emails;
+    final trashedIds = await getTrashedEmailIds();
+    return emails.where((e) => !trashedIds.contains(e.id)).toList();
+  }
+
   /// Delete email from local DB and request deletion from relays (NIP-09)
   ///
   /// Publishes a kind 5 deletion request event to the user's DM relays.

@@ -49,6 +49,45 @@ class EmailStore {
     await _emailsStore.record(id).delete(_db);
   }
 
+  /// Get emails sent by a specific pubkey, sorted by date descending
+  Future<List<Email>> getEmailsBySender(
+    String senderPubkey, {
+    int? limit,
+    int? offset,
+  }) async {
+    final finder = Finder(
+      filter: Filter.equals('senderPubkey', senderPubkey),
+      sortOrders: [SortOrder('date', false)],
+      limit: limit,
+      offset: offset,
+    );
+    final records = await _emailsStore.find(_db, finder: finder);
+    return records
+        .map((r) => Email.fromJson(r.value as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Get emails received by a specific pubkey (excluding sent), sorted by date descending
+  Future<List<Email>> getEmailsByRecipient(
+    String recipientPubkey, {
+    int? limit,
+    int? offset,
+  }) async {
+    final finder = Finder(
+      filter: Filter.and([
+        Filter.equals('recipientPubkey', recipientPubkey),
+        Filter.notEquals('senderPubkey', recipientPubkey),
+      ]),
+      sortOrders: [SortOrder('date', false)],
+      limit: limit,
+      offset: offset,
+    );
+    final records = await _emailsStore.find(_db, finder: finder);
+    return records
+        .map((r) => Email.fromJson(r.value as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<bool> isProcessed(String eventId) async {
     final record = await _processedIdsStore.record(eventId).get(_db);
     return record != null;
