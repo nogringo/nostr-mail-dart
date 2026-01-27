@@ -1,3 +1,9 @@
+## 1.3.1
+
+- **Bug fix**: `recipientPubkey` now correctly extracted from the `p` tag of the email event instead of using the gift wrap recipient
+- **Bug fix**: Fallback to HTML body for single-part HTML emails
+- **Breaking**: Emails without a `p` tag are now skipped (malformed emails)
+
 ## 1.3.0
 
 - **New**: NIP-32 labels system (`addLabel`, `removeLabel`, `moveToTrash`, `markAsRead`, `star`, etc.)
