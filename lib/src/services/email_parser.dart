@@ -2,6 +2,7 @@ import 'package:enough_mail/enough_mail.dart';
 
 import '../exceptions.dart';
 import '../models/email.dart';
+import '../utils/html_utils.dart';
 
 class EmailParser {
   Email parse({
@@ -20,7 +21,16 @@ class EmailParser {
           ? mimeMessage.to!.first.email
           : '';
       final subject = mimeMessage.decodeSubject() ?? '';
-      final body = mimeMessage.decodeTextPlainPart() ?? '';
+      var body = mimeMessage.decodeTextPlainPart() ?? '';
+
+      // Fallback to HTML content (stripped of tags) if text/plain is empty
+      if (body.isEmpty) {
+        final html = mimeMessage.decodeTextHtmlPart();
+        if (html != null && html.isNotEmpty) {
+          body = stripHtmlTags(html);
+        }
+      }
+
       final date = mimeMessage.decodeDate() ?? DateTime.now();
 
       return Email(

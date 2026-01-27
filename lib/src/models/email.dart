@@ -1,11 +1,13 @@
 import 'package:enough_mail/enough_mail.dart';
 
+import '../utils/html_utils.dart';
+
 class Email {
   final String id;
   final String from;
   final String to;
   final String subject;
-  final String body;
+  final String _body;
   final DateTime date;
   final String senderPubkey;
   final String recipientPubkey;
@@ -16,19 +18,29 @@ class Email {
     required this.from,
     required this.to,
     required this.subject,
-    required this.body,
+    required String body,
     required this.date,
     required this.senderPubkey,
     required this.recipientPubkey,
     required this.rawContent,
-  });
+  }) : _body = body;
+
+  /// Get text body, falling back to stripped HTML if empty
+  String get body {
+    if (_body.isNotEmpty) return _body;
+
+    final html = htmlBody;
+    if (html == null || html.isEmpty) return '';
+
+    return stripHtmlTags(html);
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'from': from,
     'to': to,
     'subject': subject,
-    'body': body,
+    'body': _body,
     'date': date.toIso8601String(),
     'senderPubkey': senderPubkey,
     'recipientPubkey': recipientPubkey,
