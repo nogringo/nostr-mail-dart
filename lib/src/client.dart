@@ -531,11 +531,15 @@ class NostrMailClient {
 
         if (unwrapped.kind != _emailKind) return;
 
+        // Extract the real recipient from the 'p' tag of the email event
+        final recipientPubkey = unwrapped.getFirstTag('p');
+        if (recipientPubkey == null) return;
+
         final email = _parser.parse(
           rawContent: unwrapped.content,
           eventId: event.id,
           senderPubkey: unwrapped.pubKey,
-          recipientPubkey: pubkey,
+          recipientPubkey: recipientPubkey,
         );
 
         await _store.saveEmail(email);
@@ -849,11 +853,15 @@ class NostrMailClient {
         // Only process email events (kind 1301)
         if (unwrapped.kind != _emailKind) continue;
 
+        // Extract the real recipient from the 'p' tag of the email event
+        final recipientPubkey = unwrapped.getFirstTag('p');
+        if (recipientPubkey == null) continue;
+
         final email = _parser.parse(
           rawContent: unwrapped.content,
           eventId: event.id,
           senderPubkey: unwrapped.pubKey,
-          recipientPubkey: pubkey,
+          recipientPubkey: recipientPubkey,
         );
 
         await _store.saveEmail(email);
@@ -914,6 +922,9 @@ class NostrMailClient {
     if (keepCopy && recipientPubkey != senderPubkey) {
       await _publishGiftWrapped(emailEvent, senderPubkey);
     }
+
+    // TODO: Store email locally immediately after sending instead of waiting
+    // for the copy to be received back from the relay
   }
 
   /// Resolve recipient to Nostr pubkey
