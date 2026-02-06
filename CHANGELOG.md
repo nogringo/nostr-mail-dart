@@ -1,3 +1,8 @@
+## 1.4.0
+
+- **New**: `resync()` method to clear fetchedRanges and sync from scratch (useful for recovering late-arriving events)
+- **Improvement**: Refactored filter creation into reusable private methods
+
 ## 1.3.1
 
 - **Bug fix**: `recipientPubkey` now correctly extracted from the `p` tag of the email event instead of using the gift wrap recipient
