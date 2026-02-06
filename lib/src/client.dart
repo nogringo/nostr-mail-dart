@@ -317,7 +317,7 @@ class NostrMailClient {
     int? since,
     int until,
   ) async {
-    final baseFilter = ndk.Filter(kinds: [_labelKind], authors: [pubkey]);
+    final baseFilter = _labelFilter(pubkey);
 
     final existingRanges = await _ndk.fetchedRanges.getForFilter(baseFilter);
 
@@ -390,10 +390,7 @@ class NostrMailClient {
     int? since,
     int until,
   ) async {
-    final baseFilter = ndk.Filter(
-      kinds: [_deletionRequestKind],
-      authors: [pubkey],
-    )..setTag('k', [_labelKind.toString()]);
+    final baseFilter = _labelDeletionFilter(pubkey);
 
     final existingRanges = await _ndk.fetchedRanges.getForFilter(baseFilter);
 
@@ -729,6 +726,44 @@ class NostrMailClient {
     await _syncLabels(pubkey, writeRelays, effectiveSince, effectiveUntil);
   }
 
+  /// Resync all data from relays, ignoring cached fetchedRanges
+  ///
+  /// This clears all fetchedRanges for email-related filters and performs
+  /// a full sync. Use this to recover events that may have been missed
+  /// due to late broadcasts (e.g., when another device retried a failed send).
+  Future<void> resync({int? since, int? until}) async {
+    final pubkey = _ndk.accounts.getPublicKey();
+    if (pubkey == null) {
+      throw NostrMailException('No account configured in ndk');
+    }
+
+    // Clear all fetchedRanges in parallel
+    await Future.wait([
+      _ndk.fetchedRanges.clearForFilter(_emailFilter(pubkey)),
+      _ndk.fetchedRanges.clearForFilter(_emailDeletionFilter(pubkey)),
+      _ndk.fetchedRanges.clearForFilter(_labelFilter(pubkey)),
+      _ndk.fetchedRanges.clearForFilter(_labelDeletionFilter(pubkey)),
+    ]);
+
+    // Now sync normally (will fetch everything since ranges are cleared)
+    await sync(since: since, until: until);
+  }
+
+  // Filter builders for reuse
+  ndk.Filter _emailFilter(String pubkey) =>
+      ndk.Filter(kinds: [GiftWrap.kGiftWrapEventkind], pTags: [pubkey]);
+
+  ndk.Filter _emailDeletionFilter(String pubkey) =>
+      ndk.Filter(kinds: [_deletionRequestKind], authors: [pubkey])
+        ..setTag('k', [_giftWrapKind.toString()]);
+
+  ndk.Filter _labelFilter(String pubkey) =>
+      ndk.Filter(kinds: [_labelKind], authors: [pubkey]);
+
+  ndk.Filter _labelDeletionFilter(String pubkey) =>
+      ndk.Filter(kinds: [_deletionRequestKind], authors: [pubkey])
+        ..setTag('k', [_labelKind.toString()]);
+
   /// Sync emails from relays (internal)
   Future<void> _syncEmails(
     String pubkey,
@@ -736,10 +771,7 @@ class NostrMailClient {
     int? since,
     int until,
   ) async {
-    final baseFilter = ndk.Filter(
-      kinds: [GiftWrap.kGiftWrapEventkind],
-      pTags: [pubkey],
-    );
+    final baseFilter = _emailFilter(pubkey);
 
     // Check if we have any existing fetched ranges
     final existingRanges = await _ndk.fetchedRanges.getForFilter(baseFilter);
@@ -776,10 +808,7 @@ class NostrMailClient {
     int? since,
     int until,
   ) async {
-    final baseFilter = ndk.Filter(
-      kinds: [_deletionRequestKind],
-      authors: [pubkey],
-    )..setTag('k', [_giftWrapKind.toString()]);
+    final baseFilter = _emailDeletionFilter(pubkey);
 
     // Check existing fetched ranges
     final existingRanges = await _ndk.fetchedRanges.getForFilter(baseFilter);
