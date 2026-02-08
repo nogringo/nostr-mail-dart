@@ -325,7 +325,7 @@ class NostrMailClient {
       final filter = baseFilter.clone()
         ..since = since
         ..until = until;
-      await _processLabelAdditions(filter, writeRelays);
+      await _fetchAndProcessLabelAdditions(filter, writeRelays);
       return;
     }
 
@@ -338,11 +338,11 @@ class NostrMailClient {
     if (optimizedFilters.isEmpty) return;
 
     for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
-      await _processLabelAdditions(gapFilter, writeRelays);
+      await _fetchAndProcessLabelAdditions(gapFilter, writeRelays);
     }
   }
 
-  Future<void> _processLabelAdditions(
+  Future<void> _fetchAndProcessLabelAdditions(
     ndk.Filter filter,
     List<String> relays,
   ) async {
@@ -398,7 +398,7 @@ class NostrMailClient {
       final filter = baseFilter.clone()
         ..since = since
         ..until = until;
-      await _processLabelDeletions(filter, writeRelays);
+      await _fetchAndProcessLabelDeletions(filter, writeRelays);
       return;
     }
 
@@ -411,11 +411,11 @@ class NostrMailClient {
     if (optimizedFilters.isEmpty) return;
 
     for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
-      await _processLabelDeletions(gapFilter, writeRelays);
+      await _fetchAndProcessLabelDeletions(gapFilter, writeRelays);
     }
   }
 
-  Future<void> _processLabelDeletions(
+  Future<void> _fetchAndProcessLabelDeletions(
     ndk.Filter filter,
     List<String> relays,
   ) async {
@@ -713,8 +713,10 @@ class NostrMailClient {
     final effectiveUntil = until ?? now;
 
     // Get relays
-    final dmRelays = await _getDmRelays(pubkey);
-    final writeRelays = await _getWriteRelays(pubkey);
+    final (dmRelays, writeRelays) = await (
+      _getDmRelays(pubkey),
+      _getWriteRelays(pubkey),
+    ).wait;
 
     // Sync emails
     await _syncEmails(pubkey, dmRelays, effectiveSince, effectiveUntil);
@@ -747,6 +749,32 @@ class NostrMailClient {
 
     // Now sync normally (will fetch everything since ranges are cleared)
     await sync(since: since, until: until);
+  }
+
+  // TODO: Separate fetch and process steps to handle offline NIP-46 bunker.
+  // Fetch can work without signer, process (decrypt) needs it.
+
+  /// Fetches all events without fetchedRanges optimization
+  ///
+  /// Simple parallel queries to all relays.
+  Future<void> fetchRecent() async {
+    final pubkey = _ndk.accounts.getPublicKey();
+    if (pubkey == null) {
+      throw NostrMailException('No account configured in ndk');
+    }
+
+    final (dmRelays, writeRelays) = await (
+      _getDmRelays(pubkey),
+      _getWriteRelays(pubkey),
+    ).wait;
+
+    // Fetch all in parallel - simple queries, no fetchedRanges
+    await Future.wait([
+      _fetchAndProcessEmails(_emailFilter(pubkey), pubkey, relays: dmRelays),
+      _fetchAndProcessEmailDeletions(_emailDeletionFilter(pubkey), dmRelays),
+      _fetchAndProcessLabelAdditions(_labelFilter(pubkey), writeRelays),
+      _fetchAndProcessLabelDeletions(_labelDeletionFilter(pubkey), writeRelays),
+    ]);
   }
 
   // Filter builders for reuse
@@ -817,7 +845,7 @@ class NostrMailClient {
       final filter = baseFilter.clone()
         ..since = since
         ..until = until;
-      await _processEmailDeletions(filter, dmRelays);
+      await _fetchAndProcessEmailDeletions(filter, dmRelays);
       return;
     }
 
@@ -831,11 +859,11 @@ class NostrMailClient {
     if (optimizedFilters.isEmpty) return;
 
     for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
-      await _processEmailDeletions(gapFilter, dmRelays);
+      await _fetchAndProcessEmailDeletions(gapFilter, dmRelays);
     }
   }
 
-  Future<void> _processEmailDeletions(
+  Future<void> _fetchAndProcessEmailDeletions(
     ndk.Filter filter,
     List<String> relays,
   ) async {
