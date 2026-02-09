@@ -1,3 +1,7 @@
+## 1.4.2
+
+- **New**: add fetchRecent() for simple parallel sync without fetchedRanges
+
 ## 1.4.0
 
 - **New**: `resync()` method to clear fetchedRanges and sync from scratch (useful for recovering late-arriving events)
