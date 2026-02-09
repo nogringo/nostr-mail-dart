@@ -5,7 +5,6 @@ import '../models/email.dart';
 class EmailStore {
   final Database _db;
   final _emailsStore = stringMapStoreFactory.store('emails');
-  final _processedIdsStore = stringMapStoreFactory.store('processed_ids');
 
   EmailStore(this._db);
 
@@ -86,14 +85,5 @@ class EmailStore {
     return records
         .map((r) => Email.fromJson(r.value as Map<String, dynamic>))
         .toList();
-  }
-
-  Future<bool> isProcessed(String eventId) async {
-    final record = await _processedIdsStore.record(eventId).get(_db);
-    return record != null;
-  }
-
-  Future<void> markProcessed(String eventId) async {
-    await _processedIdsStore.record(eventId).put(_db, {'processed': true});
   }
 }

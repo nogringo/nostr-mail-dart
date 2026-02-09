@@ -10,6 +10,7 @@ import 'models/mail_event.dart';
 import 'services/bridge_resolver.dart';
 import 'services/email_parser.dart';
 import 'storage/email_store.dart';
+import 'storage/gift_wrap_store.dart';
 import 'storage/label_store.dart';
 
 const _emailKind = 1301;
@@ -29,6 +30,7 @@ class NostrMailClient {
   final Ndk _ndk;
   final EmailStore _store;
   final LabelStore _labelStore;
+  final GiftWrapStore _giftWrapStore;
   final EmailParser _parser;
   final BridgeResolver _bridgeResolver;
 
@@ -40,6 +42,7 @@ class NostrMailClient {
     : _ndk = ndk,
       _store = EmailStore(db),
       _labelStore = LabelStore(db),
+      _giftWrapStore = GiftWrapStore(db),
       _parser = EmailParser(),
       _bridgeResolver = BridgeResolver();
 
@@ -518,40 +521,9 @@ class NostrMailClient {
 
     // Process emails
     emailResponse.stream.listen((event) async {
-      if (await _store.isProcessed(event.id)) return;
-
-      try {
-        final unwrapped = await _unwrapGiftWrap(event);
-        if (unwrapped == null) return;
-
-        await _store.markProcessed(event.id);
-
-        if (unwrapped.kind != _emailKind) return;
-
-        // Extract the real recipient from the 'p' tag of the email event
-        final recipientPubkey = unwrapped.getFirstTag('p');
-        if (recipientPubkey == null) return;
-
-        final email = _parser.parse(
-          rawContent: unwrapped.content,
-          eventId: event.id,
-          senderPubkey: unwrapped.pubKey,
-          recipientPubkey: recipientPubkey,
-        );
-
-        await _store.saveEmail(email);
-
-        _watchController?.add(
-          EmailReceived(
-            emailId: email.id,
-            from: email.from,
-            subject: email.subject,
-            timestamp: email.date,
-          ),
-        );
-      } catch (e) {
-        // Skip malformed events
-      }
+      if (await _giftWrapStore.isKnown(event.id)) return;
+      await _giftWrapStore.markFetched(event.id);
+      await processUnprocessed(batchSize: 1);
     });
 
     // Process label additions
@@ -751,9 +723,6 @@ class NostrMailClient {
     await sync(since: since, until: until);
   }
 
-  // TODO: Separate fetch and process steps to handle offline NIP-46 bunker.
-  // Fetch can work without signer, process (decrypt) needs it.
-
   /// Fetches all events without fetchedRanges optimization
   ///
   /// Simple parallel queries to all relays.
@@ -770,11 +739,14 @@ class NostrMailClient {
 
     // Fetch all in parallel - simple queries, no fetchedRanges
     await Future.wait([
-      _fetchAndProcessEmails(_emailFilter(pubkey), pubkey, relays: dmRelays),
+      _fetchEmails(_emailFilter(pubkey), relays: dmRelays),
       _fetchAndProcessEmailDeletions(_emailDeletionFilter(pubkey), dmRelays),
       _fetchAndProcessLabelAdditions(_labelFilter(pubkey), writeRelays),
       _fetchAndProcessLabelDeletions(_labelDeletionFilter(pubkey), writeRelays),
     ]);
+
+    // Process fetched emails
+    await processUnprocessed();
   }
 
   // Filter builders for reuse
@@ -809,7 +781,8 @@ class NostrMailClient {
       final filter = baseFilter.clone()
         ..since = since
         ..until = until;
-      await _fetchAndProcessEmails(filter, pubkey, relays: dmRelays);
+      await _fetchEmails(filter, relays: dmRelays);
+      await processUnprocessed();
       return;
     }
 
@@ -825,8 +798,11 @@ class NostrMailClient {
 
     // Fetch each gap
     for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
-      await _fetchAndProcessEmails(gapFilter, pubkey, relays: dmRelays);
+      await _fetchEmails(gapFilter, relays: dmRelays);
     }
+
+    // Process all fetched emails
+    await processUnprocessed();
   }
 
   /// Sync email deletions from relays (internal)
@@ -886,10 +862,9 @@ class NostrMailClient {
     }
   }
 
-  /// Fetch events from relays and process them
-  Future<void> _fetchAndProcessEmails(
-    ndk.Filter filter,
-    String pubkey, {
+  /// Fetch gift wraps from relays and mark as fetched (no decryption)
+  Future<void> _fetchEmails(
+    ndk.Filter filter, {
     Iterable<String>? relays,
   }) async {
     final response = _ndk.requests.query(
@@ -897,34 +872,71 @@ class NostrMailClient {
       explicitRelays: relays,
     );
 
-    await for (final event in response.stream) {
-      if (await _store.isProcessed(event.id)) continue;
+    final events = await response.future;
+    final ids = events.map((e) => e.id).toList();
+    await _giftWrapStore.markFetchedBatch(ids);
+  }
 
-      try {
-        final unwrapped = await _unwrapGiftWrap(event);
-        if (unwrapped == null) continue;
+  /// Process unprocessed gift wraps in batches
+  ///
+  /// Decrypts gift wraps that have been fetched but not yet processed.
+  /// Use this to resume processing after a bunker was offline.
+  // TODO: Concurrent calls may cause duplicate processing. Needs a task queue
+  // with retry/deduplication at the NDK signer level.
+  Future<void> processUnprocessed({int batchSize = 10}) async {
+    while (true) {
+      final ids = await _giftWrapStore.getUnprocessed(limit: batchSize);
+      if (ids.isEmpty) break;
 
-        // Mark as processed to avoid re-decrypting non-email gift wraps (DMs, etc.)
-        await _store.markProcessed(event.id);
+      // Load events from NDK cache
+      final events = await _ndk.config.cache.loadEvents(ids: ids);
 
-        // Only process email events (kind 1301)
-        if (unwrapped.kind != _emailKind) continue;
+      // Process batch in parallel
+      await Future.wait(events.map(_processEvent));
+    }
+  }
 
-        // Extract the real recipient from the 'p' tag of the email event
-        final recipientPubkey = unwrapped.getFirstTag('p');
-        if (recipientPubkey == null) continue;
+  /// Process a single gift wrap event
+  Future<void> _processEvent(Nip01Event event) async {
+    try {
+      final unwrapped = await _unwrapGiftWrap(event);
 
-        final email = _parser.parse(
-          rawContent: unwrapped.content,
-          eventId: event.id,
-          senderPubkey: unwrapped.pubKey,
-          recipientPubkey: recipientPubkey,
-        );
+      // Bunker offline? Don't mark processed, retry later
+      if (unwrapped == null) return;
 
-        await _store.saveEmail(email);
-      } catch (e) {
-        continue;
+      // Not an email (DM, etc.) - mark processed to skip in future
+      if (unwrapped.kind != _emailKind) {
+        await _giftWrapStore.markProcessed(event.id);
+        return;
       }
+
+      // Extract the real recipient from the 'p' tag of the email event
+      final recipientPubkey = unwrapped.getFirstTag('p');
+      if (recipientPubkey == null) {
+        await _giftWrapStore.markProcessed(event.id);
+        return;
+      }
+
+      final email = _parser.parse(
+        rawContent: unwrapped.content,
+        eventId: event.id,
+        senderPubkey: unwrapped.pubKey,
+        recipientPubkey: recipientPubkey,
+      );
+
+      await _store.saveEmail(email);
+      await _giftWrapStore.markProcessed(event.id);
+
+      _watchController?.add(
+        EmailReceived(
+          emailId: email.id,
+          from: email.from,
+          subject: email.subject,
+          timestamp: email.date,
+        ),
+      );
+    } catch (e) {
+      // Don't mark processed - might be temporary failure, retry later
     }
   }
 
@@ -1045,6 +1057,8 @@ class NostrMailClient {
   }
 
   /// Unwrap a NIP-59 gift-wrapped event
+  // TODO: Distinguish between bunker offline (retry later) and invalid event (skip forever).
+  // Currently both cases return null, so invalid events will be retried indefinitely.
   Future<Nip01Event?> _unwrapGiftWrap(Nip01Event giftWrapEvent) async {
     try {
       final unwrapped = await _ndk.giftWrap.fromGiftWrap(

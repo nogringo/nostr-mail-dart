@@ -7,6 +7,7 @@ import 'package:nostr_mail/src/services/bridge_resolver.dart';
 import 'package:nostr_mail/src/services/email_parser.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:nostr_mail/src/storage/email_store.dart';
+import 'package:nostr_mail/src/storage/gift_wrap_store.dart';
 import 'package:nostr_mail/src/storage/label_store.dart';
 import 'package:test/test.dart';
 
@@ -515,20 +516,6 @@ void main() {
       expect(result, isNull);
     });
 
-    test('isProcessed returns false for new event', () async {
-      final result = await store.isProcessed('new-event-id');
-
-      expect(result, isFalse);
-    });
-
-    test('markProcessed and isProcessed', () async {
-      await store.markProcessed('processed-event');
-
-      final result = await store.isProcessed('processed-event');
-
-      expect(result, isTrue);
-    });
-
     test('saveEmail updates existing email with same id', () async {
       final original = Email(
         id: 'update-test',
@@ -847,6 +834,93 @@ void main() {
       final labels = await store.getLabelsForEmail('email-without-labels');
 
       expect(labels, isEmpty);
+    });
+  });
+
+  group('GiftWrapStore', () {
+    late GiftWrapStore store;
+
+    setUp(() async {
+      final db = await databaseFactoryMemory.openDatabase(
+        'test_gift_wrap_db_${DateTime.now().millisecondsSinceEpoch}',
+      );
+      store = GiftWrapStore(db);
+    });
+
+    test('isProcessed returns false for unknown event', () async {
+      final result = await store.isProcessed('unknown-id');
+
+      expect(result, isFalse);
+    });
+
+    test('isKnown returns false for unknown event', () async {
+      final result = await store.isKnown('unknown-id');
+
+      expect(result, isFalse);
+    });
+
+    test('markFetched adds event as unprocessed', () async {
+      await store.markFetched('event-1');
+
+      expect(await store.isKnown('event-1'), isTrue);
+      expect(await store.isProcessed('event-1'), isFalse);
+    });
+
+    test('markFetched does not overwrite existing entry', () async {
+      await store.markFetched('event-1');
+      await store.markProcessed('event-1');
+      await store.markFetched('event-1'); // Should not reset to unprocessed
+
+      expect(await store.isProcessed('event-1'), isTrue);
+    });
+
+    test('markProcessed updates event to processed', () async {
+      await store.markFetched('event-1');
+      await store.markProcessed('event-1');
+
+      expect(await store.isProcessed('event-1'), isTrue);
+    });
+
+    test('getUnprocessed returns only unprocessed events', () async {
+      await store.markFetched('event-1');
+      await store.markFetched('event-2');
+      await store.markFetched('event-3');
+      await store.markProcessed('event-2');
+
+      final unprocessed = await store.getUnprocessed();
+
+      expect(unprocessed.length, 2);
+      expect(unprocessed, contains('event-1'));
+      expect(unprocessed, contains('event-3'));
+      expect(unprocessed, isNot(contains('event-2')));
+    });
+
+    test('getUnprocessed respects limit', () async {
+      await store.markFetched('event-1');
+      await store.markFetched('event-2');
+      await store.markFetched('event-3');
+
+      final unprocessed = await store.getUnprocessed(limit: 2);
+
+      expect(unprocessed.length, 2);
+    });
+
+    test('markFetchedBatch adds multiple events', () async {
+      await store.markFetchedBatch(['event-1', 'event-2', 'event-3']);
+
+      expect(await store.isKnown('event-1'), isTrue);
+      expect(await store.isKnown('event-2'), isTrue);
+      expect(await store.isKnown('event-3'), isTrue);
+      expect(await store.isProcessed('event-1'), isFalse);
+    });
+
+    test('markProcessedBatch updates multiple events', () async {
+      await store.markFetchedBatch(['event-1', 'event-2', 'event-3']);
+      await store.markProcessedBatch(['event-1', 'event-3']);
+
+      expect(await store.isProcessed('event-1'), isTrue);
+      expect(await store.isProcessed('event-2'), isFalse);
+      expect(await store.isProcessed('event-3'), isTrue);
     });
   });
 }
