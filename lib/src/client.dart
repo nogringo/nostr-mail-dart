@@ -330,7 +330,8 @@ class NostrMailClient {
       final filter = baseFilter.clone()
         ..since = since
         ..until = until;
-      await _fetchAndProcessLabelAdditions(filter, writeRelays);
+      final events = await _fetchEvents(filter, writeRelays);
+      await _processLabelAdditions(events);
       return;
     }
 
@@ -343,20 +344,14 @@ class NostrMailClient {
     if (optimizedFilters.isEmpty) return;
 
     for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
-      await _fetchAndProcessLabelAdditions(gapFilter, writeRelays);
+      final events = await _fetchEvents(gapFilter, writeRelays);
+      await _processLabelAdditions(events);
     }
   }
 
-  Future<void> _fetchAndProcessLabelAdditions(
-    ndk.Filter filter,
-    List<String> relays,
-  ) async {
-    final response = _ndk.requests.query(
-      filter: filter,
-      explicitRelays: relays,
-    );
-
-    await for (final event in response.stream) {
+  // TODO: store events in a dedicated store before processing (like gift wraps)
+  Future<void> _processLabelAdditions(List<Nip01Event> events) async {
+    for (final event in events) {
       // Check if it's a 'mail' namespace label
       final namespaceTag = event.tags.firstWhere(
         (t) => t.isNotEmpty && t[0] == 'L' && t[1] == _labelNamespace,
@@ -403,7 +398,8 @@ class NostrMailClient {
       final filter = baseFilter.clone()
         ..since = since
         ..until = until;
-      await _fetchAndProcessLabelDeletions(filter, writeRelays);
+      final events = await _fetchEvents(filter, writeRelays);
+      await _processLabelDeletions(events);
       return;
     }
 
@@ -416,20 +412,14 @@ class NostrMailClient {
     if (optimizedFilters.isEmpty) return;
 
     for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
-      await _fetchAndProcessLabelDeletions(gapFilter, writeRelays);
+      final events = await _fetchEvents(gapFilter, writeRelays);
+      await _processLabelDeletions(events);
     }
   }
 
-  Future<void> _fetchAndProcessLabelDeletions(
-    ndk.Filter filter,
-    List<String> relays,
-  ) async {
-    final response = _ndk.requests.query(
-      filter: filter,
-      explicitRelays: relays,
-    );
-
-    await for (final event in response.stream) {
+  // TODO: store events in a dedicated store before processing (like gift wraps)
+  Future<void> _processLabelDeletions(List<Nip01Event> events) async {
+    for (final event in events) {
       for (final tag in event.tags) {
         if (tag.isNotEmpty && tag[0] == 'e') {
           final deletedEventId = tag[1];
@@ -740,16 +730,19 @@ class NostrMailClient {
       _getWriteRelays(pubkey),
     ).wait;
 
-    // Fetch all in parallel - simple queries, no fetchedRanges
-    await Future.wait([
+    // Fetch all in parallel
+    final results = await (
       _fetchEmails(_emailFilter(pubkey), relays: dmRelays),
-      _fetchAndProcessEmailDeletions(_emailDeletionFilter(pubkey), dmRelays),
-      _fetchAndProcessLabelAdditions(_labelFilter(pubkey), writeRelays),
-      _fetchAndProcessLabelDeletions(_labelDeletionFilter(pubkey), writeRelays),
-    ]);
+      _fetchEvents(_emailDeletionFilter(pubkey), dmRelays),
+      _fetchEvents(_labelFilter(pubkey), writeRelays),
+      _fetchEvents(_labelDeletionFilter(pubkey), writeRelays),
+    ).wait;
 
-    // Process fetched emails
+    // Process all fetched data
     await processUnprocessed();
+    await _processEmailDeletions(results.$2);
+    await _processLabelAdditions(results.$3);
+    await _processLabelDeletions(results.$4);
   }
 
   // Filter builders for reuse
@@ -824,7 +817,8 @@ class NostrMailClient {
       final filter = baseFilter.clone()
         ..since = since
         ..until = until;
-      await _fetchAndProcessEmailDeletions(filter, dmRelays);
+      final events = await _fetchEvents(filter, dmRelays);
+      await _processEmailDeletions(events);
       return;
     }
 
@@ -838,12 +832,12 @@ class NostrMailClient {
     if (optimizedFilters.isEmpty) return;
 
     for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
-      await _fetchAndProcessEmailDeletions(gapFilter, dmRelays);
+      final events = await _fetchEvents(gapFilter, dmRelays);
+      await _processEmailDeletions(events);
     }
   }
 
-  // TODO: split this complex method
-  Future<void> _fetchAndProcessEmailDeletions(
+  Future<List<Nip01Event>> _fetchEvents(
     ndk.Filter filter,
     List<String> relays,
   ) async {
@@ -851,8 +845,12 @@ class NostrMailClient {
       filter: filter,
       explicitRelays: relays,
     );
+    return response.future;
+  }
 
-    await for (final event in response.stream) {
+  // TODO: store events in a dedicated store before processing (like gift wraps)
+  Future<void> _processEmailDeletions(List<Nip01Event> events) async {
+    for (final event in events) {
       for (final tag in event.tags) {
         if (tag.isNotEmpty && tag[0] == 'e') {
           final emailId = tag[1];
