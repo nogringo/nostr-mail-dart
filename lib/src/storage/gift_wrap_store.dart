@@ -81,4 +81,9 @@ class GiftWrapStore {
     if (record == null) return false;
     return record['processed'] == true;
   }
+
+  /// Delete all gift wraps
+  Future<void> clearAll() async {
+    await _store.delete(_db);
+  }
 }

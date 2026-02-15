@@ -635,6 +635,15 @@ class NostrMailClient {
     _watchBroadcastStream = null;
   }
 
+  /// Clear all local data (emails, labels, gift wraps)
+  Future<void> clearAll() async {
+    await Future.wait([
+      _store.clearAll(),
+      _labelStore.clearAll(),
+      _giftWrapStore.clearAll(),
+    ]);
+  }
+
   /// Stream of new emails
   Stream<Email> get onEmail => watch()
       .where((e) => e is EmailReceived)

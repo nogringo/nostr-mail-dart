@@ -86,4 +86,9 @@ class EmailStore {
         .map((r) => Email.fromJson(r.value as Map<String, dynamic>))
         .toList();
   }
+
+  /// Delete all emails
+  Future<void> clearAll() async {
+    await _emailsStore.delete(_db);
+  }
 }

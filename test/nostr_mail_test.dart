@@ -629,6 +629,17 @@ void main() {
       expect(emails.length, 1);
       expect(emails[0].id, 'exists');
     });
+
+    test('clearAll removes all emails', () async {
+      await store.saveEmail(createTestEmail('email-1'));
+      await store.saveEmail(createTestEmail('email-2'));
+      await store.saveEmail(createTestEmail('email-3'));
+
+      await store.clearAll();
+
+      final emails = await store.getEmails();
+      expect(emails, isEmpty);
+    });
   });
 
   group('Exceptions', () {
@@ -836,6 +847,26 @@ void main() {
 
       expect(labels, isEmpty);
     });
+
+    test('clearAll removes all labels', () async {
+      await store.saveLabel(
+        emailId: 'email-1',
+        label: 'folder:trash',
+        labelEventId: 'label-event-1',
+      );
+      await store.saveLabel(
+        emailId: 'email-2',
+        label: 'state:read',
+        labelEventId: 'label-event-2',
+      );
+
+      await store.clearAll();
+
+      final labels1 = await store.getLabelsForEmail('email-1');
+      final labels2 = await store.getLabelsForEmail('email-2');
+      expect(labels1, isEmpty);
+      expect(labels2, isEmpty);
+    });
   });
 
   group('GiftWrapStore', () {
@@ -972,6 +1003,19 @@ void main() {
       ]);
       expect(unprocessed.first.content, 'encrypted content');
       expect(unprocessed.first.sig, 'signature-123');
+    });
+
+    test('clearAll removes all gift wraps', () async {
+      await store.save(createTestEvent('event-1'));
+      await store.save(createTestEvent('event-2'));
+      await store.markProcessed('event-1');
+
+      await store.clearAll();
+
+      expect(await store.isKnown('event-1'), isFalse);
+      expect(await store.isKnown('event-2'), isFalse);
+      final unprocessed = await store.getUnprocessedEvents();
+      expect(unprocessed, isEmpty);
     });
   });
 }

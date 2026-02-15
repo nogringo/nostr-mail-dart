@@ -75,4 +75,9 @@ class LabelStore {
   }
 
   String _makeKey(String emailId, String label) => '$emailId:$label';
+
+  /// Delete all labels
+  Future<void> clearAll() async {
+    await _labelsStore.delete(_db);
+  }
 }
