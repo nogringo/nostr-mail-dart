@@ -1,3 +1,7 @@
+## 1.4.3
+
+- **Fix**: save giftwraps events outside of NDK cache
+
 ## 1.4.2
 
 - **New**: add fetchRecent() for simple parallel sync without fetchedRanges
