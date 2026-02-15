@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
+import 'package:ndk/ndk.dart' show Nip01Event;
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:nostr_mail/src/services/bridge_resolver.dart';
 import 'package:nostr_mail/src/services/email_parser.dart';
@@ -840,6 +841,18 @@ void main() {
   group('GiftWrapStore', () {
     late GiftWrapStore store;
 
+    Nip01Event createTestEvent(String id) {
+      return Nip01Event(
+        id: id,
+        pubKey: 'test-pubkey',
+        createdAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        kind: 1059,
+        tags: [],
+        content: 'test content',
+        sig: 'test-sig',
+      );
+    }
+
     setUp(() async {
       final db = await databaseFactoryMemory.openDatabase(
         'test_gift_wrap_db_${DateTime.now().millisecondsSinceEpoch}',
@@ -859,54 +872,60 @@ void main() {
       expect(result, isFalse);
     });
 
-    test('markFetched adds event as unprocessed', () async {
-      await store.markFetched('event-1');
+    test('save adds event as unprocessed', () async {
+      await store.save(createTestEvent('event-1'));
 
       expect(await store.isKnown('event-1'), isTrue);
       expect(await store.isProcessed('event-1'), isFalse);
     });
 
-    test('markFetched does not overwrite existing entry', () async {
-      await store.markFetched('event-1');
+    test('save does not overwrite existing entry', () async {
+      await store.save(createTestEvent('event-1'));
       await store.markProcessed('event-1');
-      await store.markFetched('event-1'); // Should not reset to unprocessed
+      await store.save(
+        createTestEvent('event-1'),
+      ); // Should not reset to unprocessed
 
       expect(await store.isProcessed('event-1'), isTrue);
     });
 
     test('markProcessed updates event to processed', () async {
-      await store.markFetched('event-1');
+      await store.save(createTestEvent('event-1'));
       await store.markProcessed('event-1');
 
       expect(await store.isProcessed('event-1'), isTrue);
     });
 
-    test('getUnprocessed returns only unprocessed events', () async {
-      await store.markFetched('event-1');
-      await store.markFetched('event-2');
-      await store.markFetched('event-3');
+    test('getUnprocessedEvents returns only unprocessed events', () async {
+      await store.save(createTestEvent('event-1'));
+      await store.save(createTestEvent('event-2'));
+      await store.save(createTestEvent('event-3'));
       await store.markProcessed('event-2');
 
-      final unprocessed = await store.getUnprocessed();
+      final unprocessed = await store.getUnprocessedEvents();
 
       expect(unprocessed.length, 2);
-      expect(unprocessed, contains('event-1'));
-      expect(unprocessed, contains('event-3'));
-      expect(unprocessed, isNot(contains('event-2')));
+      expect(unprocessed.map((e) => e.id), contains('event-1'));
+      expect(unprocessed.map((e) => e.id), contains('event-3'));
+      expect(unprocessed.map((e) => e.id), isNot(contains('event-2')));
     });
 
-    test('getUnprocessed respects limit', () async {
-      await store.markFetched('event-1');
-      await store.markFetched('event-2');
-      await store.markFetched('event-3');
+    test('getUnprocessedEvents respects limit', () async {
+      await store.save(createTestEvent('event-1'));
+      await store.save(createTestEvent('event-2'));
+      await store.save(createTestEvent('event-3'));
 
-      final unprocessed = await store.getUnprocessed(limit: 2);
+      final unprocessed = await store.getUnprocessedEvents(limit: 2);
 
       expect(unprocessed.length, 2);
     });
 
-    test('markFetchedBatch adds multiple events', () async {
-      await store.markFetchedBatch(['event-1', 'event-2', 'event-3']);
+    test('saveBatch adds multiple events', () async {
+      await store.saveBatch([
+        createTestEvent('event-1'),
+        createTestEvent('event-2'),
+        createTestEvent('event-3'),
+      ]);
 
       expect(await store.isKnown('event-1'), isTrue);
       expect(await store.isKnown('event-2'), isTrue);
@@ -915,12 +934,44 @@ void main() {
     });
 
     test('markProcessedBatch updates multiple events', () async {
-      await store.markFetchedBatch(['event-1', 'event-2', 'event-3']);
+      await store.saveBatch([
+        createTestEvent('event-1'),
+        createTestEvent('event-2'),
+        createTestEvent('event-3'),
+      ]);
       await store.markProcessedBatch(['event-1', 'event-3']);
 
       expect(await store.isProcessed('event-1'), isTrue);
       expect(await store.isProcessed('event-2'), isFalse);
       expect(await store.isProcessed('event-3'), isTrue);
+    });
+
+    test('getUnprocessedEvents returns complete event data', () async {
+      final event = Nip01Event(
+        id: 'test-id',
+        pubKey: 'test-pubkey-123',
+        createdAt: 1234567890,
+        kind: 1059,
+        tags: [
+          ['p', 'recipient'],
+        ],
+        content: 'encrypted content',
+        sig: 'signature-123',
+      );
+      await store.save(event);
+
+      final unprocessed = await store.getUnprocessedEvents();
+
+      expect(unprocessed.length, 1);
+      expect(unprocessed.first.id, 'test-id');
+      expect(unprocessed.first.pubKey, 'test-pubkey-123');
+      expect(unprocessed.first.createdAt, 1234567890);
+      expect(unprocessed.first.kind, 1059);
+      expect(unprocessed.first.tags, [
+        ['p', 'recipient'],
+      ]);
+      expect(unprocessed.first.content, 'encrypted content');
+      expect(unprocessed.first.sig, 'signature-123');
     });
   });
 }

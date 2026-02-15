@@ -138,11 +138,13 @@ class NostrMailClient {
       nostrEvent: signedEvent,
       specificRelays: dmRelays,
     );
+    //! long await
     await broadcast.broadcastDoneFuture;
 
     // Delete from local DB
     await _store.deleteEmail(id);
     await _labelStore.deleteLabelsForEmail(id);
+    await _giftWrapStore.remove(id);
   }
 
   /// Add a label to an email (NIP-32)
@@ -522,7 +524,7 @@ class NostrMailClient {
     // Process emails
     emailResponse.stream.listen((event) async {
       if (await _giftWrapStore.isKnown(event.id)) return;
-      await _giftWrapStore.markFetched(event.id);
+      await _giftWrapStore.save(event);
       await processUnprocessed(batchSize: 1);
     });
 
@@ -617,6 +619,7 @@ class NostrMailClient {
             // Delete from local store
             await _store.deleteEmail(emailId);
             await _labelStore.deleteLabelsForEmail(emailId);
+            await _giftWrapStore.remove(emailId);
 
             _watchController?.add(
               EmailDeleted(
@@ -839,6 +842,7 @@ class NostrMailClient {
     }
   }
 
+  // TODO: split this complex method
   Future<void> _fetchAndProcessEmailDeletions(
     ndk.Filter filter,
     List<String> relays,
@@ -856,13 +860,14 @@ class NostrMailClient {
           if (email != null) {
             await _store.deleteEmail(emailId);
             await _labelStore.deleteLabelsForEmail(emailId);
+            await _giftWrapStore.remove(emailId);
           }
         }
       }
     }
   }
 
-  /// Fetch gift wraps from relays and mark as fetched (no decryption)
+  /// Fetch gift wraps from relays and store locally (no decryption)
   Future<void> _fetchEmails(
     ndk.Filter filter, {
     Iterable<String>? relays,
@@ -873,8 +878,7 @@ class NostrMailClient {
     );
 
     final events = await response.future;
-    final ids = events.map((e) => e.id).toList();
-    await _giftWrapStore.markFetchedBatch(ids);
+    await _giftWrapStore.saveBatch(events);
   }
 
   /// Process unprocessed gift wraps in batches
@@ -885,11 +889,10 @@ class NostrMailClient {
   // with retry/deduplication at the NDK signer level.
   Future<void> processUnprocessed({int batchSize = 10}) async {
     while (true) {
-      final ids = await _giftWrapStore.getUnprocessed(limit: batchSize);
-      if (ids.isEmpty) break;
-
-      // Load events from NDK cache
-      final events = await _ndk.config.cache.loadEvents(ids: ids);
+      final events = await _giftWrapStore.getUnprocessedEvents(
+        limit: batchSize,
+      );
+      if (events.isEmpty) break;
 
       // Process batch in parallel
       await Future.wait(events.map(_processEvent));
