@@ -891,40 +891,34 @@ void main() {
       store = GiftWrapStore(db);
     });
 
-    test('isProcessed returns false for unknown event', () async {
-      final result = await store.isProcessed('unknown-id');
+    test('save returns true for new event', () async {
+      final result = await store.save(createTestEvent('event-1'));
 
-      expect(result, isFalse);
+      expect(result, isTrue);
     });
 
-    test('isKnown returns false for unknown event', () async {
-      final result = await store.isKnown('unknown-id');
-
-      expect(result, isFalse);
-    });
-
-    test('save adds event as unprocessed', () async {
+    test('save returns false for existing event', () async {
       await store.save(createTestEvent('event-1'));
+      final result = await store.save(createTestEvent('event-1'));
 
-      expect(await store.isKnown('event-1'), isTrue);
-      expect(await store.isProcessed('event-1'), isFalse);
+      expect(result, isFalse);
     });
 
     test('save does not overwrite existing entry', () async {
       await store.save(createTestEvent('event-1'));
       await store.markProcessed('event-1');
-      await store.save(
-        createTestEvent('event-1'),
-      ); // Should not reset to unprocessed
+      await store.save(createTestEvent('event-1'));
 
-      expect(await store.isProcessed('event-1'), isTrue);
+      final unprocessed = await store.getUnprocessedEvents();
+      expect(unprocessed.map((e) => e.id), isNot(contains('event-1')));
     });
 
     test('markProcessed updates event to processed', () async {
       await store.save(createTestEvent('event-1'));
       await store.markProcessed('event-1');
 
-      expect(await store.isProcessed('event-1'), isTrue);
+      final unprocessed = await store.getUnprocessedEvents();
+      expect(unprocessed.map((e) => e.id), isNot(contains('event-1')));
     });
 
     test('getUnprocessedEvents returns only unprocessed events', () async {
@@ -951,30 +945,15 @@ void main() {
       expect(unprocessed.length, 2);
     });
 
-    test('saveBatch adds multiple events', () async {
-      await store.saveBatch([
-        createTestEvent('event-1'),
-        createTestEvent('event-2'),
-        createTestEvent('event-3'),
-      ]);
+    test('getFailedCount returns count of unprocessed events', () async {
+      await store.save(createTestEvent('event-1'));
+      await store.save(createTestEvent('event-2'));
+      await store.save(createTestEvent('event-3'));
+      await store.markProcessed('event-2');
 
-      expect(await store.isKnown('event-1'), isTrue);
-      expect(await store.isKnown('event-2'), isTrue);
-      expect(await store.isKnown('event-3'), isTrue);
-      expect(await store.isProcessed('event-1'), isFalse);
-    });
+      final count = await store.getFailedCount();
 
-    test('markProcessedBatch updates multiple events', () async {
-      await store.saveBatch([
-        createTestEvent('event-1'),
-        createTestEvent('event-2'),
-        createTestEvent('event-3'),
-      ]);
-      await store.markProcessedBatch(['event-1', 'event-3']);
-
-      expect(await store.isProcessed('event-1'), isTrue);
-      expect(await store.isProcessed('event-2'), isFalse);
-      expect(await store.isProcessed('event-3'), isTrue);
+      expect(count, 2);
     });
 
     test('getUnprocessedEvents returns complete event data', () async {
@@ -1012,10 +991,9 @@ void main() {
 
       await store.clearAll();
 
-      expect(await store.isKnown('event-1'), isFalse);
-      expect(await store.isKnown('event-2'), isFalse);
       final unprocessed = await store.getUnprocessedEvents();
       expect(unprocessed, isEmpty);
+      expect(await store.getFailedCount(), 0);
     });
   });
 }

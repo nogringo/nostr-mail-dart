@@ -512,11 +512,7 @@ class NostrMailClient {
     );
 
     // Process emails
-    emailResponse.stream.listen((event) async {
-      if (await _giftWrapStore.isKnown(event.id)) return;
-      await _giftWrapStore.save(event);
-      await processUnprocessed(batchSize: 1);
-    });
+    emailResponse.stream.listen(_saveAndProcess);
 
     // Process label additions
     labelResponse.stream.listen((event) async {
@@ -741,14 +737,18 @@ class NostrMailClient {
 
     // Fetch all in parallel
     final results = await (
-      _fetchEmails(_emailFilter(pubkey), relays: dmRelays),
+      _fetchEmails(_emailFilter(pubkey), dmRelays),
       _fetchEvents(_emailDeletionFilter(pubkey), dmRelays),
       _fetchEvents(_labelFilter(pubkey), writeRelays),
       _fetchEvents(_labelDeletionFilter(pubkey), writeRelays),
     ).wait;
 
-    // Process all fetched data
-    await processUnprocessed();
+    // Save and process emails
+    for (final event in results.$1) {
+      await _saveAndProcess(event);
+    }
+
+    // Process deletions and labels
     await _processEmailDeletions(results.$2);
     await _processLabelAdditions(results.$3);
     await _processLabelDeletions(results.$4);
@@ -786,8 +786,10 @@ class NostrMailClient {
       final filter = baseFilter.clone()
         ..since = since
         ..until = until;
-      await _fetchEmails(filter, relays: dmRelays);
-      await processUnprocessed();
+      final events = await _fetchEmails(filter, dmRelays);
+      for (final event in events) {
+        await _saveAndProcess(event);
+      }
       return;
     }
 
@@ -803,11 +805,11 @@ class NostrMailClient {
 
     // Fetch each gap
     for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
-      await _fetchEmails(gapFilter, relays: dmRelays);
+      final events = await _fetchEmails(gapFilter, dmRelays);
+      for (final event in events) {
+        await _saveAndProcess(event);
+      }
     }
-
-    // Process all fetched emails
-    await processUnprocessed();
   }
 
   /// Sync email deletions from relays (internal)
@@ -874,57 +876,76 @@ class NostrMailClient {
     }
   }
 
-  /// Fetch gift wraps from relays and store locally (no decryption)
-  Future<void> _fetchEmails(
-    ndk.Filter filter, {
-    Iterable<String>? relays,
-  }) async {
+  /// Fetch gift wraps from relays
+  Future<List<Nip01Event>> _fetchEmails(
+    ndk.Filter filter,
+    List<String> relays,
+  ) async {
     final response = _ndk.requests.query(
       filter: filter,
       explicitRelays: relays,
     );
-
-    final events = await response.future;
-    await _giftWrapStore.saveBatch(events);
+    return response.future;
   }
 
-  /// Process unprocessed gift wraps in batches
+  /// Save and process a gift wrap event if new
+  Future<void> _saveAndProcess(Nip01Event event) async {
+    final isNew = await _giftWrapStore.save(event);
+    if (!isNew) return;
+    await _processEvent(event);
+  }
+
+  /// Retry processing a single failed gift wrap
   ///
-  /// Decrypts gift wraps that have been fetched but not yet processed.
-  /// Use this to resume processing after a bunker was offline.
-  // TODO: Concurrent calls may cause duplicate processing. Needs a task queue
-  // with retry/deduplication at the NDK signer level.
-  Future<void> processUnprocessed({int batchSize = 10}) async {
-    while (true) {
-      final events = await _giftWrapStore.getUnprocessedEvents(
-        limit: batchSize,
-      );
-      if (events.isEmpty) break;
-
-      // Process batch in parallel
-      await Future.wait(events.map(_processEvent));
-    }
+  /// Use this to retry decryption after a bunker comes back online.
+  /// Returns true if processing succeeded.
+  /// Throws [SignerRequestCancelledException] if user cancels.
+  Future<bool> retry(String eventId) async {
+    final event = await _giftWrapStore.getUnprocessed(eventId);
+    if (event == null) return false;
+    return _processEvent(event);
   }
+
+  /// Get count of unprocessed (failed) gift wraps
+  Future<int> getFailedCount() => _giftWrapStore.getFailedCount();
+
+  /// Get unprocessed (failed) gift wrap events
+  Future<List<Nip01Event>> getFailedEvents() =>
+      _giftWrapStore.getUnprocessedEvents();
 
   /// Process a single gift wrap event
-  Future<void> _processEvent(Nip01Event event) async {
+  ///
+  /// Returns true if processing succeeded, false otherwise.
+  /// Throws [SignerRequestCancelledException] if user cancelled.
+  Future<bool> _processEvent(Nip01Event event) async {
+    final myPubkey = _ndk.accounts.getPublicKey();
+
+    // Check if we're the recipient (p-tag check)
+    final recipientTag = event.getFirstTag('p');
+    if (recipientTag != myPubkey) {
+      // Not for this account - skip (might be for another account)
+      return false;
+    }
+
     try {
       final unwrapped = await _unwrapGiftWrap(event);
 
-      // Bunker offline? Don't mark processed, retry later
-      if (unwrapped == null) return;
+      if (unwrapped == null) {
+        // Decryption failed (bunker offline) - don't mark, allow retry
+        return false;
+      }
 
       // Not an email (DM, etc.) - mark processed to skip in future
       if (unwrapped.kind != _emailKind) {
         await _giftWrapStore.markProcessed(event.id);
-        return;
+        return false;
       }
 
       // Extract the real recipient from the 'p' tag of the email event
       final recipientPubkey = unwrapped.getFirstTag('p');
       if (recipientPubkey == null) {
         await _giftWrapStore.markProcessed(event.id);
-        return;
+        return false;
       }
 
       final email = _parser.parse(
@@ -945,8 +966,17 @@ class NostrMailClient {
           timestamp: email.date,
         ),
       );
+      return true;
+    } on SignerRequestCancelledException {
+      // User cancelled - propagate so caller can handle
+      rethrow;
+    } on SignerRequestRejectedException {
+      // Signer rejected - mark as processed since user explicitly rejected
+      await _giftWrapStore.markProcessed(event.id);
+      return false;
     } catch (e) {
-      // Don't mark processed - might be temporary failure, retry later
+      // Other processing error - don't mark, allow manual retry
+      return false;
     }
   }
 
@@ -1067,15 +1097,24 @@ class NostrMailClient {
   }
 
   /// Unwrap a NIP-59 gift-wrapped event
-  // TODO: Distinguish between bunker offline (retry later) and invalid event (skip forever).
-  // Currently both cases return null, so invalid events will be retried indefinitely.
+  ///
+  /// Returns the unwrapped event, or null if decryption failed.
+  /// Throws [SignerRequestCancelledException] if the user cancelled locally.
+  /// Throws [SignerRequestRejectedException] if the signer rejected the request.
   Future<Nip01Event?> _unwrapGiftWrap(Nip01Event giftWrapEvent) async {
     try {
       final unwrapped = await _ndk.giftWrap.fromGiftWrap(
         giftWrap: giftWrapEvent,
       );
       return unwrapped;
+    } on SignerRequestCancelledException {
+      // User cancelled - propagate to caller
+      rethrow;
+    } on SignerRequestRejectedException {
+      // Signer rejected - propagate to caller
+      rethrow;
     } catch (e) {
+      // Other errors (bunker offline, etc.) - return null for retry
       return null;
     }
   }

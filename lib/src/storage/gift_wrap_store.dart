@@ -7,53 +7,34 @@ class GiftWrapStore {
 
   GiftWrapStore(this._db);
 
-  /// Save a gift wrap event (not yet processed)
-  Future<void> save(Nip01Event event) async {
+  /// Save a gift wrap event if new, returns true if it was new
+  Future<bool> save(Nip01Event event) async {
     final existing = await _store.record(event.id).get(_db);
-    if (existing != null) return; // Already known
+    if (existing != null) return false;
     await _store.record(event.id).put(_db, {
       'event': Nip01EventModel.fromEntity(event).toJson(),
       'processed': false,
     });
+    return true;
   }
 
-  /// Save multiple gift wrap events in a batch
-  Future<void> saveBatch(List<Nip01Event> events) async {
-    if (events.isEmpty) return;
-    await _db.transaction((txn) async {
-      for (final event in events) {
-        final existing = await _store.record(event.id).get(txn);
-        if (existing == null) {
-          await _store.record(event.id).put(txn, {
-            'event': Nip01EventModel.fromEntity(event).toJson(),
-            'processed': false,
-          });
-        }
-      }
-    });
-  }
-
-  /// Mark a gift wrap as processed (keeps the event data)
+  /// Mark a gift wrap as processed
   Future<void> markProcessed(String eventId) async {
     final existing = await _store.record(eventId).get(_db);
     if (existing == null) return;
     await _store.record(eventId).put(_db, {...existing, 'processed': true});
   }
 
-  /// Mark multiple gift wraps as processed in a batch
-  Future<void> markProcessedBatch(List<String> eventIds) async {
-    await _db.transaction((txn) async {
-      for (final id in eventIds) {
-        final existing = await _store.record(id).get(txn);
-        if (existing == null) continue;
-        await _store.record(id).put(txn, {...existing, 'processed': true});
-      }
-    });
-  }
-
-  /// Remove a gift wrap record (when email is deleted)
+  /// Remove a gift wrap record
   Future<void> remove(String eventId) async {
     await _store.record(eventId).delete(_db);
+  }
+
+  /// Get a single unprocessed gift wrap event by ID
+  Future<Nip01Event?> getUnprocessed(String eventId) async {
+    final record = await _store.record(eventId).get(_db);
+    if (record == null || record['processed'] == true) return null;
+    return Nip01EventModel.fromJson(record['event'] as Map);
   }
 
   /// Get unprocessed gift wrap events
@@ -69,17 +50,9 @@ class GiftWrapStore {
         .toList();
   }
 
-  /// Check if a gift wrap is already known (fetched or processed)
-  Future<bool> isKnown(String eventId) async {
-    final record = await _store.record(eventId).get(_db);
-    return record != null;
-  }
-
-  /// Check if a gift wrap is processed
-  Future<bool> isProcessed(String eventId) async {
-    final record = await _store.record(eventId).get(_db);
-    if (record == null) return false;
-    return record['processed'] == true;
+  /// Get count of unprocessed (failed) events
+  Future<int> getFailedCount() async {
+    return await _store.count(_db, filter: Filter.equals('processed', false));
   }
 
   /// Delete all gift wraps
