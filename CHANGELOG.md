@@ -1,3 +1,7 @@
+## 1.4.4
+
+- **Refactor**: improve gift wrap processing and simplify API
+
 ## 1.4.3
 
 - **Fix**: save giftwraps events outside of NDK cache
