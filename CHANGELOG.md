@@ -1,3 +1,7 @@
+## 1.4.5
+
+- **Fix**: html content is encoded in base64
+
 ## 1.4.4
 
 - **Refactor**: improve gift wrap processing and simplify API

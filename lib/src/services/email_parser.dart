@@ -62,7 +62,7 @@ class EmailParser {
     builder.subject = subject;
     builder.addTextPlain(body);
     if (htmlBody != null) {
-      builder.addTextHtml(htmlBody);
+      builder.addTextHtml(htmlBody, transferEncoding: TransferEncoding.base64);
     }
 
     final message = builder.buildMimeMessage();
