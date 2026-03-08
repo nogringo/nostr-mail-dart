@@ -64,6 +64,7 @@ class NostrMailClient {
     int? limit,
     int? offset,
     bool includeTrashed = false,
+    bool includeArchived = false,
   }) async {
     final pubkey = _ndk.accounts.getPublicKey();
     if (pubkey == null) {
@@ -74,9 +75,12 @@ class NostrMailClient {
       limit: limit,
       offset: offset,
     );
-    if (includeTrashed) return emails;
+    if (includeTrashed && includeArchived) return emails;
     final trashedIds = await getTrashedEmailIds();
-    return emails.where((e) => !trashedIds.contains(e.id)).toList();
+    final archivedIds = await getArchivedEmailIds();
+    return emails
+        .where((e) => !trashedIds.contains(e.id) && !archivedIds.contains(e.id))
+        .toList();
   }
 
   /// Get inbox emails from local DB (received, excluding sent)
@@ -87,6 +91,7 @@ class NostrMailClient {
     int? limit,
     int? offset,
     bool includeTrashed = false,
+    bool includeArchived = false,
   }) async {
     final pubkey = _ndk.accounts.getPublicKey();
     if (pubkey == null) {
@@ -97,9 +102,12 @@ class NostrMailClient {
       limit: limit,
       offset: offset,
     );
-    if (includeTrashed) return emails;
+    if (includeTrashed && includeArchived) return emails;
     final trashedIds = await getTrashedEmailIds();
-    return emails.where((e) => !trashedIds.contains(e.id)).toList();
+    final archivedIds = await getArchivedEmailIds();
+    return emails
+        .where((e) => !trashedIds.contains(e.id) && !archivedIds.contains(e.id))
+        .toList();
   }
 
   /// Delete email from local DB and request deletion from relays (NIP-09)
@@ -256,6 +264,14 @@ class NostrMailClient {
   Future<void> restoreFromTrash(String emailId) =>
       removeLabel(emailId, 'folder:trash');
 
+  /// Move email to archive
+  Future<void> moveToArchive(String emailId) =>
+      addLabel(emailId, 'folder:archive');
+
+  /// Restore email from archive
+  Future<void> restoreFromArchive(String emailId) =>
+      removeLabel(emailId, 'folder:archive');
+
   /// Mark email as read
   Future<void> markAsRead(String emailId) => addLabel(emailId, 'state:read');
 
@@ -272,6 +288,10 @@ class NostrMailClient {
   /// Check if email is in trash
   Future<bool> isTrashed(String emailId) => hasLabel(emailId, 'folder:trash');
 
+  /// Check if email is archived
+  Future<bool> isArchived(String emailId) =>
+      hasLabel(emailId, 'folder:archive');
+
   /// Check if email is read
   Future<bool> isRead(String emailId) => hasLabel(emailId, 'state:read');
 
@@ -281,6 +301,10 @@ class NostrMailClient {
   /// Get all trashed email IDs
   Future<List<String>> getTrashedEmailIds() =>
       _labelStore.getEmailIdsWithLabel('folder:trash');
+
+  /// Get all archived email IDs
+  Future<List<String>> getArchivedEmailIds() =>
+      _labelStore.getEmailIdsWithLabel('folder:archive');
 
   /// Get all starred email IDs
   Future<List<String>> getStarredEmailIds() =>
@@ -293,6 +317,12 @@ class NostrMailClient {
   /// Get all trashed emails (sorted by date descending)
   Future<List<Email>> getTrashedEmails() async {
     final ids = await getTrashedEmailIds();
+    return _store.getEmailsByIds(ids);
+  }
+
+  /// Get all archived emails (sorted by date descending)
+  Future<List<Email>> getArchivedEmails() async {
+    final ids = await getArchivedEmailIds();
     return _store.getEmailsByIds(ids);
   }
 
