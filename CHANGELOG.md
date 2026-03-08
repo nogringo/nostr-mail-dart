@@ -1,3 +1,7 @@
+## 1.5.0
+
+- **New**: Archives helper functions
+
 ## 1.4.5
 
 - **Fix**: html content is encoded in base64

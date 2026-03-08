@@ -32,7 +32,8 @@ void main() {
     });
 
     test('HTML with long lines should use proper encoding', () {
-      const longLine = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const longLine =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
       final htmlContent = '<p>$longLine<br/>$longLine</p>';
 
       final rawContent = parser.build(
