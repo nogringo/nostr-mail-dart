@@ -57,8 +57,8 @@ class EmailParser {
     String? htmlBody,
   }) {
     final builder = MessageBuilder.prepareMultipartAlternativeMessage();
-    builder.from = [MailAddress(null, from)];
-    builder.to = [MailAddress(null, to)];
+    builder.from = [MailAddress.parse(from)];
+    builder.to = [MailAddress.parse(to)];
     builder.subject = subject;
     builder.addTextPlain(body);
     if (htmlBody != null) {

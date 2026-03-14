@@ -7,11 +7,11 @@ import 'package:sembast/sembast.dart';
 import 'exceptions.dart';
 import 'models/email.dart';
 import 'models/mail_event.dart';
-import 'services/bridge_resolver.dart';
 import 'services/email_parser.dart';
 import 'storage/email_store.dart';
 import 'storage/gift_wrap_store.dart';
 import 'storage/label_store.dart';
+import 'utils/recipient_resolver.dart';
 
 const _emailKind = 1301;
 const _dmRelayListKind = 10050;
@@ -32,7 +32,6 @@ class NostrMailClient {
   final LabelStore _labelStore;
   final GiftWrapStore _giftWrapStore;
   final EmailParser _parser;
-  final BridgeResolver _bridgeResolver;
 
   /// Cached broadcast stream for watch()
   StreamController<MailEvent>? _watchController;
@@ -43,8 +42,7 @@ class NostrMailClient {
       _store = EmailStore(db),
       _labelStore = LabelStore(db),
       _giftWrapStore = GiftWrapStore(db),
-      _parser = EmailParser(),
-      _bridgeResolver = BridgeResolver();
+      _parser = EmailParser();
 
   /// Get cached emails from local DB
   Future<List<Email>> getEmails({int? limit, int? offset}) {
@@ -1030,7 +1028,7 @@ class NostrMailClient {
     }
 
     // Determine recipient pubkey and build email
-    final recipientPubkey = await _resolveRecipient(to, from);
+    final recipientPubkey = await resolveRecipient(to: to, from: from);
     final senderNpub = Nip19.encodePubKey(senderPubkey);
     final fromAddress = from ?? '$senderNpub@nostr';
     final toAddress = _formatAddressForRfc2822(to);
@@ -1064,44 +1062,6 @@ class NostrMailClient {
 
     // TODO: Store email locally immediately after sending instead of waiting
     // for the copy to be received back from the relay
-  }
-
-  /// Resolve recipient to Nostr pubkey
-  Future<String> _resolveRecipient(String to, String? from) async {
-    // Check if it's an npub
-    if (to.startsWith('npub1')) {
-      try {
-        final decoded = Nip19.decode(to);
-        return decoded;
-      } catch (e) {
-        throw RecipientResolutionException(to);
-      }
-    }
-
-    // Check if it's a 64-char hex pubkey
-    if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(to)) {
-      return to.toLowerCase();
-    }
-
-    // It's an email format - try NIP-05 first
-    if (to.contains('@')) {
-      final nip05Pubkey = await _bridgeResolver.resolveNip05(to);
-      if (nip05Pubkey != null) {
-        return nip05Pubkey;
-      }
-
-      // NIP-05 failed, route via bridge at sender's domain
-      if (from == null || !from.contains('@')) {
-        throw NostrMailException(
-          'from address is required when sending to legacy email addresses',
-        );
-      }
-      final domain = from.split('@').last;
-      final bridgePubkey = await _bridgeResolver.resolveBridgePubkey(domain);
-      return bridgePubkey;
-    }
-
-    throw RecipientResolutionException(to);
   }
 
   /// Format address for RFC 2822 compatibility
