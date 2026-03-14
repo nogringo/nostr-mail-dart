@@ -1,3 +1,7 @@
+## 1.6.1
+
+- **Fix**: Folder labels are now mutually exclusive. When adding a `folder:` label (inbox, sent, trash, archive), any existing `folder:` label is automatically removed. This prevents emails from appearing in multiple folder views simultaneously when moved between folders.
+
 ## 1.6.0
 
 - **New**: Support for formatted email addresses with display names (e.g., `"Alice" <alice@uid.ovh>`)
