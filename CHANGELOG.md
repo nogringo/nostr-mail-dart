@@ -1,3 +1,10 @@
+## 1.6.0
+
+- **New**: Support for formatted email addresses with display names (e.g., `"Alice" <alice@uid.ovh>`)
+- **New**: `resolveRecipient()` function extracted to `utils/recipient_resolver.dart` for better testability
+- **Improvement**: Use `enough_mail`'s `MailAddress.parse()` and `encode()` for RFC-compliant address formatting
+- **Fix**: Domain extraction now works correctly when `from` address contains display name
+
 ## 1.5.0
 
 - **New**: Archives helper functions
