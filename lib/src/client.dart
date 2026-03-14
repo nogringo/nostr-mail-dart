@@ -157,13 +157,26 @@ class NostrMailClient {
   ///
   /// Saves locally and notifies listeners immediately, then broadcasts
   /// to relays in background (local-first).
+  ///
+  /// For folder: labels, automatically removes other folder: labels
+  /// to ensure mutual exclusion (an email can only be in one folder).
   Future<void> addLabel(String emailId, String label) async {
     final pubkey = _ndk.accounts.getPublicKey();
     if (pubkey == null) {
       throw NostrMailException('No account configured in ndk');
     }
 
-    // Check if label already exists
+    // For folder: labels, remove other folder: labels first (mutual exclusion)
+    if (label.startsWith('folder:')) {
+      final allLabels = await _labelStore.getLabelsForEmail(emailId);
+      for (final existingLabel in allLabels) {
+        if (existingLabel.startsWith('folder:') && existingLabel != label) {
+          await removeLabel(emailId, existingLabel);
+        }
+      }
+    }
+
+    // Check if label already exists (after removing conflicting folder labels)
     if (await _labelStore.hasLabel(emailId, label)) {
       return;
     }
