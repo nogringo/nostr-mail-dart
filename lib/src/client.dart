@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:ndk/ndk.dart' hide Filter;
 import 'package:ndk/domain_layer/entities/filter.dart' as ndk;
 import 'package:sembast/sembast.dart';
 
+import 'constants.dart';
 import 'exceptions.dart';
 import 'models/email.dart';
 import 'models/mail_event.dart';
@@ -12,19 +15,8 @@ import 'storage/email_store.dart';
 import 'storage/gift_wrap_store.dart';
 import 'storage/label_store.dart';
 import 'utils/recipient_resolver.dart';
-
-const _emailKind = 1301;
-const _dmRelayListKind = 10050;
-const _deletionRequestKind = 5;
-const _giftWrapKind = 1059;
-const _labelKind = 1985;
-const _relayListKind = 10002;
-const _labelNamespace = 'mail';
-const _defaultDmRelays = [
-  'wss://auth.nostr1.com',
-  'wss://nostr-01.uid.ovh',
-  'wss://nostr-02.uid.ovh',
-];
+import 'utils/encrypt_blob.dart';
+import 'utils/event_email_parser.dart';
 
 class NostrMailClient {
   final Ndk _ndk;
@@ -130,10 +122,10 @@ class NostrMailClient {
     // Create NIP-09 deletion request event
     final deletionEvent = Nip01Event(
       pubKey: pubkey,
-      kind: _deletionRequestKind,
+      kind: deletionRequestKind,
       tags: [
         ['e', email.id],
-        ['k', _giftWrapKind.toString()],
+        ['k', giftWrapKind.toString()],
       ],
       content: '',
     );
@@ -184,10 +176,10 @@ class NostrMailClient {
     // Create NIP-32 label event
     final labelEvent = Nip01Event(
       pubKey: pubkey,
-      kind: _labelKind,
+      kind: labelKind,
       tags: [
-        ['L', _labelNamespace],
-        ['l', label, _labelNamespace],
+        ['L', labelNamespace],
+        ['l', label, labelNamespace],
         ['e', emailId, '', 'labelled'],
       ],
       content: '',
@@ -239,10 +231,10 @@ class NostrMailClient {
     // Create NIP-09 deletion request
     final deletionEvent = Nip01Event(
       pubKey: pubkey,
-      kind: _deletionRequestKind,
+      kind: deletionRequestKind,
       tags: [
         ['e', labelEventId],
-        ['k', _labelKind.toString()],
+        ['k', labelKind.toString()],
       ],
       content: '',
     );
@@ -395,14 +387,14 @@ class NostrMailClient {
     for (final event in events) {
       // Check if it's a 'mail' namespace label
       final namespaceTag = event.tags.firstWhere(
-        (t) => t.isNotEmpty && t[0] == 'L' && t[1] == _labelNamespace,
+        (t) => t.isNotEmpty && t[0] == 'L' && t[1] == labelNamespace,
         orElse: () => [],
       );
       if (namespaceTag.isEmpty) continue;
 
       // Get the label value
       final labelTag = event.tags.firstWhere(
-        (t) => t.length >= 3 && t[0] == 'l' && t[2] == _labelNamespace,
+        (t) => t.length >= 3 && t[0] == 'l' && t[2] == labelNamespace,
         orElse: () => [],
       );
       if (labelTag.isEmpty) continue;
@@ -526,16 +518,16 @@ class NostrMailClient {
     // Watch labels on write relays
     final writeRelays = await _getWriteRelays(pubkey);
     final labelResponse = _ndk.requests.subscription(
-      filter: ndk.Filter(kinds: [_labelKind], authors: [pubkey], limit: 0),
+      filter: ndk.Filter(kinds: [labelKind], authors: [pubkey], limit: 0),
       explicitRelays: writeRelays,
     );
 
     // Watch label deletions on write relays
     final labelDeletionFilter = ndk.Filter(
-      kinds: [_deletionRequestKind],
+      kinds: [deletionRequestKind],
       authors: [pubkey],
       limit: 0,
-    )..setTag('k', [_labelKind.toString()]);
+    )..setTag('k', [labelKind.toString()]);
     final labelDeletionResponse = _ndk.requests.subscription(
       filter: labelDeletionFilter,
       explicitRelays: writeRelays,
@@ -543,10 +535,10 @@ class NostrMailClient {
 
     // Watch email deletions on DM relays
     final emailDeletionFilter = ndk.Filter(
-      kinds: [_deletionRequestKind],
+      kinds: [deletionRequestKind],
       authors: [pubkey],
       limit: 0,
-    )..setTag('k', [_giftWrapKind.toString()]);
+    )..setTag('k', [giftWrapKind.toString()]);
     final emailDeletionResponse = _ndk.requests.subscription(
       filter: emailDeletionFilter,
       explicitRelays: dmRelays,
@@ -559,14 +551,14 @@ class NostrMailClient {
     labelResponse.stream.listen((event) async {
       // Check namespace
       final namespaceTag = event.tags.firstWhere(
-        (t) => t.isNotEmpty && t[0] == 'L' && t[1] == _labelNamespace,
+        (t) => t.isNotEmpty && t[0] == 'L' && t[1] == labelNamespace,
         orElse: () => [],
       );
       if (namespaceTag.isEmpty) return;
 
       // Get label value
       final labelTag = event.tags.firstWhere(
-        (t) => t.length >= 3 && t[0] == 'l' && t[2] == _labelNamespace,
+        (t) => t.length >= 3 && t[0] == 'l' && t[2] == labelNamespace,
         orElse: () => [],
       );
       if (labelTag.isEmpty) return;
@@ -800,15 +792,15 @@ class NostrMailClient {
       ndk.Filter(kinds: [GiftWrap.kGiftWrapEventkind], pTags: [pubkey]);
 
   ndk.Filter _emailDeletionFilter(String pubkey) =>
-      ndk.Filter(kinds: [_deletionRequestKind], authors: [pubkey])
-        ..setTag('k', [_giftWrapKind.toString()]);
+      ndk.Filter(kinds: [deletionRequestKind], authors: [pubkey])
+        ..setTag('k', [giftWrapKind.toString()]);
 
   ndk.Filter _labelFilter(String pubkey) =>
-      ndk.Filter(kinds: [_labelKind], authors: [pubkey]);
+      ndk.Filter(kinds: [labelKind], authors: [pubkey]);
 
   ndk.Filter _labelDeletionFilter(String pubkey) =>
-      ndk.Filter(kinds: [_deletionRequestKind], authors: [pubkey])
-        ..setTag('k', [_labelKind.toString()]);
+      ndk.Filter(kinds: [deletionRequestKind], authors: [pubkey])
+        ..setTag('k', [labelKind.toString()]);
 
   /// Sync emails from relays (internal)
   Future<void> _syncEmails(
@@ -977,7 +969,7 @@ class NostrMailClient {
       }
 
       // Not an email (DM, etc.) - mark processed to skip in future
-      if (unwrapped.kind != _emailKind) {
+      if (unwrapped.kind != emailKind) {
         await _giftWrapStore.markProcessed(event.id);
         return false;
       }
@@ -989,10 +981,10 @@ class NostrMailClient {
         return false;
       }
 
-      final email = _parser.parse(
-        rawContent: unwrapped.content,
-        eventId: event.id,
-        senderPubkey: unwrapped.pubKey,
+      // Parse event into Email (handles inline and Blossom emails)
+      final email = await parseEmailEvent(
+        event: unwrapped,
+        ndk: _ndk,
         recipientPubkey: recipientPubkey,
       );
 
@@ -1055,14 +1047,55 @@ class NostrMailClient {
       htmlBody: htmlBody,
     );
 
+    final rawContentBytes = utf8.encode(rawContent);
+    final List<List<String>> tags = [
+      ['p', recipientPubkey],
+    ];
+
+    // Choose storage mode based on size
+    final String content;
+    if (rawContentBytes.length < maxInlineSize) {
+      // Inline MIME - store directly in content field
+      content = rawContent;
+    } else {
+      // Blossom MIME - encrypt and upload to Blossom
+      final encryptedBlob = await encryptBlob(
+        Uint8List.fromList(rawContentBytes),
+      );
+
+      // Get recipient's Blossom servers (BUD-03) or use default
+      final blossomServers = await _ndk.blossomUserServerList.getUserServerList(
+        pubkeys: [recipientPubkey],
+      );
+
+      final uploadResults = await _ndk.blossom.uploadBlob(
+        data: encryptedBlob.bytes,
+        serverUrls: blossomServers ?? defaultBlossomServers,
+      );
+
+      // Get the SHA-256 hash from the first successful upload
+      final successfulUpload = uploadResults.firstWhere(
+        (result) => result.success && result.descriptor != null,
+        orElse: () => throw NostrMailException('Failed to upload to Blossom'),
+      );
+      final sha256Hash = successfulUpload.descriptor!.sha256;
+
+      // Add decryption info to tags (NIP-17 style)
+      tags
+        ..add(['x', sha256Hash])
+        ..add(['encryption-algorithm', 'aes-gcm'])
+        ..add(['decryption-key', encryptedBlob.key])
+        ..add(['decryption-nonce', encryptedBlob.nonce]);
+
+      content = '';
+    }
+
     // Create kind 1301 email event
     final emailEvent = Nip01Event(
       pubKey: senderPubkey,
-      kind: _emailKind,
-      tags: [
-        ['p', recipientPubkey],
-      ],
-      content: rawContent,
+      kind: emailKind,
+      tags: tags,
+      content: content,
     );
 
     // Gift wrap and publish to recipient
@@ -1143,15 +1176,11 @@ class NostrMailClient {
   /// Falls back to default relays if user has none configured.
   Future<List<String>> _getDmRelays(String pubkey) async {
     final response = _ndk.requests.query(
-      filter: ndk.Filter(
-        kinds: [_dmRelayListKind],
-        authors: [pubkey],
-        limit: 1,
-      ),
+      filter: ndk.Filter(kinds: [dmRelayListKind], authors: [pubkey], limit: 1),
     );
 
     final events = await response.future;
-    if (events.isEmpty) return _defaultDmRelays;
+    if (events.isEmpty) return defaultDmRelays;
 
     // Get the most recent event
     final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
@@ -1161,7 +1190,7 @@ class NostrMailClient {
         .map((t) => t[1])
         .toList();
 
-    return relays.isNotEmpty ? relays : _defaultDmRelays;
+    return relays.isNotEmpty ? relays : defaultDmRelays;
   }
 
   /// Get user's write relays from NIP-65 kind 10002 event
@@ -1169,11 +1198,11 @@ class NostrMailClient {
   /// Falls back to default relays if user has none configured.
   Future<List<String>> _getWriteRelays(String pubkey) async {
     final response = _ndk.requests.query(
-      filter: ndk.Filter(kinds: [_relayListKind], authors: [pubkey], limit: 1),
+      filter: ndk.Filter(kinds: [relayListKind], authors: [pubkey], limit: 1),
     );
 
     final events = await response.future;
-    if (events.isEmpty) return _defaultDmRelays;
+    if (events.isEmpty) return defaultDmRelays;
 
     // Get the most recent event
     final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
@@ -1190,6 +1219,6 @@ class NostrMailClient {
         .map((t) => t[1])
         .toList();
 
-    return relays.isNotEmpty ? relays : _defaultDmRelays;
+    return relays.isNotEmpty ? relays : defaultDmRelays;
   }
 }

@@ -2,10 +2,9 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
-import 'package:ndk/ndk.dart' show Nip01Event;
+import 'package:ndk/ndk.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:nostr_mail/src/services/bridge_resolver.dart';
-import 'package:nostr_mail/src/services/email_parser.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:nostr_mail/src/storage/email_store.dart';
 import 'package:nostr_mail/src/storage/gift_wrap_store.dart';
@@ -179,7 +178,7 @@ void main() {
       expect(rawContent, contains('Hello, this is a test email.'));
     });
 
-    test('parse extracts email fields from RFC 2822', () {
+    test('parse extracts email fields from RFC 2822', () async {
       final rawContent = parser.build(
         from: 'alice@nostr.com',
         to: 'bob@example.com',
@@ -187,7 +186,7 @@ void main() {
         body: 'This is the message body.',
       );
 
-      final email = parser.parse(
+      final email = await parser.parseMime(
         rawContent: rawContent,
         eventId: 'event-123',
         senderPubkey: 'sender-pubkey-abc',
@@ -204,7 +203,7 @@ void main() {
       expect(email.rawContent, rawContent);
     });
 
-    test('parse handles special characters in subject', () {
+    test('parse handles special characters in subject', () async {
       final rawContent = parser.build(
         from: 'test@test.com',
         to: 'dest@dest.com',
@@ -212,7 +211,7 @@ void main() {
         body: 'Body text',
       );
 
-      final email = parser.parse(
+      final email = await parser.parseMime(
         rawContent: rawContent,
         eventId: 'id',
         senderPubkey: 'pk',
@@ -222,9 +221,9 @@ void main() {
       expect(email.subject, contains('Special'));
     });
 
-    test('parse handles minimal/empty content gracefully', () {
+    test('parse handles minimal/empty content gracefully', () async {
       // The parser is lenient and returns empty fields for invalid content
-      final email = parser.parse(
+      final email = await parser.parseMime(
         rawContent: 'not a valid email',
         eventId: 'id',
         senderPubkey: 'pk',
@@ -239,7 +238,7 @@ void main() {
       expect(email.to, isEmpty);
     });
 
-    test('roundtrip build and parse preserves data', () {
+    test('roundtrip build and parse preserves data', () async {
       const from = 'roundtrip@sender.com';
       const to = 'roundtrip@recipient.com';
       const subject = 'Roundtrip Subject';
@@ -252,7 +251,7 @@ void main() {
         body: body,
       );
 
-      final email = parser.parse(
+      final email = await parser.parseMime(
         rawContent: rawContent,
         eventId: 'rt-id',
         senderPubkey: 'rt-pk',
@@ -276,7 +275,7 @@ void main() {
       resolver = BridgeResolver(client: mockClient);
     });
 
-    setUpAll(() {
+    setUpAll(() async {
       registerFallbackValue(Uri.parse('https://example.com'));
     });
 
