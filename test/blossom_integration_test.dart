@@ -49,7 +49,7 @@ void main() {
       recipientClient.watch().listen((e) => print(e));
 
       // Create large body (> 60KB)
-      final largeBody = 'A' * 70000; // 70KB of text
+      final largeBody = 'A' * (100 * 1024); // 100KB of text
       final testSubject =
           'Large Email Test - ${DateTime.now().toIso8601String()}';
 
