@@ -1,3 +1,7 @@
+## 1.7.0
+
+- **New**: Support for large emails (> 60KB) via Blossom storage
+
 ## 1.6.1
 
 - **Fix**: Folder labels are now mutually exclusive. When adding a `folder:` label (inbox, sent, trash, archive), any existing `folder:` label is automatically removed. This prevents emails from appearing in multiple folder views simultaneously when moved between folders.
