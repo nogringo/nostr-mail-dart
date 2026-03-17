@@ -13,6 +13,9 @@ class Email {
   final String recipientPubkey;
   final String rawContent;
 
+  /// Alias for [rawContent] to get the RFC 2822 MIME string.
+  String get mime => rawContent;
+
   Email({
     required this.id,
     required this.from,
