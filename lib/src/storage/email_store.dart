@@ -87,6 +87,31 @@ class EmailStore {
         .toList();
   }
 
+  /// Search emails by query (subject, body, or sender), sorted by date descending
+  Future<List<Email>> searchEmails(
+    String query, {
+    int? limit,
+    int? offset,
+  }) async {
+    final escapedQuery = RegExp.escape(query);
+    final regExp = RegExp(escapedQuery, caseSensitive: false);
+
+    final finder = Finder(
+      filter: Filter.or([
+        Filter.matchesRegExp('subject', regExp),
+        Filter.matchesRegExp('body', regExp),
+        Filter.matchesRegExp('from', regExp),
+      ]),
+      sortOrders: [SortOrder('date', false)],
+      limit: limit,
+      offset: offset,
+    );
+    final records = await _emailsStore.find(_db, finder: finder);
+    return records
+        .map((r) => Email.fromJson(r.value as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Delete all emails
   Future<void> clearAll() async {
     await _emailsStore.delete(_db);

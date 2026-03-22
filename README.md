@@ -97,6 +97,9 @@ final emails = await client.getEmails(limit: 20, offset: 0);
 // Get a specific email by ID
 final email = await client.getEmail('event-id');
 
+// Search emails (globally across all folders)
+final results = await client.search('meeting', limit: 10);
+
 // Delete an email
 await client.delete('event-id');
 ```

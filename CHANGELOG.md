@@ -1,3 +1,7 @@
+## 1.8.0
+
+- **New**: Global email search functionality. Search by subject, body, or sender across all local emails using Sembast regex filters. Search is case-insensitive and handles special characters safely.
+
 ## 1.7.0
 
 - **New**: Support for large emails (> 60KB) via Blossom storage

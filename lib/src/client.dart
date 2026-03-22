@@ -46,6 +46,15 @@ class NostrMailClient {
     return _store.getEmailById(id);
   }
 
+  /// Search emails by query (subject, body, or sender) from local DB
+  Future<List<Email>> search(
+    String query, {
+    int? limit,
+    int? offset,
+  }) async {
+    return _store.searchEmails(query, limit: limit, offset: offset);
+  }
+
   /// Get sent emails from local DB
   ///
   /// By default excludes trashed emails. Set [includeTrashed] to true to include them.
