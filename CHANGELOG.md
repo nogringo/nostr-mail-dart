@@ -1,3 +1,8 @@
+## 1.8.1
+
+- **Fix**: Switch to `enough_mail_plus` to fix critical email header folding issues. This resolves problems where long email addresses in `From` headers were being incorrectly folded, causing SpamAssassin flags and delivery issues.
+- **Improvement**: Enhanced RFC-compliance for email rendering.
+
 ## 1.8.0
 
 - **New**: Global email search functionality. Search by subject, body, or sender across all local emails using Sembast regex filters. Search is case-insensitive and handles special characters safely.
