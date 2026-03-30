@@ -51,7 +51,8 @@ void main() {
         'id': 'test-id',
         'senderPubkey': 'abc123pubkey',
         'recipientPubkey': 'recipient123pubkey',
-        'rawContent': 'From: sender@example.com\r\nSubject: Test Subject\r\n\r\nTest body content',
+        'rawContent':
+            'From: sender@example.com\r\nSubject: Test Subject\r\n\r\nTest body content',
         'createdAt': date.toIso8601String(),
       };
 
@@ -72,7 +73,8 @@ void main() {
         id: 'roundtrip-id',
         senderPubkey: 'pubkey123',
         recipientPubkey: 'recipient456',
-        rawContent: 'From: test@test.com\r\nSubject: Roundtrip Test\r\n\r\nBody content',
+        rawContent:
+            'From: test@test.com\r\nSubject: Roundtrip Test\r\n\r\nBody content',
         createdAt: DateTime.utc(2024, 6, 20, 14, 45, 30),
       );
 
@@ -473,7 +475,8 @@ void main() {
         id: 'update-test',
         senderPubkey: 'pk',
         recipientPubkey: 'rpk',
-        rawContent: 'From: original@test.com\r\nSubject: Original Subject\r\n\r\nOriginal Body',
+        rawContent:
+            'From: original@test.com\r\nSubject: Original Subject\r\n\r\nOriginal Body',
         createdAt: DateTime.now(),
       );
 
@@ -481,7 +484,8 @@ void main() {
         id: 'update-test',
         senderPubkey: 'pk',
         recipientPubkey: 'rpk',
-        rawContent: 'From: updated@test.com\r\nSubject: Updated Subject\r\n\r\nUpdated Body',
+        rawContent:
+            'From: updated@test.com\r\nSubject: Updated Subject\r\n\r\nUpdated Body',
         createdAt: DateTime.now(),
       );
 

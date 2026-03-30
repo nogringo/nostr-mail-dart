@@ -40,7 +40,9 @@ void main() async {
   client.watch().listen((event) {
     switch (event) {
       case EmailReceived():
-        print('New email from ${event.email.mime.fromEmail}: ${event.email.mime.decodeSubject()}');
+        print(
+          'New email from ${event.email.mime.fromEmail}: ${event.email.mime.decodeSubject()}',
+        );
       case EmailDeleted():
         print('Email deleted: ${event.emailId}');
       case LabelAdded():

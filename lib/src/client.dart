@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:enough_mail_plus/enough_mail.dart' hide MailEvent;
 import 'package:ndk/ndk.dart' hide Filter;
 import 'package:ndk/domain_layer/entities/filter.dart' as ndk;
 import 'package:sembast/sembast.dart';
@@ -47,11 +48,7 @@ class NostrMailClient {
   }
 
   /// Search emails by query (subject, body, or sender) from local DB
-  Future<List<Email>> search(
-    String query, {
-    int? limit,
-    int? offset,
-  }) async {
+  Future<List<Email>> search(String query, {int? limit, int? offset}) async {
     return _store.searchEmails(query, limit: limit, offset: offset);
   }
 
@@ -1000,12 +997,7 @@ class NostrMailClient {
       await _store.saveEmail(email);
       await _giftWrapStore.markProcessed(event.id);
 
-      _watchController?.add(
-        EmailReceived(
-          email: email,
-          timestamp: email.date,
-        ),
-      );
+      _watchController?.add(EmailReceived(email: email, timestamp: email.date));
       return true;
     } on SignerRequestCancelledException {
       // User cancelled - propagate so caller can handle
@@ -1019,6 +1011,8 @@ class NostrMailClient {
       return false;
     }
   }
+
+  // TODO update send tu use MailAddress list and more params like cc and bcc
 
   /// Send email - auto-detects if recipient is Nostr or legacy email
   ///
@@ -1039,8 +1033,6 @@ class NostrMailClient {
       throw NostrMailException('No account configured in ndk');
     }
 
-    // Determine recipient pubkey and build email
-    final recipientPubkey = await resolveRecipient(to: to, from: from);
     final senderNpub = Nip19.encodePubKey(senderPubkey);
     final fromAddress = from ?? '$senderNpub@nostr';
     final toAddress = _formatAddressForRfc2822(to);
@@ -1054,41 +1046,80 @@ class NostrMailClient {
       htmlBody: htmlBody,
     );
 
-    final rawContentBytes = utf8.encode(rawContent);
-    final List<List<String>> tags = [
-      ['p', recipientPubkey],
-    ];
+    final message = MimeMessage.parseFromText(rawContent);
+    return sendMime(message, keepCopy: keepCopy);
+  }
 
-    // Choose storage mode based on size
+  /// Send a pre-constructed [MimeMessage].
+  ///
+  /// This method extracts all recipients (To, Cc, Bcc), resolves their pubkeys,
+  /// and sends the email to each of them via Nostr GiftWraps.
+  Future<void> sendMime(MimeMessage message, {bool keepCopy = true}) async {
+    final senderPubkey = _ndk.accounts.getPublicKey();
+    if (senderPubkey == null) {
+      throw NostrMailException('No account configured in ndk');
+    }
+
+    // Extract and resolve all unique recipients
+    final recipients = <MailAddress>{};
+    if (message.to != null) recipients.addAll(message.to!);
+    if (message.cc != null) recipients.addAll(message.cc!);
+    if (message.bcc != null) recipients.addAll(message.bcc!);
+
+    if (recipients.isEmpty) {
+      throw NostrMailException('No recipients found in MimeMessage');
+    }
+
+    final fromAddress = message.fromEmail;
+
+    // Resolve all unique pubkeys in parallel
+    final resolutionFutures = recipients.map((addr) async {
+      return await resolveRecipient(to: addr.encode(), from: fromAddress);
+    });
+    final resolvedPubkeys = await Future.wait(resolutionFutures);
+    final Set<String> recipientPubkeys = Set<String>.from(resolvedPubkeys);
+
+    final rawContent = message.renderMessage();
+    final rawContentBytes = utf8.encode(rawContent);
+
+    // Prepare tags and content
+    final List<List<String>> baseTags = [];
     final String content;
+
     if (rawContentBytes.length < maxInlineSize) {
-      // Inline MIME - store directly in content field
       content = rawContent;
     } else {
-      // Blossom MIME - encrypt and upload to Blossom
       final encryptedBlob = await encryptBlob(
         Uint8List.fromList(rawContentBytes),
       );
 
-      // Get recipient's Blossom servers (BUD-03) or use default
-      final blossomServers = await _ndk.blossomUserServerList.getUserServerList(
-        pubkeys: [recipientPubkey],
+      // Collect Blossom servers from all unique pubkeys involved (recipients + sender)
+      final Set<String> allInvolvedPubkeys = {...recipientPubkeys};
+      if (keepCopy) allInvolvedPubkeys.add(senderPubkey);
+
+      final List<String> allBlossomServers = [];
+      final servers = await _ndk.blossomUserServerList.getUserServerList(
+        pubkeys: allInvolvedPubkeys.toList(),
       );
+      if (servers != null) allBlossomServers.addAll(servers);
+
+      // Fallback to defaults if no servers found
+      if (allBlossomServers.isEmpty) {
+        allBlossomServers.addAll(defaultBlossomServers);
+      }
 
       final uploadResults = await _ndk.blossom.uploadBlob(
         data: encryptedBlob.bytes,
-        serverUrls: blossomServers ?? defaultBlossomServers,
+        serverUrls: allBlossomServers.toSet().toList(), // Remove duplicates
       );
 
-      // Get the SHA-256 hash from the first successful upload
       final successfulUpload = uploadResults.firstWhere(
         (result) => result.success && result.descriptor != null,
         orElse: () => throw NostrMailException('Failed to upload to Blossom'),
       );
       final sha256Hash = successfulUpload.descriptor!.sha256;
 
-      // Add decryption info to tags (NIP-17 style)
-      tags
+      baseTags
         ..add(['x', sha256Hash])
         ..add(['encryption-algorithm', 'aes-gcm'])
         ..add(['decryption-key', encryptedBlob.key])
@@ -1097,24 +1128,26 @@ class NostrMailClient {
       content = '';
     }
 
-    // Create kind 1301 email event
-    final emailEvent = Nip01Event(
-      pubKey: senderPubkey,
-      kind: emailKind,
-      tags: tags,
-      content: content,
-    );
+    // Prepare common event components
+    final Set<String> targetPubkeys = {...recipientPubkeys};
+    if (keepCopy) targetPubkeys.add(senderPubkey);
 
-    // Gift wrap and publish to recipient
-    await _publishGiftWrapped(emailEvent, recipientPubkey);
+    // Parallelize all sends
+    final sendFutures = targetPubkeys.map((pubkey) async {
+      final tags = List<List<String>>.from(baseTags);
+      tags.insert(0, ['p', pubkey]);
 
-    // Gift wrap and publish copy to sender (for sync between devices)
-    if (keepCopy && recipientPubkey != senderPubkey) {
-      await _publishGiftWrapped(emailEvent, senderPubkey);
-    }
+      final emailEvent = Nip01Event(
+        pubKey: senderPubkey,
+        kind: emailKind,
+        tags: tags,
+        content: content,
+      );
 
-    // TODO: Store email locally immediately after sending instead of waiting
-    // for the copy to be received back from the relay
+      await _publishGiftWrapped(emailEvent, pubkey);
+    });
+
+    await Future.wait(sendFutures);
   }
 
   /// Format address for RFC 2822 compatibility

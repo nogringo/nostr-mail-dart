@@ -11,13 +11,11 @@ sealed class MailEvent {
 class EmailReceived extends MailEvent {
   final Email email;
 
-  EmailReceived({
-    required this.email,
-    super.timestamp,
-  });
+  EmailReceived({required this.email, super.timestamp});
 
   @override
-  String toString() => 'EmailReceived(id: ${email.id}, from: ${email.mime.fromEmail})';
+  String toString() =>
+      'EmailReceived(id: ${email.id}, from: ${email.mime.fromEmail})';
 }
 
 /// A label was added to an email
