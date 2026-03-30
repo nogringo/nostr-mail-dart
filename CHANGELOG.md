@@ -1,3 +1,17 @@
+## 1.9.0
+
+- **Breaking**: Refactored `Email` model to use `MimeMessage` internally for RFC 2822 compliance
+  - Removed direct fields: `from`, `to`, `subject`, `body`, `date`
+  - New API: access parsed data via `email.mime.fromEmail`, `email.mime.to`, `email.mime.decodeSubject()`, `email.mime.decodeTextPlainPart()`, `email.mime.decodeTextHtmlPart()`
+  - Added `htmlBody` and `textBody` getters for direct access
+  - `date` now uses MIME `Date` header with fallback to Nostr event creation time
+- **New**: `createdAt` field on `Email` to preserve original Nostr event timestamp
+- **New**: `rawMime` getter as alias for `rawContent`
+- **Performance**: `EmailReceived` event now contains full `Email` object instead of just `emailId`, `from`, `subject` - eliminates redundant database lookups
+- **Performance**: `onEmail` stream no longer calls `getEmail()` for each event
+- **Fix**: JSON serialization handles nullable `from` and `subject` fields for malformed emails
+- **Fix**: Tests updated to use new MIME-based API throughout
+
 ## 1.8.1
 
 - **Fix**: Switch to `enough_mail_plus` to fix critical email header folding issues. This resolves problems where long email addresses in `From` headers were being incorrectly folded, causing SpamAssassin flags and delivery issues.

@@ -686,7 +686,7 @@ class NostrMailClient {
   Stream<Email> get onEmail => watch()
       .where((e) => e is EmailReceived)
       .cast<EmailReceived>()
-      .asyncMap((e) async => (await getEmail(e.emailId))!);
+      .map((e) => e.email);
 
   /// Stream of label changes
   Stream<MailEvent> get onLabel =>
@@ -1002,9 +1002,7 @@ class NostrMailClient {
 
       _watchController?.add(
         EmailReceived(
-          emailId: email.id,
-          from: email.from,
-          subject: email.subject,
+          email: email,
           timestamp: email.date,
         ),
       );

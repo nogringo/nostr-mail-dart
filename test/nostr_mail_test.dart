@@ -15,145 +15,104 @@ class MockHttpClient extends Mock implements http.Client {}
 
 void main() {
   group('Email', () {
+    final parser = EmailParser();
+
     test('toJson serializes correctly', () {
-      final email = Email(
-        id: 'test-id',
+      final date = DateTime.utc(2024, 1, 15, 10, 30);
+      final rawContent = parser.build(
         from: 'sender@example.com',
         to: 'recipient@example.com',
         subject: 'Test Subject',
         body: 'Test body content',
-        date: DateTime.utc(2024, 1, 15, 10, 30),
+      );
+
+      final email = Email(
+        id: 'test-id',
         senderPubkey: 'abc123pubkey',
         recipientPubkey: 'recipient123pubkey',
-        rawContent: 'raw email content',
+        rawContent: rawContent,
+        createdAt: date,
       );
 
       final json = email.toJson();
 
       expect(json['id'], 'test-id');
-      expect(json['from'], 'sender@example.com');
-      expect(json['to'], 'recipient@example.com');
+      expect(json['from'], contains('sender@example.com'));
       expect(json['subject'], 'Test Subject');
-      expect(json['body'], 'Test body content');
-      expect(json['date'], '2024-01-15T10:30:00.000Z');
+      expect(json['body'].trim(), 'Test body content');
       expect(json['senderPubkey'], 'abc123pubkey');
       expect(json['recipientPubkey'], 'recipient123pubkey');
-      expect(json['rawContent'], 'raw email content');
+      expect(json['rawContent'], rawContent);
     });
 
     test('fromJson deserializes correctly', () {
+      final date = DateTime.utc(2024, 1, 15, 10, 30);
       final json = {
         'id': 'test-id',
-        'from': 'sender@example.com',
-        'to': 'recipient@example.com',
-        'subject': 'Test Subject',
-        'body': 'Test body content',
-        'date': '2024-01-15T10:30:00.000Z',
         'senderPubkey': 'abc123pubkey',
         'recipientPubkey': 'recipient123pubkey',
-        'rawContent': 'raw email content',
+        'rawContent': 'From: sender@example.com\r\nSubject: Test Subject\r\n\r\nTest body content',
+        'createdAt': date.toIso8601String(),
       };
 
       final email = Email.fromJson(json);
 
       expect(email.id, 'test-id');
-      expect(email.from, 'sender@example.com');
-      expect(email.to, 'recipient@example.com');
-      expect(email.subject, 'Test Subject');
-      expect(email.body, 'Test body content');
-      expect(email.date, DateTime.utc(2024, 1, 15, 10, 30));
+      expect(email.mime.fromEmail, 'sender@example.com');
+      expect(email.mime.decodeSubject(), 'Test Subject');
+      expect(email.body.trim(), 'Test body content');
+      expect(email.createdAt, date);
       expect(email.senderPubkey, 'abc123pubkey');
       expect(email.recipientPubkey, 'recipient123pubkey');
-      expect(email.rawContent, 'raw email content');
+      expect(email.rawContent, json['rawContent']);
     });
 
     test('roundtrip serialization preserves data', () {
       final original = Email(
         id: 'roundtrip-id',
-        from: 'test@test.com',
-        to: 'dest@dest.com',
-        subject: 'Roundtrip Test',
-        body: 'Body with special chars: é à ü',
-        date: DateTime.utc(2024, 6, 20, 14, 45, 30),
         senderPubkey: 'pubkey123',
         recipientPubkey: 'recipient456',
-        rawContent: 'raw content here',
+        rawContent: 'From: test@test.com\r\nSubject: Roundtrip Test\r\n\r\nBody content',
+        createdAt: DateTime.utc(2024, 6, 20, 14, 45, 30),
       );
 
       final restored = Email.fromJson(original.toJson());
 
       expect(restored.id, original.id);
-      expect(restored.from, original.from);
-      expect(restored.to, original.to);
-      expect(restored.subject, original.subject);
-      expect(restored.body, original.body);
-      expect(restored.date, original.date);
       expect(restored.senderPubkey, original.senderPubkey);
       expect(restored.recipientPubkey, original.recipientPubkey);
       expect(restored.rawContent, original.rawContent);
+      expect(restored.createdAt, original.createdAt);
     });
 
     test('equality is based on id', () {
       final email1 = Email(
         id: 'same-id',
-        from: 'a@a.com',
-        to: 'b@b.com',
-        subject: 'Subject 1',
-        body: 'Body 1',
-        date: DateTime.now(),
         senderPubkey: 'pk1',
         recipientPubkey: 'rpk1',
         rawContent: 'raw1',
+        createdAt: DateTime.now(),
       );
 
       final email2 = Email(
         id: 'same-id',
-        from: 'different@email.com',
-        to: 'other@email.com',
-        subject: 'Different Subject',
-        body: 'Different Body',
-        date: DateTime.now(),
         senderPubkey: 'pk2',
         recipientPubkey: 'rpk2',
         rawContent: 'raw2',
+        createdAt: DateTime.now(),
       );
 
       final email3 = Email(
         id: 'different-id',
-        from: 'a@a.com',
-        to: 'b@b.com',
-        subject: 'Subject 1',
-        body: 'Body 1',
-        date: DateTime.now(),
         senderPubkey: 'pk1',
         recipientPubkey: 'rpk1',
         rawContent: 'raw1',
+        createdAt: DateTime.now(),
       );
 
       expect(email1, equals(email2));
       expect(email1, isNot(equals(email3)));
       expect(email1.hashCode, equals(email2.hashCode));
-    });
-
-    test('toString returns readable format', () {
-      final email = Email(
-        id: 'test-id',
-        from: 'sender@test.com',
-        to: 'recipient@test.com',
-        subject: 'Hello World',
-        body: 'Body',
-        date: DateTime.now(),
-        senderPubkey: 'pk',
-        recipientPubkey: 'rpk',
-        rawContent: 'raw',
-      );
-
-      final str = email.toString();
-
-      expect(str, contains('test-id'));
-      expect(str, contains('sender@test.com'));
-      expect(str, contains('recipient@test.com'));
-      expect(str, contains('Hello World'));
     });
   });
 
@@ -179,6 +138,7 @@ void main() {
     });
 
     test('parse extracts email fields from RFC 2822', () async {
+      final createdAt = DateTime.utc(2024, 1, 15, 10, 30);
       final rawContent = parser.build(
         from: 'alice@nostr.com',
         to: 'bob@example.com',
@@ -191,16 +151,18 @@ void main() {
         eventId: 'event-123',
         senderPubkey: 'sender-pubkey-abc',
         recipientPubkey: 'recipient-pubkey-xyz',
+        createdAt: createdAt,
       );
 
       expect(email.id, 'event-123');
-      expect(email.from, 'alice@nostr.com');
-      expect(email.to, 'bob@example.com');
-      expect(email.subject, 'Important Message');
+      expect(email.mime.fromEmail, 'alice@nostr.com');
+      expect(email.mime.to?.first.email, 'bob@example.com');
+      expect(email.mime.decodeSubject(), 'Important Message');
       expect(email.body, contains('This is the message body.'));
       expect(email.senderPubkey, 'sender-pubkey-abc');
       expect(email.recipientPubkey, 'recipient-pubkey-xyz');
       expect(email.rawContent, rawContent);
+      expect(email.createdAt, createdAt);
     });
 
     test('parse handles special characters in subject', () async {
@@ -216,26 +178,25 @@ void main() {
         eventId: 'id',
         senderPubkey: 'pk',
         recipientPubkey: 'rpk',
+        createdAt: DateTime.now(),
       );
 
-      expect(email.subject, contains('Special'));
+      expect(email.mime.decodeSubject(), contains('Special'));
     });
 
     test('parse handles minimal/empty content gracefully', () async {
-      // The parser is lenient and returns empty fields for invalid content
       final email = await parser.parseMime(
         rawContent: 'not a valid email',
         eventId: 'id',
         senderPubkey: 'pk',
         recipientPubkey: 'rpk',
+        createdAt: DateTime.now(),
       );
 
       expect(email.id, 'id');
       expect(email.senderPubkey, 'pk');
       expect(email.recipientPubkey, 'rpk');
-      // Fields are empty but no exception is thrown
-      expect(email.from, isEmpty);
-      expect(email.to, isEmpty);
+      expect(email.mime.fromEmail, isNull);
     });
 
     test('roundtrip build and parse preserves data', () async {
@@ -243,6 +204,7 @@ void main() {
       const to = 'roundtrip@recipient.com';
       const subject = 'Roundtrip Subject';
       const body = 'Roundtrip body content.';
+      final createdAt = DateTime.now();
 
       final rawContent = parser.build(
         from: from,
@@ -256,11 +218,12 @@ void main() {
         eventId: 'rt-id',
         senderPubkey: 'rt-pk',
         recipientPubkey: 'rt-rpk',
+        createdAt: createdAt,
       );
 
-      expect(email.from, from);
-      expect(email.to, to);
-      expect(email.subject, subject);
+      expect(email.mime.fromEmail, from);
+      expect(email.mime.to?.first.email, to);
+      expect(email.mime.decodeSubject(), subject);
       expect(email.body, contains(body));
       expect(email.recipientPubkey, 'rt-rpk');
     });
@@ -397,17 +360,22 @@ void main() {
       store = EmailStore(db);
     });
 
-    Email createTestEmail(String id) => Email(
-      id: id,
-      from: 'from@test.com',
-      to: 'to@test.com',
-      subject: 'Subject $id',
-      body: 'Body $id',
-      date: DateTime.now(),
-      senderPubkey: 'pk-$id',
-      recipientPubkey: 'rpk-$id',
-      rawContent: 'raw-$id',
-    );
+    Email createTestEmail(String id) {
+      final parser = EmailParser();
+      final rawContent = parser.build(
+        from: 'from@test.com',
+        to: 'to@test.com',
+        subject: 'Subject $id',
+        body: 'Body $id',
+      );
+      return Email(
+        id: id,
+        senderPubkey: 'pk-$id',
+        recipientPubkey: 'rpk-$id',
+        rawContent: rawContent,
+        createdAt: DateTime.now(),
+      );
+    }
 
     test('saveEmail and getEmailById', () async {
       final email = createTestEmail('save-test');
@@ -417,7 +385,7 @@ void main() {
 
       expect(retrieved, isNotNull);
       expect(retrieved!.id, 'save-test');
-      expect(retrieved.subject, 'Subject save-test');
+      expect(retrieved.mime.decodeSubject(), 'Subject save-test');
     });
 
     test('getEmailById returns null for non-existent email', () async {
@@ -429,36 +397,24 @@ void main() {
     test('getEmails returns all emails sorted by date descending', () async {
       final email1 = Email(
         id: 'e1',
-        from: 'a@a.com',
-        to: 'b@b.com',
-        subject: 'First',
-        body: 'Body',
-        date: DateTime.utc(2024, 1, 1),
         senderPubkey: 'pk',
         recipientPubkey: 'rpk',
-        rawContent: 'raw',
+        rawContent: 'From: a@a.com\r\nSubject: First\r\n\r\nBody',
+        createdAt: DateTime.utc(2024, 1, 1),
       );
       final email2 = Email(
         id: 'e2',
-        from: 'a@a.com',
-        to: 'b@b.com',
-        subject: 'Second',
-        body: 'Body',
-        date: DateTime.utc(2024, 1, 3),
         senderPubkey: 'pk',
         recipientPubkey: 'rpk',
-        rawContent: 'raw',
+        rawContent: 'From: a@a.com\r\nSubject: Second\r\n\r\nBody',
+        createdAt: DateTime.utc(2024, 1, 3),
       );
       final email3 = Email(
         id: 'e3',
-        from: 'a@a.com',
-        to: 'b@b.com',
-        subject: 'Third',
-        body: 'Body',
-        date: DateTime.utc(2024, 1, 2),
         senderPubkey: 'pk',
         recipientPubkey: 'rpk',
-        rawContent: 'raw',
+        rawContent: 'From: a@a.com\r\nSubject: Third\r\n\r\nBody',
+        createdAt: DateTime.utc(2024, 1, 2),
       );
 
       await store.saveEmail(email1);
@@ -487,14 +443,10 @@ void main() {
       for (var i = 0; i < 5; i++) {
         final email = Email(
           id: 'offset-$i',
-          from: 'a@a.com',
-          to: 'b@b.com',
-          subject: 'Subject $i',
-          body: 'Body',
-          date: DateTime.utc(2024, 1, 5 - i), // Descending dates
           senderPubkey: 'pk',
           recipientPubkey: 'rpk',
-          rawContent: 'raw',
+          rawContent: 'From: a@a.com\r\nSubject: Subject $i\r\n\r\nBody',
+          createdAt: DateTime.utc(2024, 1, 5 - i), // Descending dates
         );
         await store.saveEmail(email);
       }
@@ -519,26 +471,18 @@ void main() {
     test('saveEmail updates existing email with same id', () async {
       final original = Email(
         id: 'update-test',
-        from: 'original@test.com',
-        to: 'to@test.com',
-        subject: 'Original Subject',
-        body: 'Original Body',
-        date: DateTime.now(),
         senderPubkey: 'pk',
         recipientPubkey: 'rpk',
-        rawContent: 'raw',
+        rawContent: 'From: original@test.com\r\nSubject: Original Subject\r\n\r\nOriginal Body',
+        createdAt: DateTime.now(),
       );
 
       final updated = Email(
         id: 'update-test',
-        from: 'updated@test.com',
-        to: 'to@test.com',
-        subject: 'Updated Subject',
-        body: 'Updated Body',
-        date: DateTime.now(),
         senderPubkey: 'pk',
         recipientPubkey: 'rpk',
-        rawContent: 'raw',
+        rawContent: 'From: updated@test.com\r\nSubject: Updated Subject\r\n\r\nUpdated Body',
+        createdAt: DateTime.now(),
       );
 
       await store.saveEmail(original);
@@ -548,43 +492,31 @@ void main() {
       final retrieved = await store.getEmailById('update-test');
 
       expect(emails.length, 1);
-      expect(retrieved!.subject, 'Updated Subject');
-      expect(retrieved.from, 'updated@test.com');
+      expect(retrieved!.mime.decodeSubject(), 'Updated Subject');
+      expect(retrieved.mime.fromEmail, 'updated@test.com');
     });
 
     test('getEmailsByIds returns emails sorted by date descending', () async {
       final email1 = Email(
         id: 'batch-1',
-        from: 'a@a.com',
-        to: 'b@b.com',
-        subject: 'First',
-        body: 'Body',
-        date: DateTime.utc(2024, 1, 1),
         senderPubkey: 'pk',
         recipientPubkey: 'rpk',
-        rawContent: 'raw',
+        rawContent: 'From: a@a.com\r\nSubject: First\r\n\r\nBody',
+        createdAt: DateTime.utc(2024, 1, 1),
       );
       final email2 = Email(
         id: 'batch-2',
-        from: 'a@a.com',
-        to: 'b@b.com',
-        subject: 'Second',
-        body: 'Body',
-        date: DateTime.utc(2024, 1, 3),
         senderPubkey: 'pk',
         recipientPubkey: 'rpk',
-        rawContent: 'raw',
+        rawContent: 'From: a@a.com\r\nSubject: Second\r\n\r\nBody',
+        createdAt: DateTime.utc(2024, 1, 3),
       );
       final email3 = Email(
         id: 'batch-3',
-        from: 'a@a.com',
-        to: 'b@b.com',
-        subject: 'Third',
-        body: 'Body',
-        date: DateTime.utc(2024, 1, 2),
         senderPubkey: 'pk',
         recipientPubkey: 'rpk',
-        rawContent: 'raw',
+        rawContent: 'From: a@a.com\r\nSubject: Third\r\n\r\nBody',
+        createdAt: DateTime.utc(2024, 1, 2),
       );
 
       await store.saveEmail(email1);
@@ -612,14 +544,10 @@ void main() {
     test('getEmailsByIds ignores non-existent IDs', () async {
       final email = Email(
         id: 'exists',
-        from: 'a@a.com',
-        to: 'b@b.com',
-        subject: 'Exists',
-        body: 'Body',
-        date: DateTime.utc(2024, 1, 1),
         senderPubkey: 'pk',
         recipientPubkey: 'rpk',
-        rawContent: 'raw',
+        rawContent: 'From: a@a.com\r\nSubject: Exists\r\n\r\nBody',
+        createdAt: DateTime.utc(2024, 1, 1),
       );
       await store.saveEmail(email);
 

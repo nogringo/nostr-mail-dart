@@ -4,33 +4,40 @@ import '../utils/html_utils.dart';
 
 class Email {
   final String id;
-  final String from;
-  final String to;
-  final String subject;
-  final String _body;
-  final DateTime date;
   final String senderPubkey;
   final String recipientPubkey;
   final String rawContent;
+  final DateTime createdAt;
 
-  /// Alias for [rawContent] to get the RFC 2822 MIME string.
-  String get mime => rawContent;
+  late final MimeMessage _mimeMessage;
+
+  /// Access the underlying [MimeMessage] for rich email data.
+  MimeMessage get mime => _mimeMessage;
+
+  /// Get the raw RFC 2822 MIME string.
+  String get rawMime => rawContent;
 
   Email({
     required this.id,
-    required this.from,
-    required this.to,
-    required this.subject,
-    required String body,
-    required this.date,
     required this.senderPubkey,
     required this.recipientPubkey,
     required this.rawContent,
-  }) : _body = body;
+    required this.createdAt,
+    MimeMessage? mimeMessage,
+  }) {
+    _mimeMessage = mimeMessage ?? MimeMessage.parseFromText(rawContent);
+  }
 
-  /// Get text body, falling back to stripped HTML if empty
+  /// Get the email subject.
+  String? get subject => _mimeMessage.decodeSubject();
+
+  /// Get the email date from MIME, falling back to Nostr event creation date.
+  DateTime get date => _mimeMessage.decodeDate() ?? createdAt;
+
+  /// Get the plain text body, falling back to stripped HTML if empty.
   String get body {
-    if (_body.isNotEmpty) return _body;
+    final text = textBody;
+    if (text != null && text.isNotEmpty) return text;
 
     final html = htmlBody;
     if (html == null || html.isEmpty) return '';
@@ -38,39 +45,53 @@ class Email {
     return stripHtmlTags(html);
   }
 
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'from': from,
-    'to': to,
-    'subject': subject,
-    'body': _body,
-    'date': date.toIso8601String(),
-    'senderPubkey': senderPubkey,
-    'recipientPubkey': recipientPubkey,
-    'rawContent': rawContent,
-  };
+  /// Get the HTML body content.
+  String? get htmlBody => _mimeMessage.decodeTextHtmlPart();
+
+  /// Get the plain text body content.
+  String? get textBody => _mimeMessage.decodeTextPlainPart();
+
+  /// Get the sender's address.
+  MailAddress? get sender =>
+      _mimeMessage.sender ??
+      (_mimeMessage.from != null && _mimeMessage.from!.isNotEmpty
+          ? _mimeMessage.from!.first
+          : null);
+
+  Map<String, dynamic> toJson() {
+    final fromAddresses = _mimeMessage.from;
+    String? from;
+
+    if (_mimeMessage.sender != null) {
+      from = _mimeMessage.sender!.encode();
+    } else if (fromAddresses != null && fromAddresses.isNotEmpty) {
+      from = fromAddresses.first.encode();
+    }
+
+    final subject = _mimeMessage.decodeSubject();
+
+    return {
+      'id': id,
+      'from': ?from,
+      'subject': ?subject,
+      'body': body,
+      'date': date.toIso8601String(),
+      'createdAt': createdAt.toIso8601String(),
+      'senderPubkey': senderPubkey,
+      'recipientPubkey': recipientPubkey,
+      'rawContent': rawContent,
+    };
+  }
 
   factory Email.fromJson(Map<String, dynamic> json) => Email(
     id: json['id'] as String,
-    from: json['from'] as String,
-    to: json['to'] as String,
-    subject: json['subject'] as String,
-    body: json['body'] as String,
-    date: DateTime.parse(json['date'] as String),
     senderPubkey: json['senderPubkey'] as String,
     recipientPubkey: json['recipientPubkey'] as String? ?? '',
     rawContent: json['rawContent'] as String,
+    createdAt: DateTime.parse(
+      json['createdAt'] as String? ?? json['date'] as String,
+    ),
   );
-
-  /// Get HTML body parsed on demand from rawContent
-  String? get htmlBody {
-    final mime = MimeMessage.parseFromText(rawContent);
-    return mime.decodeTextHtmlPart();
-  }
-
-  @override
-  String toString() =>
-      'Email(id: $id, from: $from, to: $to, subject: $subject)';
 
   @override
   bool operator ==(Object other) =>

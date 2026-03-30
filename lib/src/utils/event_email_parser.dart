@@ -7,7 +7,6 @@ import '../constants.dart';
 import '../exceptions.dart';
 import '../models/email.dart';
 import 'decrypt_blob.dart';
-import 'html_utils.dart';
 
 /// Parse a NIP-01 event (kind 1301) into a local [Email] object.
 ///
@@ -60,33 +59,13 @@ Future<Email> parseEmailEvent({
   // Parse RFC 2822 MIME
   final mimeMessage = MimeMessage.parseFromText(mimeString);
 
-  final from = mimeMessage.fromEmail ?? '';
-  final to = mimeMessage.to?.isNotEmpty == true
-      ? mimeMessage.to!.first.email
-      : '';
-  final subject = mimeMessage.decodeSubject() ?? '';
-  var body = mimeMessage.decodeTextPlainPart() ?? '';
-
-  // Fallback to HTML if text/plain is empty
-  if (body.isEmpty) {
-    final html = mimeMessage.decodeTextHtmlPart();
-    if (html != null && html.isNotEmpty) {
-      body = stripHtmlTags(html);
-    }
-  }
-
-  final date = mimeMessage.decodeDate() ?? DateTime.now();
-
   return Email(
     id: event.id,
-    from: from,
-    to: to,
-    subject: subject,
-    body: body,
-    date: date,
     senderPubkey: event.pubKey,
     recipientPubkey: recipientPubkey,
     rawContent: mimeString,
+    createdAt: DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000),
+    mimeMessage: mimeMessage,
   );
 }
 

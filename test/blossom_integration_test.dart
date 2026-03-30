@@ -75,13 +75,13 @@ void main() {
       expect(receivedEmails, isNotEmpty);
 
       final email = receivedEmails.firstWhere(
-        (e) => e.subject.contains('Large Email Test'),
+        (e) => e.mime.decodeSubject()?.contains('Large Email Test') ?? false,
       );
 
-      expect(email.subject, contains('Large Email Test'));
+      expect(email.mime.decodeSubject(), contains('Large Email Test'));
       expect(email.body, contains("AAAAAAA"));
-      expect(email.from, isNotEmpty);
-      expect(email.to, isNotEmpty);
+      expect(email.mime.fromEmail, isNotEmpty);
+      expect(email.mime.to?.first.email, isNotEmpty);
       expect(email.senderPubkey, equals(senderKeys.publicKey));
       expect(email.recipientPubkey, equals(recipientKeys.publicKey));
     },

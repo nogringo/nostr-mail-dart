@@ -1,3 +1,5 @@
+import '../models/email.dart';
+
 /// Events emitted by the mail client watch stream
 sealed class MailEvent {
   final DateTime timestamp;
@@ -7,19 +9,15 @@ sealed class MailEvent {
 
 /// A new email was received
 class EmailReceived extends MailEvent {
-  final String emailId;
-  final String from;
-  final String subject;
+  final Email email;
 
   EmailReceived({
-    required this.emailId,
-    required this.from,
-    required this.subject,
+    required this.email,
     super.timestamp,
   });
 
   @override
-  String toString() => 'EmailReceived(emailId: $emailId, from: $from)';
+  String toString() => 'EmailReceived(id: ${email.id}, from: ${email.mime.fromEmail})';
 }
 
 /// A label was added to an email

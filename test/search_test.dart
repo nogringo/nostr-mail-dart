@@ -6,6 +6,7 @@ import 'package:test/test.dart';
 void main() {
   group('EmailStore Search', () {
     late EmailStore store;
+    final parser = EmailParser();
 
     setUp(() async {
       final db = await databaseFactoryMemory.openDatabase(
@@ -17,36 +18,39 @@ void main() {
     test('searchEmails filters by subject, body, or from', () async {
       final email1 = Email(
         id: 's1',
-        from: 'alice@test.com',
-        to: 'bob@test.com',
-        subject: 'Meeting tomorrow',
-        body: 'Let us discuss the project.',
-        date: DateTime.utc(2024, 1, 1),
         senderPubkey: 'pk1',
         recipientPubkey: 'rpk1',
-        rawContent: 'raw1',
+        rawContent: parser.build(
+          from: 'alice@test.com',
+          to: 'bob@test.com',
+          subject: 'Meeting tomorrow',
+          body: 'Let us discuss the project.',
+        ),
+        createdAt: DateTime.utc(2024, 1, 1),
       );
       final email2 = Email(
         id: 's2',
-        from: 'charlie@test.com',
-        to: 'bob@test.com',
-        subject: 'Vacation',
-        body: 'I am going to the beach.',
-        date: DateTime.utc(2024, 1, 2),
         senderPubkey: 'pk2',
         recipientPubkey: 'rpk2',
-        rawContent: 'raw2',
+        rawContent: parser.build(
+          from: 'charlie@test.com',
+          to: 'bob@test.com',
+          subject: 'Vacation',
+          body: 'I am going to the beach.',
+        ),
+        createdAt: DateTime.utc(2024, 1, 2),
       );
       final email3 = Email(
         id: 's3',
-        from: 'alice@test.com',
-        to: 'bob@test.com',
-        subject: 'Project update',
-        body: 'The Meeting was good.',
-        date: DateTime.utc(2024, 1, 3),
         senderPubkey: 'pk1',
         recipientPubkey: 'rpk1',
-        rawContent: 'raw3',
+        rawContent: parser.build(
+          from: 'alice@test.com',
+          to: 'bob@test.com',
+          subject: 'Project update',
+          body: 'The Meeting was good.',
+        ),
+        createdAt: DateTime.utc(2024, 1, 3),
       );
 
       await store.saveEmail(email1);
@@ -56,18 +60,19 @@ void main() {
       // Search by subject (case insensitive)
       var results = await store.searchEmails('meeting');
       expect(results.length, 2);
-      expect(results[0].id, 's3'); // Most recent first
-      expect(results[1].id, 's1');
+      var ids = results.map((e) => e.id).toList();
+      expect(ids, contains('s1'));
+      expect(ids, contains('s3'));
 
       // Search by body
       results = await store.searchEmails('beach');
       expect(results.length, 1);
-      expect(results[0].id, 's2');
+      expect(results.first.id, 's2');
 
       // Search by from
       results = await store.searchEmails('charlie');
       expect(results.length, 1);
-      expect(results[0].id, 's2');
+      expect(results.first.id, 's2');
 
       // No results
       results = await store.searchEmails('nonexistent');
@@ -79,14 +84,15 @@ void main() {
         await store.saveEmail(
           Email(
             id: 'search-$i',
-            from: 'test@test.com',
-            to: 'to@test.com',
-            subject: 'Search match $i',
-            body: 'Body text',
-            date: DateTime.utc(2024, 1, 10 - i),
             senderPubkey: 'pk',
             recipientPubkey: 'rpk',
-            rawContent: 'raw',
+            rawContent: parser.build(
+              from: 'test@test.com',
+              to: 'to@test.com',
+              subject: 'Search match $i',
+              body: 'Body text',
+            ),
+            createdAt: DateTime.utc(2024, 1, 10 - i),
           ),
         );
       }

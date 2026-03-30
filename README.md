@@ -84,7 +84,7 @@ await client.sync();
 
 // Watch for new emails in real-time
 client.watchInbox().listen((email) {
-  print('New email from ${email.from}: ${email.subject}');
+  print('New email from ${email.mime.fromEmail}: ${email.mime.decodeSubject()}');
 });
 ```
 

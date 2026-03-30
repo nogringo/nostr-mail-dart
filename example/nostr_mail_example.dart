@@ -31,8 +31,8 @@ void main() async {
   // Get cached emails
   final emails = await client.getEmails(limit: 10);
   for (final email in emails) {
-    print('From: ${email.from}');
-    print('Subject: ${email.subject}');
+    print('From: ${email.mime.fromEmail}');
+    print('Subject: ${email.mime.decodeSubject()}');
     print('---');
   }
 
@@ -40,7 +40,7 @@ void main() async {
   client.watch().listen((event) {
     switch (event) {
       case EmailReceived():
-        print('New email from ${event.from}: ${event.subject}');
+        print('New email from ${event.email.mime.fromEmail}: ${event.email.mime.decodeSubject()}');
       case EmailDeleted():
         print('Email deleted: ${event.emailId}');
       case LabelAdded():
@@ -52,7 +52,7 @@ void main() async {
 
   // Or use convenience streams
   client.onEmail.listen((email) {
-    print('New email: ${email.subject}');
+    print('New email: ${email.mime.decodeSubject()}');
   });
 
   client.onTrash.listen((event) {
