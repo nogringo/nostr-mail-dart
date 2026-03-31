@@ -1,4 +1,5 @@
 import 'package:enough_mail_plus/enough_mail.dart';
+import 'package:ndk/ndk.dart';
 
 import '../utils/html_utils.dart';
 
@@ -57,6 +58,45 @@ class Email {
       (_mimeMessage.from != null && _mimeMessage.from!.isNotEmpty
           ? _mimeMessage.from!.first
           : null);
+
+  /// Check if this email was relayed through a bridge.
+  ///
+  /// Returns `true` if:
+  /// - The sender address cannot be parsed (legacy email)
+  /// - The pubkey extracted from the sender address differs from [senderPubkey]
+  ///
+  /// Returns `false` if the email was sent directly (e.g., @nostr address).
+  bool get isBridged {
+    // Try to get sender address from MIME headers
+    final senderAddress = sender?.email;
+    if (senderAddress == null || !senderAddress.contains('@')) {
+      // No sender address or invalid format - consider as bridged
+      return true;
+    }
+
+    // Extract pubkey from sender address (npub1...@domain or hex@domain)
+    final localPart = senderAddress.split('@').first;
+    String? contactPubkey;
+
+    if (localPart.startsWith('npub1')) {
+      try {
+        contactPubkey = Nip19.decode(localPart);
+      } catch (_) {
+        return true; // Invalid npub - consider as bridged
+      }
+    } else if (localPart.length == 64 &&
+        RegExp(r'^[a-fA-F0-9]+$').hasMatch(localPart)) {
+      contactPubkey = localPart.toLowerCase();
+    }
+
+    // If no pubkey could be extracted, it's a legacy email (bridged)
+    if (contactPubkey == null) {
+      return true;
+    }
+
+    // Compare extracted pubkey with actual sender pubkey
+    return contactPubkey != senderPubkey;
+  }
 
   Map<String, dynamic> toJson() {
     final fromAddresses = _mimeMessage.from;
