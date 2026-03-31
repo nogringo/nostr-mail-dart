@@ -1012,19 +1012,18 @@ class NostrMailClient {
     }
   }
 
-  // TODO update send tu use MailAddress list and more params like cc and bcc
-
   /// Send email - auto-detects if recipient is Nostr or legacy email
   ///
-  /// [from] is required when sending to legacy email addresses (e.g. bob@gmail.com).
-  /// The bridge is resolved from the sender's domain.
+  /// [from] is optional. If not provided, it defaults to sender's npub@nostr.
   /// [htmlBody] is optional HTML content for rich emails.
   /// [keepCopy] if true, sends a copy to sender for sync between devices (default: true).
   Future<void> send({
-    required String to,
+    required List<MailAddress> to,
+    List<MailAddress>? cc,
+    List<MailAddress>? bcc,
     required String subject,
     required String body,
-    String? from,
+    MailAddress? from,
     String? htmlBody,
     bool keepCopy = true,
   }) async {
@@ -1033,14 +1032,20 @@ class NostrMailClient {
       throw NostrMailException('No account configured in ndk');
     }
 
-    final senderNpub = Nip19.encodePubKey(senderPubkey);
-    final fromAddress = from ?? '$senderNpub@nostr';
-    final toAddress = _formatAddressForRfc2822(to);
+    final MailAddress finalFrom;
+    if (from == null) {
+      final senderNpub = Nip19.encodePubKey(senderPubkey);
+      finalFrom = MailAddress(null, '$senderNpub@nostr');
+    } else {
+      finalFrom = from;
+    }
 
-    // Build RFC 2822 email content
+    // Build RFC 2822 email content using the updated parser
     final rawContent = _parser.build(
-      from: fromAddress,
-      to: toAddress,
+      from: finalFrom,
+      to: to,
+      cc: cc,
+      bcc: bcc,
       subject: subject,
       body: body,
       htmlBody: htmlBody,
@@ -1148,28 +1153,6 @@ class NostrMailClient {
     });
 
     await Future.wait(sendFutures);
-  }
-
-  /// Format address for RFC 2822 compatibility
-  /// Converts hex to npub and adds @nostr suffix for addresses without a domain
-  String _formatAddressForRfc2822(String address) {
-    // Already has a domain
-    if (address.contains('@')) {
-      return address;
-    }
-
-    // Already npub - add @nostr
-    if (address.startsWith('npub1')) {
-      return '$address@nostr';
-    }
-
-    // Hex pubkey - convert to npub and add @nostr
-    if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(address)) {
-      final npub = Nip19.encodePubKey(address.toLowerCase());
-      return '$npub@nostr';
-    }
-
-    return address;
   }
 
   /// Unwrap a NIP-59 gift-wrapped event

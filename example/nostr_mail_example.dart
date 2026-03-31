@@ -1,3 +1,4 @@
+import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:nostr_mail/nostr_mail.dart';
@@ -63,21 +64,21 @@ void main() async {
 
   // Send to a Nostr user (npub)
   await client.send(
-    to: 'npub1abc123...',
+    to: [MailAddress(null, 'npub1abc123...')],
     subject: 'Hello from Nostr!',
     body: 'This is a test email sent via Nostr.',
   );
 
   // Send to a NIP-05 identifier
   await client.send(
-    to: 'alice@nostr.directory',
+    to: [MailAddress(null, 'alice@nostr.directory')],
     subject: 'Hello Alice!',
     body: 'Sending via your NIP-05 address.',
   );
 
   // Send to a legacy email (routed via bridge)
   await client.send(
-    to: 'bob@gmail.com',
+    to: [MailAddress(null, 'bob@gmail.com')],
     subject: 'Hello from Nostr!',
     body: 'This email was sent via the Nostr bridge.',
   );

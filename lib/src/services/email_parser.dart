@@ -11,15 +11,19 @@ class EmailParser {
   ///
   /// Used for creating emails to send.
   String build({
-    required String from,
-    required String to,
+    required MailAddress from,
+    required List<MailAddress> to,
+    List<MailAddress>? cc,
+    List<MailAddress>? bcc,
     required String subject,
     required String body,
     String? htmlBody,
   }) {
     final builder = MessageBuilder.prepareMultipartAlternativeMessage();
-    builder.from = [MailAddress.parse(from)];
-    builder.to = [MailAddress.parse(to)];
+    builder.from = [from];
+    builder.to = to;
+    if (cc != null) builder.cc = cc;
+    if (bcc != null) builder.bcc = bcc;
     builder.subject = subject;
     builder.addTextPlain(body);
     if (htmlBody != null) {

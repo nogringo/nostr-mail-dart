@@ -1,3 +1,4 @@
+import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:nostr_mail/src/storage/email_store.dart';
@@ -21,8 +22,8 @@ void main() {
         senderPubkey: 'pk1',
         recipientPubkey: 'rpk1',
         rawContent: parser.build(
-          from: 'alice@test.com',
-          to: 'bob@test.com',
+          from: MailAddress(null, 'alice@test.com'),
+          to: [MailAddress(null, 'bob@test.com')],
           subject: 'Meeting tomorrow',
           body: 'Let us discuss the project.',
         ),
@@ -33,8 +34,8 @@ void main() {
         senderPubkey: 'pk2',
         recipientPubkey: 'rpk2',
         rawContent: parser.build(
-          from: 'charlie@test.com',
-          to: 'bob@test.com',
+          from: MailAddress(null, 'charlie@test.com'),
+          to: [MailAddress(null, 'bob@test.com')],
           subject: 'Vacation',
           body: 'I am going to the beach.',
         ),
@@ -45,8 +46,8 @@ void main() {
         senderPubkey: 'pk1',
         recipientPubkey: 'rpk1',
         rawContent: parser.build(
-          from: 'alice@test.com',
-          to: 'bob@test.com',
+          from: MailAddress(null, 'alice@test.com'),
+          to: [MailAddress(null, 'bob@test.com')],
           subject: 'Project update',
           body: 'The Meeting was good.',
         ),
@@ -87,8 +88,8 @@ void main() {
             senderPubkey: 'pk',
             recipientPubkey: 'rpk',
             rawContent: parser.build(
-              from: 'test@test.com',
-              to: 'to@test.com',
+              from: MailAddress(null, 'test@test.com'),
+              to: [MailAddress(null, 'to@test.com')],
               subject: 'Search match $i',
               body: 'Body text',
             ),

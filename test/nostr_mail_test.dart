@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
 import 'package:ndk/ndk.dart';
@@ -20,8 +21,8 @@ void main() {
     test('toJson serializes correctly', () {
       final date = DateTime.utc(2024, 1, 15, 10, 30);
       final rawContent = parser.build(
-        from: 'sender@example.com',
-        to: 'recipient@example.com',
+        from: MailAddress(null, 'sender@example.com'),
+        to: [MailAddress(null, 'recipient@example.com')],
         subject: 'Test Subject',
         body: 'Test body content',
       );
@@ -127,8 +128,8 @@ void main() {
 
     test('build creates valid RFC 2822 email', () {
       final rawContent = parser.build(
-        from: 'sender@nostr.com',
-        to: 'recipient@example.com',
+        from: MailAddress(null, 'sender@nostr.com'),
+        to: [MailAddress(null, 'recipient@example.com')],
         subject: 'Test Email',
         body: 'Hello, this is a test email.',
       );
@@ -142,8 +143,8 @@ void main() {
     test('parse extracts email fields from RFC 2822', () async {
       final createdAt = DateTime.utc(2024, 1, 15, 10, 30);
       final rawContent = parser.build(
-        from: 'alice@nostr.com',
-        to: 'bob@example.com',
+        from: MailAddress(null, 'alice@nostr.com'),
+        to: [MailAddress(null, 'bob@example.com')],
         subject: 'Important Message',
         body: 'This is the message body.',
       );
@@ -169,8 +170,8 @@ void main() {
 
     test('parse handles special characters in subject', () async {
       final rawContent = parser.build(
-        from: 'test@test.com',
-        to: 'dest@dest.com',
+        from: MailAddress(null, 'test@test.com'),
+        to: [MailAddress(null, 'dest@dest.com')],
         subject: 'Special: émojis 🎉 and symbols!',
         body: 'Body text',
       );
@@ -202,8 +203,8 @@ void main() {
     });
 
     test('roundtrip build and parse preserves data', () async {
-      const from = 'roundtrip@sender.com';
-      const to = 'roundtrip@recipient.com';
+      final from = MailAddress(null, 'roundtrip@sender.com');
+      final to = [MailAddress(null, 'roundtrip@recipient.com')];
       const subject = 'Roundtrip Subject';
       const body = 'Roundtrip body content.';
       final createdAt = DateTime.now();
@@ -223,8 +224,8 @@ void main() {
         createdAt: createdAt,
       );
 
-      expect(email.mime.fromEmail, from);
-      expect(email.mime.to?.first.email, to);
+      expect(email.mime.fromEmail, from.email);
+      expect(email.mime.to?.first.email, to.first.email);
       expect(email.mime.decodeSubject(), subject);
       expect(email.body, contains(body));
       expect(email.recipientPubkey, 'rt-rpk');
@@ -365,8 +366,8 @@ void main() {
     Email createTestEmail(String id) {
       final parser = EmailParser();
       final rawContent = parser.build(
-        from: 'from@test.com',
-        to: 'to@test.com',
+        from: MailAddress(null, 'from@test.com'),
+        to: [MailAddress(null, 'to@test.com')],
         subject: 'Subject $id',
         body: 'Body $id',
       );
