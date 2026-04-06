@@ -11,8 +11,8 @@ import 'decrypt_blob.dart';
 /// Parse a NIP-01 event (kind 1301) into a local [Email] object.
 ///
 /// Handles both inline and Blossom emails automatically:
-/// - **Inline emails (< 60KB)**: MIME is in `event.content`
-/// - **Blossom emails (≥ 60KB)**: MIME is downloaded from Blossom and decrypted
+/// - **Inline emails (< 32KB)**: MIME is in `event.content`
+/// - **Blossom emails (≥ 32KB)**: MIME is downloaded from Blossom and decrypted
 ///
 /// ## Usage
 /// ```dart

@@ -1,3 +1,7 @@
+## 1.9.1
+
+- **Fix**: Reduce Blossom threshold from 60KB to 32KB to prevent NIP-44 plaintext limit overflow. NIP-59 double wrapping (Rumor → Seal → Gift Wrap) expands payload size via Base64 + padding, making 60KB unsafe.
+
 ## 1.9.0
 
 - **Breaking**: Refactored `Email` model to use `MimeMessage` internally for RFC 2822 compliance

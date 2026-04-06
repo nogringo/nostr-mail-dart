@@ -2,7 +2,7 @@
 ///
 /// Send and receive emails via Nostr using NIP-59 gift-wrapped messages.
 ///
-/// Supports both inline emails (< 60KB) and large emails via Blossom storage.
+/// Supports both inline emails (< 32KB) and large emails via Blossom storage.
 library;
 
 export 'src/client.dart' show NostrMailClient;

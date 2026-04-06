@@ -7,7 +7,7 @@ import 'package:test/test.dart';
 
 void main() {
   test(
-    'send and receive large email (> 60KB) via Blossom',
+    'send and receive large email (> 32KB) via Blossom',
     () async {
       final senderDb = await databaseFactoryMemory.openDatabase('sender');
       final recipientDb = await databaseFactoryMemory.openDatabase('recipient');

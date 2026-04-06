@@ -22,9 +22,13 @@ const relayListKind = 10002;
 /// Label namespace for mail-related labels
 const labelNamespace = 'mail';
 
-/// Maximum size for inline MIME content (60KB)
-/// Larger emails are stored on Blossom servers
-const maxInlineSize = 60000;
+/// Maximum size for inline MIME content (32KB).
+/// NIP-44 (used in Gift Wraps) has a strict 65,535-byte plaintext limit.
+/// Because NIP-59 uses double wrapping (Rumor → Seal → Gift Wrap),
+/// and each encryption step expands the size (Base64 + Padding),
+/// a 32KB threshold is safe.
+/// Larger emails are stored on Blossom servers.
+const maxInlineSize = 32768;
 
 /// Default DM relays used when user has no relay list configured
 const defaultDmRelays = [
