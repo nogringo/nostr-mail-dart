@@ -44,3 +44,12 @@ const defaultBlossomServers = [
   'https://blossom-02.uid.ovh',
   'https://blossom.primal.net',
 ];
+
+/// NIP-78 application-specific data event kind
+const appSettingsKind = 30078;
+
+/// D-tag for public settings
+const publicSettingsDTag = 'nostr-mail/settings';
+
+/// D-tag for private (encrypted) settings
+const privateSettingsDTag = 'nostr-mail/settings/private';

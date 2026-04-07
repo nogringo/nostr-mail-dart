@@ -1,3 +1,16 @@
+## 1.10.0
+
+- **New**: NIP-78 private settings with NIP-44 encryption for cross-device synchronization
+  - `PrivateSettings` model: `signature`, `defaultAddress`, `bridges`, `sourceEvent`
+  - `getPrivateSettings()` — fetch and decrypt from relays (write relays, kind 30078)
+  - `setPrivateSettings()` — encrypt and broadcast to relays
+  - `updatePrivateSettings()` — update a single field with read-modify-write
+  - `getCachedPrivateSettings()` — read local decrypted cache (no signer required)
+  - `cachedPrivateSettings` — synchronous getter for in-memory cache (multi-pubkey Map)
+  - `PrivateSettingsStore` — local decrypted JSON cache keyed by pubkey
+  - Settings cleared on `clearAll()`
+  - Comprehensive unit and integration tests
+
 ## 1.9.1
 
 - **Fix**: Reduce Blossom threshold from 60KB to 32KB to prevent NIP-44 plaintext limit overflow. NIP-59 double wrapping (Rumor → Seal → Gift Wrap) expands payload size via Base64 + padding, making 60KB unsafe.

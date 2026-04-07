@@ -11,10 +11,12 @@ import 'constants.dart';
 import 'exceptions.dart';
 import 'models/email.dart';
 import 'models/mail_event.dart';
+import 'models/private_settings.dart';
 import 'services/email_parser.dart';
 import 'storage/email_store.dart';
 import 'storage/gift_wrap_store.dart';
 import 'storage/label_store.dart';
+import 'storage/private_settings_store.dart';
 import 'utils/recipient_resolver.dart';
 import 'utils/encrypt_blob.dart';
 import 'utils/event_email_parser.dart';
@@ -25,16 +27,22 @@ class NostrMailClient {
   final LabelStore _labelStore;
   final GiftWrapStore _giftWrapStore;
   final EmailParser _parser;
+  final PrivateSettingsStore _settingsStore;
 
   /// Cached broadcast stream for watch()
   StreamController<MailEvent>? _watchController;
   Stream<MailEvent>? _watchBroadcastStream;
+
+  /// In-memory cache for private settings keyed by pubkey.
+  /// Avoids repeated relay queries and signer decrypts.
+  final Map<String, PrivateSettings?> _cachedPrivateSettings = {};
 
   NostrMailClient({required Ndk ndk, required Database db})
     : _ndk = ndk,
       _store = EmailStore(db),
       _labelStore = LabelStore(db),
       _giftWrapStore = GiftWrapStore(db),
+      _settingsStore = PrivateSettingsStore(db),
       _parser = EmailParser();
 
   /// Get cached emails from local DB
@@ -670,13 +678,182 @@ class NostrMailClient {
     _watchBroadcastStream = null;
   }
 
-  /// Clear all local data (emails, labels, gift wraps)
+  /// Clear all local data (emails, labels, gift wraps, private settings)
   Future<void> clearAll() async {
     await Future.wait([
       _store.clearAll(),
       _labelStore.clearAll(),
       _giftWrapStore.clearAll(),
+      _settingsStore.clear(), // clear all pubkeys
     ]);
+    _cachedPrivateSettings.clear();
+  }
+
+  // ─── Private Settings (NIP-78 kind 30078, NIP-44 encrypted) ───────────
+
+  /// Synchronous access to the cached private settings for the current pubkey.
+  ///
+  /// Reads from the in-memory cache. No signer or network required.
+  /// Returns `null` if the current pubkey has no cached settings.
+  PrivateSettings? get cachedPrivateSettings {
+    final pubkey = _ndk.accounts.getPublicKey();
+    if (pubkey == null) return null;
+    return _cachedPrivateSettings[pubkey];
+  }
+
+  /// Read private settings from the local decrypted cache.
+  ///
+  /// This is an async read of the locally persisted decrypted JSON — no
+  /// signer or network required. Returns `null` if nothing is cached.
+  ///
+  /// Use this at startup to get the signature immediately without waiting
+  /// for the bunker. Call [getPrivateSettings] afterward to refresh from
+  /// relays.
+  Future<PrivateSettings?> getCachedPrivateSettings() async {
+    final pubkey = _ndk.accounts.getPublicKey();
+    if (pubkey == null) return null;
+
+    final cached = _cachedPrivateSettings[pubkey];
+    if (cached != null) return cached;
+
+    final cachedJson = await _settingsStore.load(pubkey: pubkey);
+    if (cachedJson == null || cachedJson.isEmpty) return null;
+    final settings = PrivateSettings.fromJson(cachedJson);
+    _cachedPrivateSettings[pubkey] = settings;
+    return settings;
+  }
+
+  /// Fetch private settings from relays and decrypt them.
+  ///
+  /// Results are cached in memory [_cachedPrivateSettings] and persisted
+  /// locally in decrypted form so future reads don't require the signer.
+  /// Returns [PrivateSettings] (possibly empty) if successful, or `null` if
+  /// no settings event is found on relays.
+  ///
+  /// Settings are stored as NIP-78 replaceable parameterized events (kind 30078)
+  /// with d-tag `nostr-mail/settings/private`, encrypted using NIP-44.
+  /// Queried from the user's write relays (NIP-65).
+  Future<PrivateSettings?> getPrivateSettings() async {
+    final pubkey = _ndk.accounts.getPublicKey();
+    if (pubkey == null) {
+      throw NostrMailException('No account configured in ndk');
+    }
+
+    final account = _ndk.accounts.getLoggedAccount();
+    if (account == null || !account.signer.canSign()) {
+      throw NostrMailException(
+        'Cannot read private settings: no signing capability',
+      );
+    }
+
+    final writeRelays = await _getWriteRelays(pubkey);
+
+    final response = _ndk.requests.query(
+      filter: ndk.Filter(kinds: [appSettingsKind], authors: [pubkey], limit: 1)
+        ..setTag('d', [privateSettingsDTag]),
+      explicitRelays: writeRelays,
+    );
+
+    final events = await response.future;
+    if (events.isEmpty) return null;
+
+    // Get the most recent event
+    final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
+
+    try {
+      final decrypted = await account.signer.decryptNip44(
+        ciphertext: event.content,
+        senderPubKey: pubkey,
+      );
+      if (decrypted == null || decrypted.isEmpty) return null;
+
+      // Persist decrypted JSON locally for offline access
+      await _settingsStore.save(pubkey: pubkey, json: decrypted);
+
+      final settings = PrivateSettings.fromJson(decrypted, sourceEvent: event);
+      _cachedPrivateSettings[pubkey] = settings;
+      return settings;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Save (publish) private settings to relays.
+  ///
+  /// Creates a NIP-78 replaceable parameterized event (kind 30078) with the
+  /// settings encrypted to self using NIP-44.
+  Future<void> setPrivateSettings(PrivateSettings settings) async {
+    final pubkey = _ndk.accounts.getPublicKey();
+    if (pubkey == null) {
+      throw NostrMailException('No account configured in ndk');
+    }
+
+    final account = _ndk.accounts.getLoggedAccount();
+    if (account == null || !account.signer.canSign()) {
+      throw NostrMailException(
+        'Cannot write private settings: no signing capability',
+      );
+    }
+
+    final jsonContent = settings.toJson();
+    final encryptedContent = await account.signer.encryptNip44(
+      plaintext: jsonContent,
+      recipientPubKey: pubkey,
+    );
+    if (encryptedContent == null) {
+      throw NostrMailException('Failed to encrypt private settings');
+    }
+
+    final event = Nip01Event(
+      pubKey: pubkey,
+      kind: appSettingsKind,
+      tags: [
+        ['d', privateSettingsDTag],
+      ],
+      content: encryptedContent,
+    );
+
+    final signedEvent = await _ndk.accounts.sign(event);
+
+    // Persist locally for offline access (no signer needed to read)
+    await _settingsStore.save(pubkey: pubkey, json: settings.toJson());
+    _cachedPrivateSettings[pubkey] = PrivateSettings(
+      sourceEvent: signedEvent,
+      defaultAddress: settings.defaultAddress,
+      signature: settings.signature,
+      bridges: settings.bridges,
+    );
+
+    final writeRelays = await _getWriteRelays(pubkey);
+    final broadcast = _ndk.broadcast.broadcast(
+      nostrEvent: signedEvent,
+      specificRelays: writeRelays,
+    );
+    await broadcast.broadcastDoneFuture;
+  }
+
+  /// Update a single field in private settings.
+  ///
+  /// Fetches current settings, updates the specified field, and re-publishes.
+  /// Use the [clear*] flags to explicitly remove a field.
+  Future<void> updatePrivateSettings({
+    MailAddress? defaultAddress,
+    String? signature,
+    List<String>? bridges,
+    bool clearDefaultAddress = false,
+    bool clearSignature = false,
+    bool clearBridges = false,
+  }) async {
+    final current = await getPrivateSettings() ?? const PrivateSettings();
+    final updated = current.copyWith(
+      defaultAddress: defaultAddress,
+      signature: signature,
+      bridges: bridges,
+      clearDefaultAddress: clearDefaultAddress,
+      clearSignature: clearSignature,
+      clearBridges: clearBridges,
+    );
+    await setPrivateSettings(updated);
   }
 
   /// Stream of new emails
