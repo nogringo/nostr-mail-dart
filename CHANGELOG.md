@@ -1,3 +1,13 @@
+## 1.11.0
+
+- **New**: `identities` field in `PrivateSettings` — a list of RFC 5322 `MailAddress` entries for multi-identity support
+  - `identities` replaces the single `defaultAddress` concept with a flexible list
+  - `defaultAddress` is now a convenience getter returning `identities?.first`
+  - `updatePrivateSettings()` accepts `identities` and `clearIdentities` parameters
+  - `send()` now uses the first identity as the default "From" address when `from` is not provided
+- **Breaking**: `defaultAddress` removed from `PrivateSettings` constructor, `fromJson`, `toJson`, and `copyWith`
+- **Breaking**: `updatePrivateSettings()` no longer accepts `defaultAddress` or `clearDefaultAddress` parameters
+
 ## 1.10.0
 
 - **New**: NIP-78 private settings with NIP-44 encryption for cross-device synchronization

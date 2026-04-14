@@ -59,17 +59,24 @@ void main() {
   group('PrivateSettings model', () {
     test('fromJson parses all fields', () {
       final json = jsonEncode({
-        'default_address': 'test@bridge.com',
         'signature': 'Sent via Nostr',
         'bridges': ['nostr.mail', 'bridge.example.com'],
+        'identities': [
+          'Alice Real <npub1abc@test.mail>',
+          'npub1def@bridge.com',
+        ],
       });
 
       final settings = PrivateSettings.fromJson(json);
 
       expect(settings.defaultAddress, isNotNull);
-      expect(settings.defaultAddress!.encode(), 'test@bridge.com');
+      expect(settings.defaultAddress!.personalName, 'Alice Real');
+      expect(settings.defaultAddress!.email, 'npub1abc@test.mail');
       expect(settings.signature, 'Sent via Nostr');
       expect(settings.bridges, ['nostr.mail', 'bridge.example.com']);
+      expect(settings.identities, isNotNull);
+      expect(settings.identities!.length, 2);
+      expect(settings.identities![0].personalName, 'Alice Real');
     });
 
     test('fromJson handles empty/null fields', () {
@@ -78,6 +85,7 @@ void main() {
       expect(settings.defaultAddress, isNull);
       expect(settings.signature, isNull);
       expect(settings.bridges, isNull);
+      expect(settings.identities, isNull);
     });
 
     test('fromJson handles partial fields', () {
@@ -88,28 +96,26 @@ void main() {
       expect(settings.defaultAddress, isNull);
       expect(settings.signature, 'Custom signature');
       expect(settings.bridges, isNull);
-    });
-
-    test('fromJson handles invalid default_address gracefully', () {
-      final json = jsonEncode({'default_address': 'not-a-valid-address'});
-
-      // Should not throw, just set to null
-      final settings = PrivateSettings.fromJson(json);
-      expect(settings.defaultAddress, isNull);
+      expect(settings.identities, isNull);
     });
 
     test('toJson serializes all fields', () {
       final settings = PrivateSettings(
-        defaultAddress: MailAddress(null, 'test@bridge.com'),
         signature: 'Sent via Nostr',
         bridges: ['nostr.mail'],
+        identities: [
+          MailAddress('Alice', 'alice@nostr.mail'),
+          MailAddress(null, 'bob@bridge.com'),
+        ],
       );
 
       final json = jsonDecode(settings.toJson()) as Map<String, dynamic>;
 
-      expect(json['default_address'], 'test@bridge.com');
       expect(json['signature'], 'Sent via Nostr');
       expect(json['bridges'], ['nostr.mail']);
+      expect(json.containsKey('default_address'), isFalse);
+      expect(json['identities'], isNotNull);
+      expect((json['identities'] as List).length, 2);
     });
 
     test('toJson omits null fields', () {
@@ -117,16 +123,19 @@ void main() {
 
       final json = jsonDecode(settings.toJson()) as Map<String, dynamic>;
 
-      expect(json.containsKey('default_address'), isFalse);
       expect(json['signature'], 'Only signature');
       expect(json.containsKey('bridges'), isFalse);
+      expect(json.containsKey('identities'), isFalse);
     });
 
     test('roundtrip preserves data', () {
       final original = PrivateSettings(
-        defaultAddress: MailAddress(null, 'user@bridge.com'),
         signature: 'My signature',
         bridges: ['a.com', 'b.com'],
+        identities: [
+          MailAddress('Alice', 'alice@nostr.mail'),
+          MailAddress(null, 'bob@bridge.com'),
+        ],
       );
 
       final restored = PrivateSettings.fromJson(original.toJson());
@@ -137,6 +146,10 @@ void main() {
         restored.defaultAddress!.encode(),
         original.defaultAddress!.encode(),
       );
+      expect(restored.identities, isNotNull);
+      expect(restored.identities!.length, 2);
+      expect(restored.identities![0].personalName, 'Alice');
+      expect(restored.identities![1].personalName, isNull);
     });
 
     test('copyWith updates fields', () {
@@ -154,24 +167,38 @@ void main() {
 
     test('copyWith clears fields', () {
       final original = PrivateSettings(
-        defaultAddress: MailAddress(null, 'test@bridge.com'),
         signature: 'signature',
         bridges: ['bridge.com'],
+        identities: [MailAddress('Alice', 'alice@test.com')],
       );
 
       final updated = original.copyWith(
-        clearDefaultAddress: true,
         clearSignature: true,
         clearBridges: true,
+        clearIdentities: true,
       );
 
       expect(updated.defaultAddress, isNull);
       expect(updated.signature, isNull);
       expect(updated.bridges, isNull);
+      expect(updated.identities, isNull);
+    });
+
+    test('copyWith updates identities', () {
+      final original = PrivateSettings(
+        identities: [MailAddress('Old', 'old@test.com')],
+      );
+
+      final updated = original.copyWith(
+        identities: [MailAddress('New', 'new@test.com')],
+      );
+
+      expect(updated.identities, isNotNull);
+      expect(updated.identities!.length, 1);
+      expect(updated.identities![0].personalName, 'New');
     });
 
     test('copyWith clears sourceEvent', () {
-      // We'll test with a real client that populates sourceEvent below
       final settings = PrivateSettings(signature: 'test', sourceEvent: null);
       final updated = settings.copyWith(signature: 'updated');
       expect(updated.sourceEvent, isNull);
@@ -222,7 +249,6 @@ void main() {
     });
 
     test('setPrivateSettings throws without signing capability', () async {
-      // Login with only pubkey (no private key)
       final readOnlyKeys = Bip340.generatePrivateKey();
       ndk.accounts.loginPublicKey(pubkey: readOnlyKeys.publicKey);
 
@@ -247,7 +273,6 @@ void main() {
       () async {
         await client.updatePrivateSettings(signature: 'Synced signature');
 
-        // Note: this queries the relays, so it depends on network
         final settings = await client.getPrivateSettings();
 
         expect(settings, isNotNull);
@@ -287,16 +312,20 @@ void main() {
     );
 
     test(
-      'updatePrivateSettings with defaultAddress',
+      'updatePrivateSettings with identities sets defaultAddress',
       () async {
-        final addr = MailAddress(null, 'user@nostr.mail');
-        await client.updatePrivateSettings(defaultAddress: addr);
+        final identities = [
+          MailAddress('Alice', 'alice@nostr.mail'),
+          MailAddress(null, 'bob@bridge.com'),
+        ];
+        await client.updatePrivateSettings(identities: identities);
 
         final settings = await client.getPrivateSettings();
 
         expect(settings, isNotNull);
         expect(settings!.defaultAddress, isNotNull);
-        expect(settings.defaultAddress!.encode(), 'user@nostr.mail');
+        expect(settings.defaultAddress!.personalName, 'Alice');
+        expect(settings.identities!.length, 2);
       },
       timeout: const Timeout(Duration(seconds: 30)),
     );
@@ -304,7 +333,6 @@ void main() {
     test(
       'clearAll resets private settings cache',
       () async {
-        // Set some settings first
         await client.updatePrivateSettings(signature: 'Test signature');
         await client.getPrivateSettings();
         expect(client.cachedPrivateSettings, isNotNull);
@@ -341,13 +369,51 @@ void main() {
         expect(settings, isNotNull);
         expect(settings!.sourceEvent, isNotNull);
         expect(settings.sourceEvent!.kind, appSettingsKind);
-        // The d-tag should be 'nostr-mail/settings/private'
         final dTag = settings.sourceEvent!.tags.firstWhere(
           (t) => t.isNotEmpty && t[0] == 'd',
           orElse: () => [],
         );
         expect(dTag, isNotEmpty);
         expect(dTag[1], privateSettingsDTag);
+      },
+      timeout: const Timeout(Duration(seconds: 30)),
+    );
+
+    test(
+      'updatePrivateSettings with identities',
+      () async {
+        final identities = [
+          MailAddress('Alice Real', 'alice@nostr.mail'),
+          MailAddress(null, 'bob@bridge.com'),
+        ];
+        await client.updatePrivateSettings(identities: identities);
+
+        final settings = await client.getPrivateSettings();
+
+        expect(settings, isNotNull);
+        expect(settings!.identities, isNotNull);
+        expect(settings.identities!.length, 2);
+        expect(settings.identities![0].personalName, 'Alice Real');
+        expect(settings.identities![1].personalName, isNull);
+      },
+      timeout: const Timeout(Duration(seconds: 30)),
+    );
+
+    test(
+      'updatePrivateSettings with clearIdentities',
+      () async {
+        await client.updatePrivateSettings(
+          identities: [MailAddress('Test', 'test@test.com')],
+        );
+        await client.getPrivateSettings();
+        expect(client.cachedPrivateSettings!.identities, isNotNull);
+
+        await client.updatePrivateSettings(clearIdentities: true);
+
+        final settings = await client.getPrivateSettings();
+        expect(settings, isNotNull);
+        expect(settings!.identities, isNull);
+        expect(settings.defaultAddress, isNull);
       },
       timeout: const Timeout(Duration(seconds: 30)),
     );

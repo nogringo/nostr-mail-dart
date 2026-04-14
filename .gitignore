@@ -8,3 +8,6 @@ pubspec.lock
 
 # Local dependency overrides
 pubspec_overrides.yaml
+
+# Qwen Code settings
+.qwen/

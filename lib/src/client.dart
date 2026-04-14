@@ -819,9 +819,9 @@ class NostrMailClient {
     await _settingsStore.save(pubkey: pubkey, json: settings.toJson());
     _cachedPrivateSettings[pubkey] = PrivateSettings(
       sourceEvent: signedEvent,
-      defaultAddress: settings.defaultAddress,
       signature: settings.signature,
       bridges: settings.bridges,
+      identities: settings.identities,
     );
 
     final writeRelays = await _getWriteRelays(pubkey);
@@ -837,21 +837,21 @@ class NostrMailClient {
   /// Fetches current settings, updates the specified field, and re-publishes.
   /// Use the [clear*] flags to explicitly remove a field.
   Future<void> updatePrivateSettings({
-    MailAddress? defaultAddress,
     String? signature,
     List<String>? bridges,
-    bool clearDefaultAddress = false,
+    List<MailAddress>? identities,
     bool clearSignature = false,
     bool clearBridges = false,
+    bool clearIdentities = false,
   }) async {
     final current = await getPrivateSettings() ?? const PrivateSettings();
     final updated = current.copyWith(
-      defaultAddress: defaultAddress,
       signature: signature,
       bridges: bridges,
-      clearDefaultAddress: clearDefaultAddress,
+      identities: identities,
       clearSignature: clearSignature,
       clearBridges: clearBridges,
+      clearIdentities: clearIdentities,
     );
     await setPrivateSettings(updated);
   }
@@ -1191,7 +1191,8 @@ class NostrMailClient {
 
   /// Send email - auto-detects if recipient is Nostr or legacy email
   ///
-  /// [from] is optional. If not provided, it defaults to sender's npub@nostr.
+  /// [from] is optional. If not provided, defaults to the first identity
+  /// from private settings, or falls back to sender's npub@nostr.
   /// [htmlBody] is optional HTML content for rich emails.
   /// [keepCopy] if true, sends a copy to sender for sync between devices (default: true).
   Future<void> send({
@@ -1210,11 +1211,18 @@ class NostrMailClient {
     }
 
     final MailAddress finalFrom;
-    if (from == null) {
-      final senderNpub = Nip19.encodePubKey(senderPubkey);
-      finalFrom = MailAddress(null, '$senderNpub@nostr');
-    } else {
+    if (from != null) {
       finalFrom = from;
+    } else {
+      // Try to use the first identity from private settings
+      final settings =
+          cachedPrivateSettings ?? await getCachedPrivateSettings();
+      if (settings?.identities != null && settings!.identities!.isNotEmpty) {
+        finalFrom = settings.identities!.first;
+      } else {
+        final senderNpub = Nip19.encodePubKey(senderPubkey);
+        finalFrom = MailAddress(null, '$senderNpub@nostr');
+      }
     }
 
     // Build RFC 2822 email content using the updated parser

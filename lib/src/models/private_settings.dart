@@ -14,8 +14,8 @@ class PrivateSettings {
   /// separately.
   final Nip01Event? sourceEvent;
 
-  /// Default "From" address (e.g. `npub1...@bridge.com`)
-  final MailAddress? defaultAddress;
+  /// Default "From" address — convenience getter for [identities.first].
+  MailAddress? get defaultAddress => identities?.first;
 
   /// Email signature appended to outgoing emails
   final String? signature;
@@ -23,30 +23,37 @@ class PrivateSettings {
   /// List of preferred bridge domains
   final List<String>? bridges;
 
+  /// List of user-defined "From" identities in RFC 5322 format.
+  ///
+  /// Each entry can be used directly in the `From:` header without any transformation.
+  /// Examples:
+  /// - `"Alice Real <npub1abc...@nostr.mail>"` — name + address
+  /// - `"npub1abc...@bridge.com"` — address only (no name)
+  /// - `"Pseudo <alice@example.com>"` — custom name + legacy email
+  ///
+  /// If empty or absent, clients SHOULD auto-generate available addresses
+  /// from `npub@nostr` and configured bridges.
+  /// The **first identity** (index 0) is the default "From" address.
+  final List<MailAddress>? identities;
+
   const PrivateSettings({
     this.sourceEvent,
-    this.defaultAddress,
     this.signature,
     this.bridges,
+    this.identities,
   });
 
   /// Create from decrypted JSON content and its source event.
   factory PrivateSettings.fromJson(String json, {Nip01Event? sourceEvent}) {
     final map = jsonDecode(json) as Map<String, dynamic>;
-    MailAddress? defaultAddress;
-    if (map['default_address'] case String addrStr) {
-      try {
-        defaultAddress = MailAddress.parse(addrStr);
-      } catch (_) {
-        defaultAddress = null;
-      }
-    }
     return PrivateSettings(
       sourceEvent: sourceEvent,
-      defaultAddress: defaultAddress,
       signature: map['signature'] as String?,
       bridges: (map['bridges'] as List<dynamic>?)
           ?.map((e) => e as String)
+          .toList(),
+      identities: (map['identities'] as List<dynamic>?)
+          ?.map((e) => MailAddress.parse(e as String))
           .toList(),
     );
   }
@@ -54,11 +61,11 @@ class PrivateSettings {
   /// Serialize to JSON for encryption
   String toJson() {
     final map = <String, dynamic>{};
-    if (defaultAddress != null) {
-      map['default_address'] = defaultAddress!.encode();
-    }
     if (signature != null) map['signature'] = signature;
     if (bridges != null) map['bridges'] = bridges;
+    if (identities != null) {
+      map['identities'] = identities!.map((e) => e.encode()).toList();
+    }
     return jsonEncode(map);
   }
 
@@ -67,24 +74,22 @@ class PrivateSettings {
   /// [sourceEvent] is always cleared since the resulting settings
   /// have not been published yet.
   PrivateSettings copyWith({
-    MailAddress? defaultAddress,
     String? signature,
     List<String>? bridges,
-    bool clearDefaultAddress = false,
+    List<MailAddress>? identities,
     bool clearSignature = false,
     bool clearBridges = false,
+    bool clearIdentities = false,
   }) {
     return PrivateSettings(
       sourceEvent: null, // stale after mutation
-      defaultAddress: clearDefaultAddress
-          ? null
-          : (defaultAddress ?? this.defaultAddress),
       signature: clearSignature ? null : (signature ?? this.signature),
       bridges: clearBridges ? null : (bridges ?? this.bridges),
+      identities: clearIdentities ? null : (identities ?? this.identities),
     );
   }
 
   @override
   String toString() =>
-      'PrivateSettings(defaultAddress: $defaultAddress, signature: $signature, bridges: $bridges)';
+      'PrivateSettings(defaultAddress: $defaultAddress, signature: $signature, bridges: $bridges, identities: $identities)';
 }
