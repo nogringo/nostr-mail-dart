@@ -18,6 +18,30 @@ class GiftWrapStore {
     return true;
   }
 
+  /// Update a gift wrap with its decrypted components
+  Future<void> updateDecrypted({
+    required String giftWrapId,
+    required Nip01Event seal,
+    required Nip01Event rumor,
+  }) async {
+    final existing = await _store.record(giftWrapId).get(_db);
+    if (existing == null) return;
+    await _store.record(giftWrapId).put(_db, {
+      ...existing,
+      'seal': Nip01EventModel.fromEntity(seal).toJson(),
+      'rumor': Nip01EventModel.fromEntity(rumor).toJson(),
+      'rumorId': rumor.id,
+      'processed': true,
+    });
+  }
+
+  /// Get gift wrap record by rumor ID (email ID)
+  Future<Map<String, dynamic>?> getByRumorId(String rumorId) async {
+    final finder = Finder(filter: Filter.equals('rumorId', rumorId));
+    final record = await _store.findFirst(_db, finder: finder);
+    return record?.value;
+  }
+
   /// Mark a gift wrap as processed
   Future<void> markProcessed(String eventId) async {
     final existing = await _store.record(eventId).get(_db);

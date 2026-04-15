@@ -1,3 +1,14 @@
+## 1.12.0
+
+- **New**: Access to technical NIP-59 details (Gift Wrap, Seal, Rumor)
+  - `getGiftWrap(emailId)` — Retrieve the original kind 1059 event
+  - `getSeal(emailId)` — Retrieve the decrypted kind 13 seal event
+  - `getRumor(emailId)` — Retrieve the decrypted kind 1301 rumor event
+- **Improvement**: Enhanced Gift Wrap storage
+  - `GiftWrapStore` now persists decrypted seals and rumors
+  - Faster retrieval of technical details without re-decryption
+- **New**: `UnwrappedGiftWrap` model for handling NIP-59 event pairs
+
 ## 1.11.0
 
 - **New**: `identities` field in `PrivateSettings` — a list of RFC 5322 `MailAddress` entries for multi-identity support

@@ -12,6 +12,7 @@ import 'exceptions.dart';
 import 'models/email.dart';
 import 'models/mail_event.dart';
 import 'models/private_settings.dart';
+import 'models/unwrapped_gift_wrap.dart';
 import 'services/email_parser.dart';
 import 'storage/email_store.dart';
 import 'storage/gift_wrap_store.dart';
@@ -53,6 +54,27 @@ class NostrMailClient {
   /// Get single email by ID
   Future<Email?> getEmail(String id) {
     return _store.getEmailById(id);
+  }
+
+  /// Get the original NIP-59 Gift Wrap event (kind 1059) for an email.
+  Future<Nip01Event?> getGiftWrap(String emailId) async {
+    final record = await _giftWrapStore.getByRumorId(emailId);
+    if (record == null) return null;
+    return Nip01EventModel.fromJson(record['event'] as Map);
+  }
+
+  /// Get the NIP-59 Seal event (kind 13) for an email.
+  Future<Nip01Event?> getSeal(String emailId) async {
+    final record = await _giftWrapStore.getByRumorId(emailId);
+    if (record == null || record['seal'] == null) return null;
+    return Nip01EventModel.fromJson(record['seal'] as Map);
+  }
+
+  /// Get the original Rumor event (kind 1301) for an email.
+  Future<Nip01Event?> getRumor(String emailId) async {
+    final record = await _giftWrapStore.getByRumorId(emailId);
+    if (record == null || record['rumor'] == null) return null;
+    return Nip01EventModel.fromJson(record['rumor'] as Map);
   }
 
   /// Search emails by query (subject, body, or sender) from local DB
@@ -1151,28 +1173,43 @@ class NostrMailClient {
         return false;
       }
 
+      final rumor = unwrapped.rumor;
+      final seal = unwrapped.seal;
+
       // Not an email (DM, etc.) - mark processed to skip in future
-      if (unwrapped.kind != emailKind) {
-        await _giftWrapStore.markProcessed(event.id);
+      if (rumor.kind != emailKind) {
+        await _giftWrapStore.updateDecrypted(
+          giftWrapId: event.id,
+          seal: seal,
+          rumor: rumor,
+        );
         return false;
       }
 
       // Extract the real recipient from the 'p' tag of the email event
-      final recipientPubkey = unwrapped.getFirstTag('p');
+      final recipientPubkey = rumor.getFirstTag('p');
       if (recipientPubkey == null) {
-        await _giftWrapStore.markProcessed(event.id);
+        await _giftWrapStore.updateDecrypted(
+          giftWrapId: event.id,
+          seal: seal,
+          rumor: rumor,
+        );
         return false;
       }
 
       // Parse event into Email (handles inline and Blossom emails)
       final email = await parseEmailEvent(
-        event: unwrapped,
+        event: rumor,
         ndk: _ndk,
         recipientPubkey: recipientPubkey,
       );
 
       await _store.saveEmail(email);
-      await _giftWrapStore.markProcessed(event.id);
+      await _giftWrapStore.updateDecrypted(
+        giftWrapId: event.id,
+        seal: seal,
+        rumor: rumor,
+      );
 
       _watchController?.add(EmailReceived(email: email, timestamp: email.date));
       return true;
@@ -1342,15 +1379,14 @@ class NostrMailClient {
 
   /// Unwrap a NIP-59 gift-wrapped event
   ///
-  /// Returns the unwrapped event, or null if decryption failed.
+  /// Returns the unwrapped seal and rumor, or null if decryption failed.
   /// Throws [SignerRequestCancelledException] if the user cancelled locally.
   /// Throws [SignerRequestRejectedException] if the signer rejected the request.
-  Future<Nip01Event?> _unwrapGiftWrap(Nip01Event giftWrapEvent) async {
+  Future<UnwrappedGiftWrap?> _unwrapGiftWrap(Nip01Event giftWrapEvent) async {
     try {
-      final unwrapped = await _ndk.giftWrap.fromGiftWrap(
-        giftWrap: giftWrapEvent,
-      );
-      return unwrapped;
+      final seal = await _ndk.giftWrap.unwrapEvent(wrappedEvent: giftWrapEvent);
+      final rumor = await _ndk.giftWrap.unsealRumor(sealedEvent: seal);
+      return UnwrappedGiftWrap(seal: seal, rumor: rumor);
     } on SignerRequestCancelledException {
       // User cancelled - propagate to caller
       rethrow;
