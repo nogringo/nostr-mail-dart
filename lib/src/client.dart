@@ -29,6 +29,8 @@ class NostrMailClient {
   final GiftWrapStore _giftWrapStore;
   final EmailParser _parser;
   final PrivateSettingsStore _settingsStore;
+  final List<String> _defaultDmRelays;
+  final List<String> _defaultBlossomServers;
 
   /// Cached broadcast stream for watch()
   StreamController<MailEvent>? _watchController;
@@ -38,13 +40,20 @@ class NostrMailClient {
   /// Avoids repeated relay queries and signer decrypts.
   final Map<String, PrivateSettings?> _cachedPrivateSettings = {};
 
-  NostrMailClient({required Ndk ndk, required Database db})
-    : _ndk = ndk,
-      _store = EmailStore(db),
-      _labelStore = LabelStore(db),
-      _giftWrapStore = GiftWrapStore(db),
-      _settingsStore = PrivateSettingsStore(db),
-      _parser = EmailParser();
+  NostrMailClient({
+    required Ndk ndk,
+    required Database db,
+    List<String>? defaultDmRelays,
+    List<String>? defaultBlossomServers,
+  }) : _ndk = ndk,
+       _store = EmailStore(db),
+       _labelStore = LabelStore(db),
+       _giftWrapStore = GiftWrapStore(db),
+       _settingsStore = PrivateSettingsStore(db),
+       _parser = EmailParser(),
+       _defaultDmRelays = defaultDmRelays ?? recommendedDmRelays,
+       _defaultBlossomServers =
+           defaultBlossomServers ?? recommendedBlossomServers;
 
   /// Get cached emails from local DB
   Future<List<Email>> getEmails({int? limit, int? offset}) {
@@ -1202,6 +1211,7 @@ class NostrMailClient {
         event: rumor,
         ndk: _ndk,
         recipientPubkey: recipientPubkey,
+        defaultBlossomServers: _defaultBlossomServers,
       );
 
       await _store.saveEmail(email);
@@ -1332,7 +1342,7 @@ class NostrMailClient {
 
       // Fallback to defaults if no servers found
       if (allBlossomServers.isEmpty) {
-        allBlossomServers.addAll(defaultBlossomServers);
+        allBlossomServers.addAll(_defaultBlossomServers);
       }
 
       final uploadResults = await _ndk.blossom.uploadBlob(
@@ -1424,7 +1434,7 @@ class NostrMailClient {
     );
 
     final events = await response.future;
-    if (events.isEmpty) return defaultDmRelays;
+    if (events.isEmpty) return _defaultDmRelays;
 
     // Get the most recent event
     final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
@@ -1434,7 +1444,7 @@ class NostrMailClient {
         .map((t) => t[1])
         .toList();
 
-    return relays.isNotEmpty ? relays : defaultDmRelays;
+    return relays.isNotEmpty ? relays : _defaultDmRelays;
   }
 
   /// Get user's write relays from NIP-65 kind 10002 event
@@ -1446,7 +1456,7 @@ class NostrMailClient {
     );
 
     final events = await response.future;
-    if (events.isEmpty) return defaultDmRelays;
+    if (events.isEmpty) return _defaultDmRelays;
 
     // Get the most recent event
     final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
@@ -1463,6 +1473,6 @@ class NostrMailClient {
         .map((t) => t[1])
         .toList();
 
-    return relays.isNotEmpty ? relays : defaultDmRelays;
+    return relays.isNotEmpty ? relays : _defaultDmRelays;
   }
 }
