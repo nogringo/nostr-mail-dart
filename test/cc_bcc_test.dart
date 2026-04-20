@@ -5,21 +5,35 @@ import 'package:test/test.dart';
 import 'models/test_user.dart';
 
 void main() {
-  test("description", () async {
+  test("nostr cc bcc", () async {
     final fromUser = await TestUser("from user").create();
     final toUser = await TestUser("to user").create();
     final ccUser = await TestUser("cc user").create();
-    final bccUser = await TestUser("bcc user").create();
+    final bcc1User = await TestUser("bcc user").create();
+    final bcc2User = await TestUser("bcc user").create();
 
     await fromUser.client.send(
       to: [
-        MailAddress(null, '${Nip19.encodePubKey(toUser.keyPair.publicKey)}@nostr'),
+        MailAddress(
+          null,
+          '${Nip19.encodePubKey(toUser.keyPair.publicKey)}@nostr',
+        ),
       ],
       cc: [
-        MailAddress(null, '${Nip19.encodePubKey(ccUser.keyPair.publicKey)}@nostr'),
+        MailAddress(
+          null,
+          '${Nip19.encodePubKey(ccUser.keyPair.publicKey)}@nostr',
+        ),
       ],
       bcc: [
-        MailAddress(null, '${Nip19.encodePubKey(bccUser.keyPair.publicKey)}@nostr'),
+        MailAddress(
+          null,
+          '${Nip19.encodePubKey(bcc1User.keyPair.publicKey)}@nostr',
+        ),
+        MailAddress(
+          null,
+          '${Nip19.encodePubKey(bcc2User.keyPair.publicKey)}@nostr',
+        ),
       ],
       subject: "subject",
       body: "body",
@@ -30,7 +44,8 @@ void main() {
     await fromUser.client.fetchRecent();
     await toUser.client.fetchRecent();
     await ccUser.client.fetchRecent();
-    await bccUser.client.fetchRecent();
+    await bcc1User.client.fetchRecent();
+    await bcc2User.client.fetchRecent();
 
     final sentMails = await fromUser.client.getSentEmails();
     final mail = sentMails.first.mime;
@@ -45,7 +60,11 @@ void main() {
     );
     expect(
       mail.bcc!.first.email,
-      '${Nip19.encodePubKey(bccUser.keyPair.publicKey)}@nostr',
+      '${Nip19.encodePubKey(bcc1User.keyPair.publicKey)}@nostr',
+    );
+    expect(
+      mail.bcc![1].email,
+      '${Nip19.encodePubKey(bcc2User.keyPair.publicKey)}@nostr',
     );
 
     final inboxMails = await toUser.client.getInboxEmails();
@@ -59,7 +78,8 @@ void main() {
       inboxMail.cc!.first.email,
       '${Nip19.encodePubKey(ccUser.keyPair.publicKey)}@nostr',
     );
-    expect(inboxMail.bcc, isNull);
+    // BCC should be null or empty for TO recipient
+    expect(inboxMail.bcc == null || inboxMail.bcc!.isEmpty, true);
 
     final ccInboxMails = await ccUser.client.getInboxEmails();
     final ccInboxMail = ccInboxMails.first.mime;
@@ -72,27 +92,39 @@ void main() {
       ccInboxMail.cc!.first.email,
       '${Nip19.encodePubKey(ccUser.keyPair.publicKey)}@nostr',
     );
-    expect(ccInboxMail.bcc, isNull);
+    // BCC should be null or empty for CC recipient
+    expect(ccInboxMail.bcc == null || ccInboxMail.bcc!.isEmpty, true);
 
-    final bccInboxMails = await bccUser.client.getInboxEmails();
-    final bccInboxMail = bccInboxMails.first.mime;
+    final bcc1InboxMails = await bcc1User.client.getInboxEmails();
+    final bcc1InboxMail = bcc1InboxMails.first.mime;
 
     expect(
-      bccInboxMail.to!.first.email,
+      bcc1InboxMail.to!.first.email,
       '${Nip19.encodePubKey(toUser.keyPair.publicKey)}@nostr',
     );
     expect(
-      bccInboxMail.cc!.first.email,
+      bcc1InboxMail.cc!.first.email,
       '${Nip19.encodePubKey(ccUser.keyPair.publicKey)}@nostr',
     );
+    expect(bcc1InboxMail.bcc == null || bcc1InboxMail.bcc!.isEmpty, true);
+
+    final bcc2InboxMails = await bcc2User.client.getInboxEmails();
+    final bcc2InboxMail = bcc2InboxMails.first.mime;
+
     expect(
-      bccInboxMail.bcc!.first.email,
-      '${Nip19.encodePubKey(bccUser.keyPair.publicKey)}@nostr',
+      bcc2InboxMail.to!.first.email,
+      '${Nip19.encodePubKey(toUser.keyPair.publicKey)}@nostr',
     );
+    expect(
+      bcc2InboxMail.cc!.first.email,
+      '${Nip19.encodePubKey(ccUser.keyPair.publicKey)}@nostr',
+    );
+    expect(bcc2InboxMail.bcc == null || bcc2InboxMail.bcc!.isEmpty, true);
 
     await fromUser.destroy();
     await toUser.destroy();
     await ccUser.destroy();
-    await bccUser.destroy();
+    await bcc1User.destroy();
+    await bcc2User.destroy();
   });
 }
