@@ -1,0 +1,47 @@
+import 'package:ndk/ndk.dart';
+import 'package:ndk/shared/nips/nip01/bip340.dart';
+import 'package:ndk/shared/nips/nip01/key_pair.dart';
+import 'package:nostr_mail/src/client.dart';
+import 'package:sembast/sembast_memory.dart';
+
+class TestUser {
+  String id;
+  late KeyPair keyPair;
+  late Ndk ndk;
+  late Database db;
+  late NostrMailClient client;
+
+  TestUser(this.id);
+
+  Future<TestUser> create() async {
+    keyPair = Bip340.generatePrivateKey();
+    ndk = Ndk(
+      NdkConfig(
+        eventVerifier: Bip340EventVerifier(),
+        cache: MemCacheManager(),
+        bootstrapRelays: ["ws://localhost:7777"],
+      ),
+    );
+
+    ndk.accounts.loginPrivateKey(
+      pubkey: keyPair.publicKey,
+      privkey: keyPair.privateKey!,
+    );
+
+    db = await databaseFactoryMemory.openDatabase(id);
+
+    client = NostrMailClient(
+      ndk: ndk,
+      db: db,
+      defaultDmRelays: ["ws://localhost:7777"],
+      defaultBlossomServers: ["http://localhost:3000"],
+    );
+
+    return this;
+  }
+
+  Future<void> destroy() async {
+    await ndk.destroy();
+    await db.close();
+  }
+}

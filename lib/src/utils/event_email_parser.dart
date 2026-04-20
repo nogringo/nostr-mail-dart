@@ -40,6 +40,7 @@ Future<Email> parseEmailEvent({
   required Nip01Event event,
   required Ndk ndk,
   required String recipientPubkey,
+  List<String>? defaultBlossomServers,
 }) async {
   // Extract Blossom tags (NIP-17 style)
   final blossomHash = event.getFirstTag('x');
@@ -54,6 +55,7 @@ Future<Email> parseEmailEvent({
     decryptionKey: decryptionKey,
     decryptionNonce: decryptionNonce,
     recipientPubkey: recipientPubkey,
+    defaultBlossomServers: defaultBlossomServers,
   );
 
   // Parse RFC 2822 MIME
@@ -79,6 +81,7 @@ Future<String> _parseMime({
   String? blossomHash,
   String? decryptionKey,
   String? decryptionNonce,
+  List<String>? defaultBlossomServers,
 }) async {
   if (rawContent.isEmpty && blossomHash != null) {
     // Get recipient's Blossom servers (BUD-03) or use default
@@ -89,7 +92,8 @@ Future<String> _parseMime({
     // Download from recipient's servers or default
     final downloadResult = await ndk.blossom.getBlob(
       sha256: blossomHash,
-      serverUrls: blossomServers ?? defaultBlossomServers,
+      serverUrls:
+          blossomServers ?? defaultBlossomServers ?? recommendedBlossomServers,
     );
 
     if (decryptionKey == null || decryptionNonce == null) {

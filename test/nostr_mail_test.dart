@@ -768,6 +768,7 @@ void main() {
       expect(labels.length, 1); // Should not duplicate
     });
 
+    // TODO this test fail when run after other tests, need to investigate why
     test('getEmailIdsWithLabel returns empty list when no matches', () async {
       final ids = await store.getEmailIdsWithLabel('folder:trash');
 

@@ -21,6 +21,7 @@ import 'storage/private_settings_store.dart';
 import 'utils/recipient_resolver.dart';
 import 'utils/encrypt_blob.dart';
 import 'utils/event_email_parser.dart';
+import 'utils/mime_message_cleaner.dart';
 
 class NostrMailClient {
   final Ndk _ndk;
@@ -29,6 +30,8 @@ class NostrMailClient {
   final GiftWrapStore _giftWrapStore;
   final EmailParser _parser;
   final PrivateSettingsStore _settingsStore;
+  final List<String> _defaultDmRelays;
+  final List<String> _defaultBlossomServers;
 
   /// Cached broadcast stream for watch()
   StreamController<MailEvent>? _watchController;
@@ -38,13 +41,20 @@ class NostrMailClient {
   /// Avoids repeated relay queries and signer decrypts.
   final Map<String, PrivateSettings?> _cachedPrivateSettings = {};
 
-  NostrMailClient({required Ndk ndk, required Database db})
-    : _ndk = ndk,
-      _store = EmailStore(db),
-      _labelStore = LabelStore(db),
-      _giftWrapStore = GiftWrapStore(db),
-      _settingsStore = PrivateSettingsStore(db),
-      _parser = EmailParser();
+  NostrMailClient({
+    required Ndk ndk,
+    required Database db,
+    List<String>? defaultDmRelays,
+    List<String>? defaultBlossomServers,
+  }) : _ndk = ndk,
+       _store = EmailStore(db),
+       _labelStore = LabelStore(db),
+       _giftWrapStore = GiftWrapStore(db),
+       _settingsStore = PrivateSettingsStore(db),
+       _parser = EmailParser(),
+       _defaultDmRelays = defaultDmRelays ?? recommendedDmRelays,
+       _defaultBlossomServers =
+           defaultBlossomServers ?? recommendedBlossomServers;
 
   /// Get cached emails from local DB
   Future<List<Email>> getEmails({int? limit, int? offset}) {
@@ -1202,6 +1212,7 @@ class NostrMailClient {
         event: rumor,
         ndk: _ndk,
         recipientPubkey: recipientPubkey,
+        defaultBlossomServers: _defaultBlossomServers,
       );
 
       await _store.saveEmail(email);
@@ -1299,22 +1310,33 @@ class NostrMailClient {
 
     final fromAddress = message.fromEmail;
 
-    // Resolve all unique pubkeys in parallel
+    // Resolve all unique pubkeys in parallel and map back to addresses
     final resolutionFutures = recipients.map((addr) async {
-      return await resolveRecipient(to: addr.encode(), from: fromAddress);
+      final pubkey = await resolveRecipient(
+        to: addr.encode(),
+        from: fromAddress,
+      );
+      return MapEntry(addr, pubkey);
     });
-    final resolvedPubkeys = await Future.wait(resolutionFutures);
-    final Set<String> recipientPubkeys = Set<String>.from(resolvedPubkeys);
+    final resolutionResults = await Future.wait(resolutionFutures);
+    final Map<MailAddress, String> addressToPubkey = Map.fromEntries(
+      resolutionResults,
+    );
+    final Set<String> recipientPubkeys = addressToPubkey.values.toSet();
 
     final rawContent = message.renderMessage();
     final rawContentBytes = utf8.encode(rawContent);
 
-    // Prepare tags and content
+    // Prepare common event components
+    final Set<String> targetPubkeys = {...recipientPubkeys};
+    if (keepCopy) targetPubkeys.add(senderPubkey);
+
+    // Prepare Blossom upload if needed
     final List<List<String>> baseTags = [];
     final String content;
 
     if (rawContentBytes.length < maxInlineSize) {
-      content = rawContent;
+      content = ''; // Will be set per recipient
     } else {
       final encryptedBlob = await encryptBlob(
         Uint8List.fromList(rawContentBytes),
@@ -1332,7 +1354,7 @@ class NostrMailClient {
 
       // Fallback to defaults if no servers found
       if (allBlossomServers.isEmpty) {
-        allBlossomServers.addAll(defaultBlossomServers);
+        allBlossomServers.addAll(_defaultBlossomServers);
       }
 
       final uploadResults = await _ndk.blossom.uploadBlob(
@@ -1355,12 +1377,27 @@ class NostrMailClient {
       content = '';
     }
 
-    // Prepare common event components
-    final Set<String> targetPubkeys = {...recipientPubkeys};
-    if (keepCopy) targetPubkeys.add(senderPubkey);
-
-    // Parallelize all sends
+    // Parallelize all sends with appropriate message versions
     final sendFutures = targetPubkeys.map((pubkey) async {
+      // Determine which version of the message to send
+      String targetContent;
+      if (keepCopy && pubkey == senderPubkey) {
+        // Sender sees all recipients
+        targetContent = rawContent;
+      } else {
+        // All recipients (TO, CC, BCC) don't see BCC headers
+        targetContent = removeBccHeaders(rawContent);
+      }
+
+      final String finalContent;
+      final targetContentBytes = utf8.encode(targetContent);
+      if (targetContentBytes.length < maxInlineSize) {
+        finalContent = targetContent;
+      } else {
+        // Use Blossom upload
+        finalContent = content; // Empty, uses tags
+      }
+
       final tags = List<List<String>>.from(baseTags);
       tags.insert(0, ['p', pubkey]);
 
@@ -1368,7 +1405,7 @@ class NostrMailClient {
         pubKey: senderPubkey,
         kind: emailKind,
         tags: tags,
-        content: content,
+        content: finalContent,
       );
 
       await _publishGiftWrapped(emailEvent, pubkey);
@@ -1424,7 +1461,7 @@ class NostrMailClient {
     );
 
     final events = await response.future;
-    if (events.isEmpty) return defaultDmRelays;
+    if (events.isEmpty) return _defaultDmRelays;
 
     // Get the most recent event
     final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
@@ -1434,7 +1471,7 @@ class NostrMailClient {
         .map((t) => t[1])
         .toList();
 
-    return relays.isNotEmpty ? relays : defaultDmRelays;
+    return relays.isNotEmpty ? relays : _defaultDmRelays;
   }
 
   /// Get user's write relays from NIP-65 kind 10002 event
@@ -1446,7 +1483,7 @@ class NostrMailClient {
     );
 
     final events = await response.future;
-    if (events.isEmpty) return defaultDmRelays;
+    if (events.isEmpty) return _defaultDmRelays;
 
     // Get the most recent event
     final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
@@ -1463,6 +1500,6 @@ class NostrMailClient {
         .map((t) => t[1])
         .toList();
 
-    return relays.isNotEmpty ? relays : defaultDmRelays;
+    return relays.isNotEmpty ? relays : _defaultDmRelays;
   }
 }

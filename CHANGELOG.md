@@ -1,3 +1,13 @@
+## 1.12.1
+
+- **Fix**: BCC visibility rules now properly applied for email privacy
+  - `removeBccHeaders()` — Utility function that removes `Bcc` and `Resent-Bcc` headers from MIME messages
+  - `sendMime()` now correctly applies BCC visibility rules:
+    - **Sender's copy** (keepCopy): sees TO + CC + BCC (all recipients visible)
+    - **TO/CC recipients**: sees TO + CC only (BCC hidden)
+    - **BCC recipients**: sees TO + CC only (other BCC hidden for privacy)
+  - BCC recipients are now hidden from TO/CC recipients per email standards
+
 ## 1.12.0
 
 - **New**: Access to technical NIP-59 details (Gift Wrap, Seal, Rumor)
