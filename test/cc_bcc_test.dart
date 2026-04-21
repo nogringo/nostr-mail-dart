@@ -6,11 +6,26 @@ import 'models/test_user.dart';
 
 void main() {
   test("nostr cc bcc", () async {
-    final fromUser = await TestUser("from user").create();
-    final toUser = await TestUser("to user").create();
-    final ccUser = await TestUser("cc user").create();
-    final bcc1User = await TestUser("bcc user").create();
-    final bcc2User = await TestUser("bcc user").create();
+    final fromUser = await TestUser(
+      "from user",
+      defaultDmRelays: ['ws://localhost:7777'],
+    ).create();
+    final toUser = await TestUser(
+      "to user",
+      defaultDmRelays: ['ws://localhost:7777'],
+    ).create();
+    final ccUser = await TestUser(
+      "cc user",
+      defaultDmRelays: ['ws://localhost:7777'],
+    ).create();
+    final bcc1User = await TestUser(
+      "bcc user",
+      defaultDmRelays: ['ws://localhost:7777'],
+    ).create();
+    final bcc2User = await TestUser(
+      "bcc user",
+      defaultDmRelays: ['ws://localhost:7777'],
+    ).create();
 
     await fromUser.client.send(
       to: [
