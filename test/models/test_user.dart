@@ -8,13 +8,19 @@ class TestUser {
   String id;
   List<String>? defaultDmRelays;
   List<String>? defaultBlossomServers;
+  Map<String, String>? nip05Overrides;
 
   late KeyPair keyPair;
   late Ndk ndk;
   late Database db;
   late NostrMailClient client;
 
-  TestUser(this.id, {this.defaultDmRelays, this.defaultBlossomServers});
+  TestUser(
+    this.id, {
+    this.defaultDmRelays,
+    this.defaultBlossomServers,
+    this.nip05Overrides,
+  });
 
   Future<TestUser> create() async {
     keyPair = Bip340.generatePrivateKey();
@@ -38,6 +44,7 @@ class TestUser {
       db: db,
       defaultDmRelays: defaultDmRelays,
       defaultBlossomServers: defaultBlossomServers,
+      nip05Overrides: nip05Overrides,
     );
 
     return this;

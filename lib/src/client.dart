@@ -32,6 +32,7 @@ class NostrMailClient {
   final PrivateSettingsStore _settingsStore;
   final List<String> _defaultDmRelays;
   final List<String> _defaultBlossomServers;
+  final Map<String, String>? nip05Overrides;
 
   /// Cached broadcast stream for watch()
   StreamController<MailEvent>? _watchController;
@@ -46,6 +47,7 @@ class NostrMailClient {
     required Database db,
     List<String>? defaultDmRelays,
     List<String>? defaultBlossomServers,
+    this.nip05Overrides,
   }) : _ndk = ndk,
        _store = EmailStore(db),
        _labelStore = LabelStore(db),
@@ -1450,6 +1452,7 @@ class NostrMailClient {
       final pubkey = await resolveRecipient(
         to: addr.encode(),
         from: fromAddress,
+        nip05Overrides: nip05Overrides,
       );
       return MapEntry(addr, pubkey);
     });

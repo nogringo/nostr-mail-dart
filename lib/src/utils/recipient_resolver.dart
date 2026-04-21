@@ -15,8 +15,12 @@ import '../services/bridge_resolver.dart';
 ///
 /// [to] The recipient address (npub, hex, or email)
 /// [from] The sender's address (required for legacy email routing)
-Future<String> resolveRecipient({required String to, String? from}) async {
-  final bridgeResolver = BridgeResolver();
+Future<String> resolveRecipient({
+  required String to,
+  String? from,
+  Map<String, String>? nip05Overrides,
+}) async {
+  final bridgeResolver = BridgeResolver(nip05Overrides: nip05Overrides);
 
   // Try to parse formatted address (e.g., "Name" <address>)
   // If it fails, use the raw address

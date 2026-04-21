@@ -4,13 +4,22 @@ import 'package:http/http.dart' as http;
 
 import '../exceptions.dart';
 
+// TODO rename to NIP05Resolver
+
 class BridgeResolver {
   final http.Client _client;
+  final Map<String, String>? nip05Overrides;
 
-  BridgeResolver({http.Client? client}) : _client = client ?? http.Client();
+  BridgeResolver({http.Client? client, this.nip05Overrides})
+    : _client = client ?? http.Client();
 
   /// Resolve bridge pubkey via NIP-05 lookup for _smtp@domain
   Future<String> resolveBridgePubkey(String domain) async {
+    final nip05 = '_smtp@$domain';
+    if (nip05Overrides != null && nip05Overrides!.containsKey(nip05)) {
+      return nip05Overrides![nip05]!;
+    }
+
     final url = Uri.https(domain, '/.well-known/nostr.json', {'name': '_smtp'});
 
     try {
@@ -36,6 +45,10 @@ class BridgeResolver {
 
   /// Resolve any NIP-05 identifier (user@domain) to pubkey
   Future<String?> resolveNip05(String identifier) async {
+    if (nip05Overrides != null && nip05Overrides!.containsKey(identifier)) {
+      return nip05Overrides![identifier]!;
+    }
+
     final parts = identifier.split('@');
     if (parts.length != 2) return null;
 
