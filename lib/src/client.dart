@@ -1417,11 +1417,13 @@ class NostrMailClient {
   ///
   /// [signRumor] if true, signs the rumor event to prove authorship.
   /// [isPublic] if true, sends email without gift wrap (requires [signRumor] to be true).
+  /// [mailFrom] if provided, adds a `mail-from` tag to the rumor event, useful for bridge routing.
   Future<void> sendMime(
     MimeMessage message, {
     bool keepCopy = true,
     bool signRumor = false,
     bool isPublic = false,
+    String? mailFrom,
   }) async {
     final senderPubkey = _ndk.accounts.getPublicKey();
     if (senderPubkey == null) {
@@ -1469,8 +1471,10 @@ class NostrMailClient {
     final Set<String> targetPubkeys = {...recipientPubkeys};
     if (keepCopy) targetPubkeys.add(senderPubkey);
 
-    // Prepare Blossom upload if needed
     final List<List<String>> baseTags = [];
+    if (mailFrom != null) {
+      baseTags.add(['mail-from', mailFrom]);
+    }
     final String content;
 
     if (rawContentBytes.length < maxInlineSize) {
