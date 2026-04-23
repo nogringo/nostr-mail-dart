@@ -69,10 +69,11 @@ void main() {
       // 2. Check for BCC notification (gift wrap) and sync it
       await bccUser.client.sync();
       final emails = await bccUser.client.getEmails();
+      final bccEmail = emails.firstWhere((e) => e.subject == 'Public with BCC');
       expect(
-        emails.any((e) => e.subject == 'Public with BCC'),
+        bccEmail.isPublic,
         isTrue,
-        reason: "BCC recipient should have received and processed the email",
+        reason: "BCC of a public email should have isPublic = true",
       );
     },
   );

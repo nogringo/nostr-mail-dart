@@ -1197,6 +1197,7 @@ class NostrMailClient {
         event: event,
         ndk: _ndk,
         recipientPubkey: recipientPubkey,
+        isPublic: true,
         defaultBlossomServers: _defaultBlossomServers,
       );
 
@@ -1326,6 +1327,7 @@ class NostrMailClient {
         event: rumor,
         ndk: _ndk,
         recipientPubkey: recipientPubkey,
+        isPublic: rumor.getFirstTag('public-ref') != null,
         defaultBlossomServers: _defaultBlossomServers,
       );
 
