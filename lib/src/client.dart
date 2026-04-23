@@ -1309,8 +1309,9 @@ class NostrMailClient {
         return false;
       }
 
-      // Extract the real recipient from the 'p' tag of the email event
-      final recipientPubkey = rumor.getFirstTag('p');
+      // Extract the real recipient from the 'p' tag of the email event.
+      // Fallback to our own pubkey if the rumor has no p-tag (e.g. shared BCC rumor).
+      final recipientPubkey = rumor.getFirstTag('p') ?? myPubkey;
       if (recipientPubkey == null) {
         await _giftWrapStore.updateDecrypted(
           giftWrapId: event.id,
@@ -1464,6 +1465,26 @@ class NostrMailClient {
     );
     final Set<String> recipientPubkeys = addressToPubkey.values.toSet();
 
+    // Separate recipients into public (TO, CC) and private (BCC)
+    final publicRecipientPubkeys = <String>{};
+    if (message.to != null) {
+      publicRecipientPubkeys.addAll(
+        message.to!.map((a) => addressToPubkey[a]).whereType<String>(),
+      );
+    }
+    if (message.cc != null) {
+      publicRecipientPubkeys.addAll(
+        message.cc!.map((a) => addressToPubkey[a]).whereType<String>(),
+      );
+    }
+
+    final bccRecipientPubkeys = <String>{};
+    if (message.bcc != null) {
+      bccRecipientPubkeys.addAll(
+        message.bcc!.map((a) => addressToPubkey[a]).whereType<String>(),
+      );
+    }
+
     final rawContent = message.renderMessage();
     final rawContentBytes = utf8.encode(rawContent);
 
@@ -1519,9 +1540,9 @@ class NostrMailClient {
       content = '';
     }
 
-    // Public emails: send a single event with all recipients
+    // Public emails: send a single event for TO/CC, and individual gift wraps for BCC
     if (isPublic) {
-      // For public emails, send to all recipients in a single event
+      // For public emails, send to public recipients in a single event
       // Don't include BCC headers in public emails
       final targetContent = removeBccHeaders(rawContent);
 
@@ -1533,9 +1554,9 @@ class NostrMailClient {
         finalContent = content; // Empty, uses tags
       }
 
-      // Create tags with all recipients
+      // Create tags with public recipients only (no BCC leak)
       final tags = List<List<String>>.from(baseTags);
-      for (final pubkey in recipientPubkeys) {
+      for (final pubkey in publicRecipientPubkeys) {
         tags.add(['p', pubkey]);
       }
 
@@ -1547,15 +1568,55 @@ class NostrMailClient {
       );
 
       // Sign the rumor (required for public emails)
-      final eventToPublish = await _ndk.accounts.sign(emailEvent);
+      final signedPublicEvent = await _ndk.accounts.sign(emailEvent);
 
       // Publish to write relays
       final writeRelays = await _getWriteRelays(senderPubkey);
       final broadcast = _ndk.broadcast.broadcast(
-        nostrEvent: eventToPublish,
+        nostrEvent: signedPublicEvent,
         specificRelays: writeRelays,
       );
       await broadcast.broadcastDoneFuture;
+
+      // Send shared gift-wrapped rumor to BCC recipients (signed once)
+      final bccTags = List<List<String>>.from(baseTags);
+      // Add public-ref tag as per protocol
+      bccTags.add(['public-ref', signedPublicEvent.id, ...writeRelays]);
+
+      final bccRumor = Nip01Event(
+        pubKey: senderPubkey,
+        kind: emailKind,
+        tags: bccTags,
+        content: finalContent,
+      );
+
+      // Sign the BCC rumor exactly once for all recipients
+      final signedBccRumor = await _ndk.accounts.sign(bccRumor);
+
+      final bccFutures = bccRecipientPubkeys.map((pubkey) async {
+        await _publishGiftWrapped(signedBccRumor, pubkey);
+      });
+
+      // Also send a copy to sender if requested
+      if (keepCopy) {
+        final senderTags = List<List<String>>.from(baseTags);
+        senderTags.add(['p', senderPubkey]);
+
+        final senderEmailEvent = Nip01Event(
+          pubKey: senderPubkey,
+          kind: emailKind,
+          tags: senderTags,
+          content: rawContent, // Full content including BCC headers
+        );
+
+        final signedSenderRumor = signRumor
+            ? await _ndk.accounts.sign(senderEmailEvent)
+            : senderEmailEvent;
+
+        await _publishGiftWrapped(signedSenderRumor, senderPubkey);
+      }
+
+      await Future.wait(bccFutures);
     } else {
       // Private emails: gift wrap to each recipient individually
       final sendFutures = targetPubkeys.map((pubkey) async {
