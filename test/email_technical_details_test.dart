@@ -50,5 +50,8 @@ void main() {
     expect(giftWrap, isNotNull);
     expect(seal, isNotNull);
     expect(rumor, isNotNull);
+
+    final isSealSigned = await Bip340EventVerifier().verify(seal!);
+    expect(isSealSigned, isTrue);
   });
 }
