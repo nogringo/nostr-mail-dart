@@ -6,12 +6,21 @@ import 'package:sembast/sembast_memory.dart';
 
 class TestUser {
   String id;
+  List<String>? defaultDmRelays;
+  List<String>? defaultBlossomServers;
+  Map<String, String>? nip05Overrides;
+
   late KeyPair keyPair;
   late Ndk ndk;
   late Database db;
   late NostrMailClient client;
 
-  TestUser(this.id);
+  TestUser(
+    this.id, {
+    this.defaultDmRelays,
+    this.defaultBlossomServers,
+    this.nip05Overrides,
+  });
 
   Future<TestUser> create() async {
     keyPair = Bip340.generatePrivateKey();
@@ -19,7 +28,7 @@ class TestUser {
       NdkConfig(
         eventVerifier: Bip340EventVerifier(),
         cache: MemCacheManager(),
-        bootstrapRelays: ["ws://localhost:7777"],
+        bootstrapRelays: defaultDmRelays ?? [],
       ),
     );
 
@@ -33,8 +42,9 @@ class TestUser {
     client = NostrMailClient(
       ndk: ndk,
       db: db,
-      defaultDmRelays: ["ws://localhost:7777"],
-      defaultBlossomServers: ["http://localhost:3000"],
+      defaultDmRelays: defaultDmRelays,
+      defaultBlossomServers: defaultBlossomServers,
+      nip05Overrides: nip05Overrides,
     );
 
     return this;

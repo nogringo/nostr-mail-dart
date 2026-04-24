@@ -32,6 +32,7 @@ class NostrMailClient {
   final PrivateSettingsStore _settingsStore;
   final List<String> _defaultDmRelays;
   final List<String> _defaultBlossomServers;
+  final Map<String, String>? nip05Overrides;
 
   /// Cached broadcast stream for watch()
   StreamController<MailEvent>? _watchController;
@@ -46,6 +47,7 @@ class NostrMailClient {
     required Database db,
     List<String>? defaultDmRelays,
     List<String>? defaultBlossomServers,
+    this.nip05Overrides,
   }) : _ndk = ndk,
        _store = EmailStore(db),
        _labelStore = LabelStore(db),
@@ -590,8 +592,24 @@ class NostrMailClient {
       explicitRelays: dmRelays,
     );
 
+    // Watch public emails on write relays
+    final publicEmailFilter = ndk.Filter(
+      kinds: [emailKind],
+      pTags: [pubkey],
+      limit: 0,
+    );
+    final publicEmailResponse = _ndk.requests.subscription(
+      filter: publicEmailFilter,
+      explicitRelays: writeRelays,
+    );
+
     // Process emails
     emailResponse.stream.listen(_saveAndProcess);
+
+    // Process public emails
+    publicEmailResponse.stream.listen((event) async {
+      await _processPublicEmail(event);
+    });
 
     // Process label additions
     labelResponse.stream.listen((event) async {
@@ -942,6 +960,14 @@ class NostrMailClient {
     // Sync email deletions
     await _syncEmailDeletions(pubkey, dmRelays, effectiveSince, effectiveUntil);
 
+    // Sync public emails (from write relays)
+    await _syncPublicEmails(
+      pubkey,
+      writeRelays,
+      effectiveSince,
+      effectiveUntil,
+    );
+
     // Sync labels (includes label deletions)
     await _syncLabels(pubkey, writeRelays, effectiveSince, effectiveUntil);
   }
@@ -1016,6 +1042,9 @@ class NostrMailClient {
   ndk.Filter _labelDeletionFilter(String pubkey) =>
       ndk.Filter(kinds: [deletionRequestKind], authors: [pubkey])
         ..setTag('k', [labelKind.toString()]);
+
+  ndk.Filter _publicEmailFilter(String pubkey) =>
+      ndk.Filter(kinds: [emailKind], pTags: [pubkey]);
 
   /// Sync emails from relays (internal)
   Future<void> _syncEmails(
@@ -1093,6 +1122,91 @@ class NostrMailClient {
     for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
       final events = await _fetchEvents(gapFilter, dmRelays);
       await _processEmailDeletions(events);
+    }
+  }
+
+  /// Sync public emails from relays (internal)
+  ///
+  /// Public emails are kind 1301 events published directly (not gift wrapped).
+  /// They must be signed to be valid.
+  Future<void> _syncPublicEmails(
+    String pubkey,
+    List<String> writeRelays,
+    int? since,
+    int until,
+  ) async {
+    final baseFilter = _publicEmailFilter(pubkey);
+
+    // Check if we have any existing fetched ranges
+    final existingRanges = await _ndk.fetchedRanges.getForFilter(baseFilter);
+
+    if (existingRanges.isEmpty) {
+      // First sync - fetch the full range
+      final filter = baseFilter.clone()
+        ..since = since
+        ..until = until;
+      final events = await _fetchEvents(filter, writeRelays);
+      for (final event in events) {
+        await _processPublicEmail(event);
+      }
+      return;
+    }
+
+    // Get optimized filters that cover only the gaps (unfetched ranges)
+    final optimizedFilters = await _ndk.fetchedRanges.getOptimizedFilters(
+      filter: baseFilter,
+      since: since ?? 0,
+      until: until,
+    );
+
+    // If no gaps, nothing to sync
+    if (optimizedFilters.isEmpty) return;
+
+    // Fetch each gap
+    for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
+      final events = await _fetchEvents(gapFilter, writeRelays);
+      for (final event in events) {
+        await _processPublicEmail(event);
+      }
+    }
+  }
+
+  /// Process a single public email event (kind 1301, not gift wrapped)
+  ///
+  /// Public emails must be signed to be valid.
+  Future<void> _processPublicEmail(Nip01Event event) async {
+    // Public emails must be signed
+    if (event.sig == null || event.sig!.isEmpty) {
+      return; // Skip unsigned public emails
+    }
+
+    // Skip if not an email event
+    if (event.kind != emailKind) {
+      return;
+    }
+
+    // The recipient is the local user who received the event
+    final recipientPubkey = _ndk.accounts.getPublicKey();
+    if (recipientPubkey == null) {
+      return;
+    }
+
+    // Parse event into Email (handles inline and Blossom emails)
+    try {
+      final email = await parseEmailEvent(
+        event: event,
+        ndk: _ndk,
+        recipientPubkey: recipientPubkey,
+        isPublic: true,
+        defaultBlossomServers: _defaultBlossomServers,
+      );
+
+      await _store.saveEmail(email);
+
+      _watchController?.add(EmailReceived(email: email, timestamp: email.date));
+    } catch (e) {
+      // Log error but don't fail the sync
+      // TODO: Consider adding error logging
     }
   }
 
@@ -1196,8 +1310,9 @@ class NostrMailClient {
         return false;
       }
 
-      // Extract the real recipient from the 'p' tag of the email event
-      final recipientPubkey = rumor.getFirstTag('p');
+      // Extract the real recipient from the 'p' tag of the email event.
+      // Fallback to our own pubkey if the rumor has no p-tag (e.g. shared BCC rumor).
+      final recipientPubkey = rumor.getFirstTag('p') ?? myPubkey;
       if (recipientPubkey == null) {
         await _giftWrapStore.updateDecrypted(
           giftWrapId: event.id,
@@ -1212,6 +1327,7 @@ class NostrMailClient {
         event: rumor,
         ndk: _ndk,
         recipientPubkey: recipientPubkey,
+        isPublic: rumor.getFirstTag('public-ref') != null,
         defaultBlossomServers: _defaultBlossomServers,
       );
 
@@ -1243,6 +1359,8 @@ class NostrMailClient {
   /// from private settings, or falls back to sender's npub@nostr.
   /// [htmlBody] is optional HTML content for rich emails.
   /// [keepCopy] if true, sends a copy to sender for sync between devices (default: true).
+  /// [signRumor] if true, signs the rumor event to prove authorship (default: false).
+  /// [isPublic] if true, sends email without gift wrap (requires [signRumor] to be true).
   Future<void> send({
     required List<MailAddress> to,
     List<MailAddress>? cc,
@@ -1252,6 +1370,8 @@ class NostrMailClient {
     MailAddress? from,
     String? htmlBody,
     bool keepCopy = true,
+    bool signRumor = false,
+    bool isPublic = false,
   }) async {
     final senderPubkey = _ndk.accounts.getPublicKey();
     if (senderPubkey == null) {
@@ -1285,17 +1405,39 @@ class NostrMailClient {
     );
 
     final message = MimeMessage.parseFromText(rawContent);
-    return sendMime(message, keepCopy: keepCopy);
+    return sendMime(
+      message,
+      keepCopy: keepCopy,
+      signRumor: signRumor,
+      isPublic: isPublic,
+    );
   }
 
   /// Send a pre-constructed [MimeMessage].
   ///
   /// This method extracts all recipients (To, Cc, Bcc), resolves their pubkeys,
   /// and sends the email to each of them via Nostr GiftWraps.
-  Future<void> sendMime(MimeMessage message, {bool keepCopy = true}) async {
+  ///
+  /// [signRumor] if true, signs the rumor event to prove authorship.
+  /// [isPublic] if true, sends email without gift wrap (requires [signRumor] to be true).
+  /// [mailFrom] if provided, adds a `mail-from` tag to the rumor event, useful for bridge routing.
+  Future<void> sendMime(
+    MimeMessage message, {
+    bool keepCopy = true,
+    bool signRumor = false,
+    bool isPublic = false,
+    String? mailFrom,
+  }) async {
     final senderPubkey = _ndk.accounts.getPublicKey();
     if (senderPubkey == null) {
       throw NostrMailException('No account configured in ndk');
+    }
+
+    // Public emails must be signed
+    if (isPublic && !signRumor) {
+      throw NostrMailException(
+        'Public emails must be signed (signRumor must be true)',
+      );
     }
 
     // Extract and resolve all unique recipients
@@ -1315,6 +1457,7 @@ class NostrMailClient {
       final pubkey = await resolveRecipient(
         to: addr.encode(),
         from: fromAddress,
+        nip05Overrides: nip05Overrides,
       );
       return MapEntry(addr, pubkey);
     });
@@ -1324,6 +1467,26 @@ class NostrMailClient {
     );
     final Set<String> recipientPubkeys = addressToPubkey.values.toSet();
 
+    // Separate recipients into public (TO, CC) and private (BCC)
+    final publicRecipientPubkeys = <String>{};
+    if (message.to != null) {
+      publicRecipientPubkeys.addAll(
+        message.to!.map((a) => addressToPubkey[a]).whereType<String>(),
+      );
+    }
+    if (message.cc != null) {
+      publicRecipientPubkeys.addAll(
+        message.cc!.map((a) => addressToPubkey[a]).whereType<String>(),
+      );
+    }
+
+    final bccRecipientPubkeys = <String>{};
+    if (message.bcc != null) {
+      bccRecipientPubkeys.addAll(
+        message.bcc!.map((a) => addressToPubkey[a]).whereType<String>(),
+      );
+    }
+
     final rawContent = message.renderMessage();
     final rawContentBytes = utf8.encode(rawContent);
 
@@ -1331,8 +1494,10 @@ class NostrMailClient {
     final Set<String> targetPubkeys = {...recipientPubkeys};
     if (keepCopy) targetPubkeys.add(senderPubkey);
 
-    // Prepare Blossom upload if needed
     final List<List<String>> baseTags = [];
+    if (mailFrom != null) {
+      baseTags.add(['mail-from', mailFrom]);
+    }
     final String content;
 
     if (rawContentBytes.length < maxInlineSize) {
@@ -1377,29 +1542,25 @@ class NostrMailClient {
       content = '';
     }
 
-    // Parallelize all sends with appropriate message versions
-    final sendFutures = targetPubkeys.map((pubkey) async {
-      // Determine which version of the message to send
-      String targetContent;
-      if (keepCopy && pubkey == senderPubkey) {
-        // Sender sees all recipients
-        targetContent = rawContent;
-      } else {
-        // All recipients (TO, CC, BCC) don't see BCC headers
-        targetContent = removeBccHeaders(rawContent);
-      }
+    // Public emails: send a single event for TO/CC, and individual gift wraps for BCC
+    if (isPublic) {
+      // For public emails, send to public recipients in a single event
+      // Don't include BCC headers in public emails
+      final targetContent = removeBccHeaders(rawContent);
 
       final String finalContent;
       final targetContentBytes = utf8.encode(targetContent);
       if (targetContentBytes.length < maxInlineSize) {
         finalContent = targetContent;
       } else {
-        // Use Blossom upload
         finalContent = content; // Empty, uses tags
       }
 
+      // Create tags with public recipients only (no BCC leak)
       final tags = List<List<String>>.from(baseTags);
-      tags.insert(0, ['p', pubkey]);
+      for (final pubkey in publicRecipientPubkeys) {
+        tags.add(['p', pubkey]);
+      }
 
       final emailEvent = Nip01Event(
         pubKey: senderPubkey,
@@ -1408,10 +1569,102 @@ class NostrMailClient {
         content: finalContent,
       );
 
-      await _publishGiftWrapped(emailEvent, pubkey);
-    });
+      // Sign the rumor (required for public emails)
+      final signedPublicEvent = await _ndk.accounts.sign(emailEvent);
 
-    await Future.wait(sendFutures);
+      // Publish to write relays
+      final writeRelays = await _getWriteRelays(senderPubkey);
+      final broadcast = _ndk.broadcast.broadcast(
+        nostrEvent: signedPublicEvent,
+        specificRelays: writeRelays,
+      );
+      await broadcast.broadcastDoneFuture;
+
+      // Send shared gift-wrapped rumor to BCC recipients (signed once)
+      final bccTags = List<List<String>>.from(baseTags);
+      // Add public-ref tag as per protocol
+      bccTags.add(['public-ref', signedPublicEvent.id, ...writeRelays]);
+
+      final bccRumor = Nip01Event(
+        pubKey: senderPubkey,
+        kind: emailKind,
+        tags: bccTags,
+        content: finalContent,
+      );
+
+      // Sign the BCC rumor exactly once for all recipients
+      final signedBccRumor = await _ndk.accounts.sign(bccRumor);
+
+      final bccFutures = bccRecipientPubkeys.map((pubkey) async {
+        await _publishGiftWrapped(signedBccRumor, pubkey);
+      });
+
+      // Also send a copy to sender if requested
+      if (keepCopy) {
+        final senderTags = List<List<String>>.from(baseTags);
+        senderTags.add(['p', senderPubkey]);
+
+        final senderEmailEvent = Nip01Event(
+          pubKey: senderPubkey,
+          kind: emailKind,
+          tags: senderTags,
+          content: rawContent, // Full content including BCC headers
+        );
+
+        final signedSenderRumor = signRumor
+            ? await _ndk.accounts.sign(senderEmailEvent)
+            : senderEmailEvent;
+
+        await _publishGiftWrapped(signedSenderRumor, senderPubkey);
+      }
+
+      await Future.wait(bccFutures);
+    } else {
+      // Private emails: gift wrap to each recipient individually
+      final sendFutures = targetPubkeys.map((pubkey) async {
+        // Determine which version of the message to send
+        String targetContent;
+        if (keepCopy && pubkey == senderPubkey) {
+          // Sender sees all recipients
+          targetContent = rawContent;
+        } else {
+          // All recipients (TO, CC, BCC) don't see BCC headers
+          targetContent = removeBccHeaders(rawContent);
+        }
+
+        final String finalContent;
+        final targetContentBytes = utf8.encode(targetContent);
+        if (targetContentBytes.length < maxInlineSize) {
+          finalContent = targetContent;
+        } else {
+          // Use Blossom upload
+          finalContent = content; // Empty, uses tags
+        }
+
+        final tags = List<List<String>>.from(baseTags);
+        tags.insert(0, ['p', pubkey]);
+
+        final emailEvent = Nip01Event(
+          pubKey: senderPubkey,
+          kind: emailKind,
+          tags: tags,
+          content: finalContent,
+        );
+
+        // Sign the rumor if requested
+        final Nip01Event eventToPublish;
+        if (signRumor) {
+          eventToPublish = await _ndk.accounts.sign(emailEvent);
+        } else {
+          eventToPublish = emailEvent;
+        }
+
+        // Send gift wrapped to this recipient
+        await _publishGiftWrapped(eventToPublish, pubkey);
+      });
+
+      await Future.wait(sendFutures);
+    }
   }
 
   /// Unwrap a NIP-59 gift-wrapped event

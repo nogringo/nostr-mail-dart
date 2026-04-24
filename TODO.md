@@ -26,3 +26,6 @@
 - [ ] Integration tests with mock NDK for `addLabel` / `removeLabel`
 - [ ] Tests for `syncLabels`
 - [ ] Offline behavior tests
+
+- [ ] rewrite the tests with the mock relays and blossoms
+- [ ] rethink the local database

@@ -40,6 +40,7 @@ Future<Email> parseEmailEvent({
   required Nip01Event event,
   required Ndk ndk,
   required String recipientPubkey,
+  bool isPublic = false,
   List<String>? defaultBlossomServers,
 }) async {
   // Extract Blossom tags (NIP-17 style)
@@ -67,6 +68,7 @@ Future<Email> parseEmailEvent({
     recipientPubkey: recipientPubkey,
     rawContent: mimeString,
     createdAt: DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000),
+    isPublic: isPublic,
     mimeMessage: mimeMessage,
   );
 }

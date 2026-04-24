@@ -8,6 +8,7 @@ class Email {
   final String senderPubkey;
   final String recipientPubkey;
   final String rawContent;
+  final bool isPublic;
   final DateTime createdAt;
 
   late final MimeMessage _mimeMessage;
@@ -24,6 +25,7 @@ class Email {
     required this.recipientPubkey,
     required this.rawContent,
     required this.createdAt,
+    this.isPublic = false,
     MimeMessage? mimeMessage,
   }) {
     _mimeMessage = mimeMessage ?? MimeMessage.parseFromText(rawContent);
@@ -120,6 +122,7 @@ class Email {
       'senderPubkey': senderPubkey,
       'recipientPubkey': recipientPubkey,
       'rawContent': rawContent,
+      'isPublic': isPublic,
     };
   }
 
@@ -131,6 +134,7 @@ class Email {
     createdAt: DateTime.parse(
       json['createdAt'] as String? ?? json['date'] as String,
     ),
+    isPublic: json['isPublic'] as bool? ?? false,
   );
 
   @override
