@@ -241,6 +241,7 @@ class NostrMailClient {
       emailId: emailId,
       label: label,
       labelEventId: signedEvent.id,
+      timestamp: signedEvent.createdAt,
     );
 
     // Notify listeners immediately
@@ -371,6 +372,16 @@ class NostrMailClient {
     return _store.getEmailsByIds(ids);
   }
 
+  /// Get trashed emails that have been in the trash for longer than [duration]
+  Future<List<Email>> getTrashedEmailsOlderThan(Duration duration) async {
+    final cutoffDate = DateTime.now().subtract(duration);
+    final ids = await _labelStore.getEmailIdsWithLabelOlderThan(
+      'folder:trash',
+      cutoffDate,
+    );
+    return _store.getEmailsByIds(ids);
+  }
+
   /// Get all archived emails (sorted by date descending)
   Future<List<Email>> getArchivedEmails() async {
     final ids = await getArchivedEmailIds();
@@ -461,6 +472,7 @@ class NostrMailClient {
         emailId: emailId,
         label: label,
         labelEventId: event.id,
+        timestamp: event.createdAt,
       );
     }
   }
@@ -644,6 +656,7 @@ class NostrMailClient {
         emailId: emailId,
         label: label,
         labelEventId: event.id,
+        timestamp: event.createdAt,
       );
 
       _watchController?.add(

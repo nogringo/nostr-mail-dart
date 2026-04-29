@@ -15,6 +15,8 @@ import 'package:test/test.dart';
 class MockHttpClient extends Mock implements http.Client {}
 
 void main() {
+  int dbCounter = 0;
+
   group('Email', () {
     final parser = EmailParser();
 
@@ -358,7 +360,7 @@ void main() {
 
     setUp(() async {
       final db = await databaseFactoryMemory.openDatabase(
-        'test_db_${DateTime.now().millisecondsSinceEpoch}',
+        'test_email_db_${dbCounter++}',
       );
       store = EmailStore(db);
     });
@@ -612,7 +614,7 @@ void main() {
 
     setUp(() async {
       final db = await databaseFactoryMemory.openDatabase(
-        'test_label_db_${DateTime.now().millisecondsSinceEpoch}',
+        'test_label_db_${dbCounter++}',
       );
       store = LabelStore(db);
     });
@@ -622,6 +624,7 @@ void main() {
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
 
       final eventId = await store.getLabelEventId('email-1', 'folder:trash');
@@ -640,6 +643,7 @@ void main() {
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
 
       await store.removeLabel('email-1', 'folder:trash');
@@ -653,22 +657,26 @@ void main() {
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
       await store.saveLabel(
         emailId: 'email-1',
         label: 'state:read',
         labelEventId: 'label-event-2',
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
       await store.saveLabel(
         emailId: 'email-1',
         label: 'flag:starred',
         labelEventId: 'label-event-3',
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
       // Different email
       await store.saveLabel(
         emailId: 'email-2',
         label: 'folder:archive',
         labelEventId: 'label-event-4',
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
 
       final labels = await store.getLabelsForEmail('email-1');
@@ -687,16 +695,19 @@ void main() {
           emailId: 'email-1',
           label: 'folder:trash',
           labelEventId: 'label-event-1',
+          timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
         );
         await store.saveLabel(
           emailId: 'email-2',
           label: 'folder:trash',
           labelEventId: 'label-event-2',
+          timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
         );
         await store.saveLabel(
           emailId: 'email-3',
           label: 'folder:archive',
           labelEventId: 'label-event-3',
+          timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
         );
 
         final trashedIds = await store.getEmailIdsWithLabel('folder:trash');
@@ -713,6 +724,7 @@ void main() {
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
 
       final hasTrash = await store.hasLabel('email-1', 'folder:trash');
@@ -727,16 +739,19 @@ void main() {
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
       await store.saveLabel(
         emailId: 'email-1',
         label: 'state:read',
         labelEventId: 'label-event-2',
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
       await store.saveLabel(
         emailId: 'email-2',
         label: 'folder:trash',
         labelEventId: 'label-event-3',
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
 
       await store.deleteLabelsForEmail('email-1');
@@ -754,11 +769,13 @@ void main() {
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'old-event-id',
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
       await store.saveLabel(
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'new-event-id',
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
 
       final eventId = await store.getLabelEventId('email-1', 'folder:trash');
@@ -786,11 +803,13 @@ void main() {
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
       await store.saveLabel(
         emailId: 'email-2',
         label: 'state:read',
         labelEventId: 'label-event-2',
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
 
       await store.clearAll();
@@ -819,7 +838,7 @@ void main() {
 
     setUp(() async {
       final db = await databaseFactoryMemory.openDatabase(
-        'test_gift_wrap_db_${DateTime.now().millisecondsSinceEpoch}',
+        'test_gift_wrap_db_${dbCounter++}',
       );
       store = GiftWrapStore(db);
     });

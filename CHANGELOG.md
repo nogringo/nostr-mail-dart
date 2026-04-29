@@ -1,3 +1,9 @@
+## 1.13.0
+
+- **New**: Added `getTrashedEmailsOlderThan` method to easily query old deleted emails.
+- **Improvement**: `saveLabel` now properly stores the original Nostr event's `createdAt` timestamp, allowing duration-based queries on labels.
+- **Fix**: Resolved state bleeding in tests by ensuring isolated in-memory database filenames for Sembast.
+
 ## 1.12.1
 
 - **Fix**: BCC visibility rules now properly applied for email privacy

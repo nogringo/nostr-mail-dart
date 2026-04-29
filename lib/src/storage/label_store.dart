@@ -10,16 +10,19 @@ class LabelStore {
   /// [emailId] is the gift wrap event ID
   /// [label] is the label string (e.g., 'folder:trash', 'state:read')
   /// [labelEventId] is the kind 1985 event ID (needed for deletion)
+  /// [timestamp] is the timestamp when the label was added (NIP-01 createdAt)
   Future<void> saveLabel({
     required String emailId,
     required String label,
     required String labelEventId,
+    required int timestamp,
   }) async {
     final key = _makeKey(emailId, label);
     await _labelsStore.record(key).put(_db, {
       'emailId': emailId,
       'label': label,
       'labelEventId': labelEventId,
+      'timestamp': timestamp,
     });
   }
 
@@ -48,6 +51,26 @@ class LabelStore {
   /// Get all email IDs that have a specific label
   Future<List<String>> getEmailIdsWithLabel(String label) async {
     final finder = Finder(filter: Filter.equals('label', label));
+    final records = await _labelsStore.find(_db, finder: finder);
+    return records.map((r) => r.value['emailId'] as String).toList();
+  }
+
+  /// Get all email IDs that have a specific label older than a given date
+  /// If the label has no timestamp, it is considered older than the date.
+  Future<List<String>> getEmailIdsWithLabelOlderThan(
+    String label,
+    DateTime before,
+  ) async {
+    final cutoffTimestamp = before.millisecondsSinceEpoch ~/ 1000;
+    final finder = Finder(
+      filter: Filter.and([
+        Filter.equals('label', label),
+        Filter.or([
+          Filter.isNull('timestamp'),
+          Filter.lessThanOrEquals('timestamp', cutoffTimestamp),
+        ]),
+      ]),
+    );
     final records = await _labelsStore.find(_db, finder: finder);
     return records.map((r) => r.value['emailId'] as String).toList();
   }
