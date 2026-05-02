@@ -193,6 +193,58 @@ class NostrMailClient {
     await _giftWrapStore.remove(id);
   }
 
+  /// Repost an email (NIP-18)
+  ///
+  /// Creates a kind 16 generic repost event that references the original email.
+  /// Both the kind 1301 email event and the repost are published to the user's
+  /// write relays and are visible to followers.
+  ///
+  /// [emailEvent] is the kind 1301 email event to repost
+  Future<void> repost(Nip01Event emailEvent) async {
+    final pubkey = _ndk.accounts.getPublicKey();
+    if (pubkey == null) {
+      throw NostrMailException('No account configured in ndk');
+    }
+
+    final writeRelays = await _getWriteRelays(pubkey);
+
+    // Create repost tags
+    final tags = <List<String>>[
+      ['e', emailEvent.id], // Reference to original email
+      ['p', emailEvent.pubKey], // Original author
+      ['k', emailKind.toString()], // Kind of reposted event
+      ...writeRelays.map(
+        (r) => ['r', r],
+      ), // Relays where original can be fetched
+    ];
+
+    // Create and sign the repost event
+    final repostEvent = Nip01Event(
+      pubKey: pubkey,
+      kind: genericRepostKind,
+      tags: tags,
+      content: Nip01EventModel.fromEntity(emailEvent).toJsonString(),
+    );
+
+    final signedRepost = await _ndk.accounts.sign(repostEvent);
+
+    // Publish both events in parallel
+    final emailBroadcast = _ndk.broadcast.broadcast(
+      nostrEvent: emailEvent,
+      specificRelays: writeRelays,
+    );
+
+    final repostBroadcast = _ndk.broadcast.broadcast(
+      nostrEvent: signedRepost,
+      specificRelays: writeRelays,
+    );
+
+    await Future.wait([
+      emailBroadcast.broadcastDoneFuture,
+      repostBroadcast.broadcastDoneFuture,
+    ]);
+  }
+
   /// Add a label to an email (NIP-32)
   ///
   /// Saves locally and notifies listeners immediately, then broadcasts

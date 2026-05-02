@@ -1,3 +1,8 @@
+## 1.14.0
+
+- **New**: NIP-18 repost support
+  - `repost(Nip01Event emailEvent)` — Repost an email to followers using kind 16 generic repost
+
 ## 1.13.0
 
 - **New**: Added `getTrashedEmailsOlderThan` method to easily query old deleted emails.

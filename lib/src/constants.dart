@@ -19,6 +19,12 @@ const labelKind = 1985;
 /// Relay list event kind (NIP-65)
 const relayListKind = 10002;
 
+/// Text note repost kind (NIP-18)
+const textRepostKind = 6;
+
+/// Generic repost kind (NIP-18)
+const genericRepostKind = 16;
+
 /// Label namespace for mail-related labels
 const labelNamespace = 'mail';
 
