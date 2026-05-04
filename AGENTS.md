@@ -57,9 +57,11 @@ dart test --reporter=expanded
 
 ### Known Test Behaviours
 
-- **`test/cc_bcc_test.dart`** currently **fails** because it hard-codes `ws://localhost:7777` without starting a `MockRelay`. This is a known issue.
-- **`test/blossom_integration_test.dart`** hits the **real internet** (live Blossom servers & relays). It can be slow (30–60 s) and flaky depending on network conditions.
-- Most other integration tests spin up local `MockRelay` WebSocket servers and `MockBlossomServer` HTTP servers, so they are self-contained.
+- **146 of 147 tests pass**.
+- **`test/blossom_integration_test.dart`** uses `MockBlossomServer` + `MockRelay` — fully offline and deterministic. Takes ~40s because `enough_mail_plus` `buildMimeMessage()` is pathologically slow with 100KB bodies (see `test/enough_mail_large_body_perf_test.dart`).
+- **`test/enough_mail_large_body_perf_test.dart`** documents the upstream `enough_mail_plus` performance bug.
+- **`test/cc_bcc_test.dart`** still **fails** — it hard-codes `ws://localhost:7777` without starting a `MockRelay`. This is a known pre-existing issue.
+- Most integration tests spin up local `MockRelay` WebSocket servers and `MockBlossomServer` HTTP servers, so they are self-contained.
 - Tests use **isolated in-memory Sembast database names** (`test_db_${DateTime.now().millisecondsSinceEpoch}` or a `dbCounter`) to avoid state bleeding between tests.
 
 ---
@@ -70,7 +72,7 @@ dart test --reporter=expanded
 lib/
 ├── nostr_mail.dart              # Public API exports
 └── src/
-    ├── client.dart              # NostrMailClient (~1800 lines) — core of the SDK
+    ├── client.dart              # NostrMailClient (~350 lines) — public façade
     ├── constants.dart           # Event kinds, namespaces, default relays/servers
     ├── exceptions.dart          # NostrMailException hierarchy
     ├── models/
@@ -79,32 +81,51 @@ lib/
     │   ├── private_settings.dart# Cross-device settings (signature, bridges, identities)
     │   ├── encrypted_blob.dart  # AES-GCM blob metadata
     │   └── unwrapped_gift_wrap.dart # Seal + Rumor pair
+    ├── client/
+    │   ├── email_sender.dart    # Build, encrypt, send emails via GiftWraps
+    │   ├── sync_engine.dart     # sync(), resync(), fetchRecent(), event processing
+    │   ├── watch_manager.dart   # watch() — real-time MailEvent stream
+    │   ├── label_manager.dart   # addLabel, removeLabel, broadcast labels
+    │   ├── settings_manager.dart# Private settings CRUD + cache
+    │   └── relay_resolver.dart  # Shared helper: resolve DM & write relays (NIP-17/65)
+    ├── storage/
+    │   ├── email_repository.dart     # Denormalized queries via Sembast Finder
+    │   ├── label_repository.dart     # NIP-32 label metadata + atomic denormalized updates
+    │   ├── gift_wrap_repository.dart # Tracks un/processed gift wraps
+    │   ├── settings_repository.dart  # Local decrypted settings cache
+    │   └── models/
+    │       ├── email_record.dart     # Denormalized flat record for fast queries
+    │       ├── email_query.dart      # Query DTO (folder, isRead, search, etc.)
+    │       └── paginated_result.dart # Generic pagination abstraction
     ├── services/
     │   ├── email_parser.dart    # RFC 2822 build / parse helpers
     │   └── bridge_resolver.dart # NIP-05 lookup for bridges & users
-    ├── storage/
-    │   ├── email_store.dart     # Sembast CRUD for emails
-    │   ├── gift_wrap_store.dart # Tracks un/processed gift wraps
-    │   ├── label_store.dart     # NIP-32 label CRUD
-    │   └── private_settings_store.dart # Local decrypted settings cache
     └── utils/
         ├── event_email_parser.dart   # Parses kind 1301 → Email (inline or Blossom)
         ├── recipient_resolver.dart   # npub / hex / NIP-05 / bridge resolution
         ├── encrypt_blob.dart         # AES-256-GCM encryption
         ├── decrypt_blob.dart         # AES-256-GCM decryption
         ├── mime_message_cleaner.dart # removeBccHeaders()
-        └── html_utils.dart           # stripHtmlTags()
+        └── attachment_counter.dart   # Counts attachments via MimeMessage
 
 test/
-├── nostr_mail_test.dart         # Unit tests for models, parser, stores, resolver
+├── nostr_mail_test.dart         # Unit tests for models, parser, repositories, resolver
 ├── mocks/
 │   ├── mock_relay.dart          # Full WebSocket Nostr relay mock (~800 lines)
-│   ├── mock_blossom_server.dart # Shelf-based Blossom server mock
+│   ├── mock_blossom_server.dart # Shelf-based Blossom server mock (supports dynamic ports)
 │   └── mock_bridge.dart         # SMTP bridge simulator using NostrMailClient
 ├── models/
 │   └── test_user.dart           # Helper: create user + NDK + in-memory DB
 └── <feature>_test.dart          # Per-feature integration tests
 ```
+
+### Architecture Notes
+
+- **`client.dart`** is a thin façade. All business logic lives in the **manager classes** under `lib/src/client/`.
+- **`RelayResolver`** eliminates duplication of `_getDmRelays()` / `_getWriteRelays()` across managers.
+- **`GapSync<T>`** (inside `sync_engine.dart`) is a template method that removes duplication between the 5 previous `_syncXxx` methods.
+- **Denormalized storage**: `EmailRecord` has flat fields (`folder`, `isRead`, `isStarred`, `attachmentCount`, `searchText`) so queries never need joins.
+- **`LabelRepository`** updates denormalized `EmailRecord` fields atomically inside Sembast transactions.
 
 ---
 
@@ -166,19 +187,19 @@ NostrMailClient({
 
 1. **Unit tests** (`nostr_mail_test.dart`) — no network, use mocked `http.Client` via `mocktail`, use `databaseFactoryMemory` for Sembast.
 2. **Integration tests with mocks** — start `MockRelay` / `MockBlossomServer`, create `TestUser` objects, send emails between them, assert on local DB state.
-3. **Integration tests with real network** — `blossom_integration_test.dart` only; marked with long `Timeout`.
-4. **State isolation** — always use unique DB names per test. Never reuse `'test_db'` strings.
-5. **Tear-down pattern** for mock relays:
+3. **State isolation** — always use unique DB names per test. Never reuse `'test_db'` strings.
+4. **Tear-down pattern** for mock relays:
    ```dart
    final relay = MockRelay(name: 'relay');
    await relay.startServer();
    addTearDown(() async => relay.stopServer());
    ```
-6. **TestUser helper** encapsulates key generation, NDK init, DB creation, and `NostrMailClient` instantiation.
+5. **TestUser helper** encapsulates key generation, NDK init, DB creation, and `NostrMailClient` instantiation.
+6. **MockBlossomServer dynamic ports** — use `MockBlossomServer()` without a port argument to let the OS assign a free port (`server.port` is available after `start()`).
 
 ### Running Tests Reliably
 
-Because some tests connect to the public internet and others need a local relay, the suite is **not hermetic** as a whole. For CI or agent work:
+The full suite is now hermetic (no live network required):
 
 ```bash
 # Fast, offline-only tests
@@ -186,9 +207,11 @@ dart test test/nostr_mail_test.dart
 dart test test/bridges_test.dart
 dart test test/folder_label_exclusion_test.dart
 
-# Slow / network-dependent tests
-dart test test/blossom_integration_test.dart   # can fail on bad connectivity
-dart test test/cc_bcc_test.dart                # currently broken (no mock relay started)
+# Slow tests (mock-based but heavy)
+dart test test/blossom_integration_test.dart   # ~40s (blocked by enough_mail_plus perf)
+
+# Known broken
+dart test test/cc_bcc_test.dart                # hard-codes ws://localhost:7777, no mock relay
 ```
 
 ---
@@ -221,6 +244,7 @@ dart test test/cc_bcc_test.dart                # currently broken (no mock relay
 `maxInlineSize = 32768` bytes. NIP-44 plaintext limit is 65,535 bytes, but NIP-59 double-wrapping (Rumor → Seal → Gift Wrap) expands the payload via Base64 + padding. 32 KB is the safe threshold.
 
 ### Relay Selection
+- **`RelayResolver`** is a shared helper instantiated once in `NostrMailClient` and injected into all managers.
 - **DM relays**: read from NIP-17 kind 10050 event; fallback to `recommendedDmRelays`.
 - **Write relays**: read from NIP-65 kind 10002 event; fallback to `recommendedDmRelays`.
 - Both lists are fetched on-demand; there is **no in-memory cache** for relay lists yet (see `TODO.md`).
@@ -251,12 +275,14 @@ An email is considered "bridged" if the sender's pubkey does **not** match the p
 
 | File | Why it matters |
 |------|----------------|
-| `lib/src/client.dart` | The entire business logic lives here. |
+| `lib/src/client.dart` | Public façade; delegates to all managers. |
 | `lib/src/constants.dart` | All event kinds and protocol magic values. |
+| `lib/src/client/relay_resolver.dart` | Shared relay lookup logic (NIP-17/65). |
 | `email-labels.md` | Formal spec for NIP-32 label usage in this project. |
 | `TODO.md` | Roadmap: local-first sync queue, label cleanup, performance caching. |
 | `CHANGELOG.md` | Detailed per-version breaking changes and new features. |
 | `test/mocks/mock_relay.dart` | Very capable Nostr relay mock; reusable for any NDK-based test. |
+| `test/mocks/mock_blossom_server.dart` | Shelf-based Blossom mock with dynamic port support. |
 
 ---
 
@@ -266,5 +292,6 @@ An email is considered "bridged" if the sender's pubkey does **not** match the p
 - **Add tests** for new storage operations in `nostr_mail_test.dart` or a new feature-specific file.
 - **Update `CHANGELOG.md`** with user-visible changes.
 - **Update `email-labels.md`** if you change the label protocol.
+- **Update `AGENTS.md`** if you change the architecture, testing patterns, or file layout.
 - **Do not commit `.qwen/` or `pubspec.lock`** (both are gitignored).
 - If you introduce a new event kind, add it to `lib/src/constants.dart` and re-export from `lib/nostr_mail.dart` only if it is public API.
