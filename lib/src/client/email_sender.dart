@@ -175,8 +175,9 @@ class EmailSender {
         pubkeys: allInvolvedPubkeys.toList(),
       );
       if (servers != null) allBlossomServers.addAll(servers);
-      if (allBlossomServers.isEmpty)
+      if (allBlossomServers.isEmpty) {
         allBlossomServers.addAll(_defaultBlossomServers);
+      }
 
       final uploadResults = await _ndk.blossom.uploadBlob(
         data: encryptedBlob.bytes,

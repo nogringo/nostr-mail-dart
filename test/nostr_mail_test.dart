@@ -7,9 +7,11 @@ import 'package:ndk/ndk.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:nostr_mail/src/services/bridge_resolver.dart';
 import 'package:sembast/sembast_memory.dart';
-import 'package:nostr_mail/src/storage/email_store.dart';
-import 'package:nostr_mail/src/storage/gift_wrap_store.dart';
-import 'package:nostr_mail/src/storage/label_store.dart';
+import 'package:nostr_mail/src/storage/email_repository.dart';
+import 'package:nostr_mail/src/storage/models/email_record.dart';
+import 'package:nostr_mail/src/storage/models/email_query.dart';
+import 'package:nostr_mail/src/storage/gift_wrap_repository.dart';
+import 'package:nostr_mail/src/storage/label_repository.dart';
 import 'package:test/test.dart';
 
 class MockHttpClient extends Mock implements http.Client {}
@@ -356,37 +358,55 @@ void main() {
   });
 
   group('EmailStore', () {
-    late EmailStore store;
+    late EmailRepository repo;
 
     setUp(() async {
       final db = await databaseFactoryMemory.openDatabase(
         'test_email_db_${dbCounter++}',
       );
-      store = EmailStore(db);
+      repo = EmailRepository(db);
     });
 
-    Email createTestEmail(String id) {
-      final parser = EmailParser();
-      final rawContent = parser.build(
-        from: MailAddress(null, 'from@test.com'),
-        to: [MailAddress(null, 'to@test.com')],
-        subject: 'Subject $id',
-        body: 'Body $id',
-      );
-      return Email(
+    EmailRecord createRecord(
+      String id, {
+      DateTime? date,
+      String? subject,
+      String? from,
+      String? body,
+    }) {
+      final effectiveDate = date ?? DateTime.now();
+      final effectiveSubject = subject ?? 'Subject $id';
+      final effectiveFrom = from ?? 'from@test.com';
+      final effectiveBody = body ?? 'Body $id';
+      final raw =
+          'From: $effectiveFrom\r\nSubject: $effectiveSubject\r\n\r\n$effectiveBody';
+      return EmailRecord(
         id: id,
         senderPubkey: 'pk-$id',
         recipientPubkey: 'rpk-$id',
-        rawContent: rawContent,
-        createdAt: DateTime.now(),
+        rawContent: raw,
+        isPublic: false,
+        createdAt: effectiveDate.millisecondsSinceEpoch ~/ 1000,
+        date: effectiveDate.millisecondsSinceEpoch ~/ 1000,
+        from: effectiveFrom,
+        subject: effectiveSubject,
+        bodyPlain: effectiveBody,
+        searchText:
+            '${effectiveFrom.toLowerCase()} ${effectiveSubject.toLowerCase()} ${effectiveBody.toLowerCase()}',
+        attachmentCount: 0,
+        folder: 'inbox',
+        isRead: false,
+        isStarred: false,
+        labels: [],
+        isBridged: false,
       );
     }
 
     test('saveEmail and getEmailById', () async {
-      final email = createTestEmail('save-test');
+      final email = createRecord('save-test');
 
-      await store.saveEmail(email);
-      final retrieved = await store.getEmailById('save-test');
+      await repo.save(email);
+      final retrieved = (await repo.getById('save-test'))?.toEmail();
 
       expect(retrieved, isNotNull);
       expect(retrieved!.id, 'save-test');
@@ -394,39 +414,38 @@ void main() {
     });
 
     test('getEmailById returns null for non-existent email', () async {
-      final result = await store.getEmailById('non-existent');
+      final result = (await repo.getById('non-existent'))?.toEmail();
 
       expect(result, isNull);
     });
 
     test('getEmails returns all emails sorted by date descending', () async {
-      final email1 = Email(
-        id: 'e1',
-        senderPubkey: 'pk',
-        recipientPubkey: 'rpk',
-        rawContent: 'From: a@a.com\r\nSubject: First\r\n\r\nBody',
-        createdAt: DateTime.utc(2024, 1, 1),
+      final email1 = createRecord(
+        'e1',
+        date: DateTime.utc(2024, 1, 1),
+        subject: 'First',
+        from: 'a@a.com',
       );
-      final email2 = Email(
-        id: 'e2',
-        senderPubkey: 'pk',
-        recipientPubkey: 'rpk',
-        rawContent: 'From: a@a.com\r\nSubject: Second\r\n\r\nBody',
-        createdAt: DateTime.utc(2024, 1, 3),
+      final email2 = createRecord(
+        'e2',
+        date: DateTime.utc(2024, 1, 3),
+        subject: 'Second',
+        from: 'a@a.com',
       );
-      final email3 = Email(
-        id: 'e3',
-        senderPubkey: 'pk',
-        recipientPubkey: 'rpk',
-        rawContent: 'From: a@a.com\r\nSubject: Third\r\n\r\nBody',
-        createdAt: DateTime.utc(2024, 1, 2),
+      final email3 = createRecord(
+        'e3',
+        date: DateTime.utc(2024, 1, 2),
+        subject: 'Third',
+        from: 'a@a.com',
       );
 
-      await store.saveEmail(email1);
-      await store.saveEmail(email2);
-      await store.saveEmail(email3);
+      await repo.save(email1);
+      await repo.save(email2);
+      await repo.save(email3);
 
-      final emails = await store.getEmails();
+      final emails = (await repo.query(
+        EmailQuery(),
+      )).items.map((r) => r.toEmail()).toList();
 
       expect(emails.length, 3);
       expect(emails[0].id, 'e2'); // Most recent first
@@ -436,27 +455,30 @@ void main() {
 
     test('getEmails respects limit parameter', () async {
       for (var i = 0; i < 5; i++) {
-        await store.saveEmail(createTestEmail('limit-$i'));
+        await repo.save(createRecord('limit-$i'));
       }
 
-      final emails = await store.getEmails(limit: 3);
+      final emails = (await repo.query(
+        EmailQuery(limit: 3),
+      )).items.map((r) => r.toEmail()).toList();
 
       expect(emails.length, 3);
     });
 
     test('getEmails respects offset parameter', () async {
       for (var i = 0; i < 5; i++) {
-        final email = Email(
-          id: 'offset-$i',
-          senderPubkey: 'pk',
-          recipientPubkey: 'rpk',
-          rawContent: 'From: a@a.com\r\nSubject: Subject $i\r\n\r\nBody',
-          createdAt: DateTime.utc(2024, 1, 5 - i), // Descending dates
+        final email = createRecord(
+          'offset-$i',
+          date: DateTime.utc(2024, 1, 5 - i),
+          subject: 'Subject $i',
+          from: 'a@a.com',
         );
-        await store.saveEmail(email);
+        await repo.save(email);
       }
 
-      final emails = await store.getEmails(offset: 2, limit: 2);
+      final emails = (await repo.query(
+        EmailQuery(offset: 2, limit: 2),
+      )).items.map((r) => r.toEmail()).toList();
 
       expect(emails.length, 2);
       expect(emails[0].id, 'offset-2');
@@ -464,39 +486,36 @@ void main() {
     });
 
     test('deleteEmail removes email from store', () async {
-      final email = createTestEmail('delete-test');
-      await store.saveEmail(email);
+      final email = createRecord('delete-test');
+      await repo.save(email);
 
-      await store.deleteEmail('delete-test');
-      final result = await store.getEmailById('delete-test');
+      await repo.delete('delete-test');
+      final result = (await repo.getById('delete-test'))?.toEmail();
 
       expect(result, isNull);
     });
 
     test('saveEmail updates existing email with same id', () async {
-      final original = Email(
-        id: 'update-test',
-        senderPubkey: 'pk',
-        recipientPubkey: 'rpk',
-        rawContent:
-            'From: original@test.com\r\nSubject: Original Subject\r\n\r\nOriginal Body',
-        createdAt: DateTime.now(),
+      final original = createRecord(
+        'update-test',
+        from: 'original@test.com',
+        subject: 'Original Subject',
+        body: 'Original Body',
+      );
+      final updated = createRecord(
+        'update-test',
+        from: 'updated@test.com',
+        subject: 'Updated Subject',
+        body: 'Updated Body',
       );
 
-      final updated = Email(
-        id: 'update-test',
-        senderPubkey: 'pk',
-        recipientPubkey: 'rpk',
-        rawContent:
-            'From: updated@test.com\r\nSubject: Updated Subject\r\n\r\nUpdated Body',
-        createdAt: DateTime.now(),
-      );
+      await repo.save(original);
+      await repo.save(updated);
 
-      await store.saveEmail(original);
-      await store.saveEmail(updated);
-
-      final emails = await store.getEmails();
-      final retrieved = await store.getEmailById('update-test');
+      final emails = (await repo.query(
+        EmailQuery(),
+      )).items.map((r) => r.toEmail()).toList();
+      final retrieved = (await repo.getById('update-test'))?.toEmail();
 
       expect(emails.length, 1);
       expect(retrieved!.mime.decodeSubject(), 'Updated Subject');
@@ -504,37 +523,34 @@ void main() {
     });
 
     test('getEmailsByIds returns emails sorted by date descending', () async {
-      final email1 = Email(
-        id: 'batch-1',
-        senderPubkey: 'pk',
-        recipientPubkey: 'rpk',
-        rawContent: 'From: a@a.com\r\nSubject: First\r\n\r\nBody',
-        createdAt: DateTime.utc(2024, 1, 1),
+      final email1 = createRecord(
+        'batch-1',
+        date: DateTime.utc(2024, 1, 1),
+        subject: 'First',
+        from: 'a@a.com',
       );
-      final email2 = Email(
-        id: 'batch-2',
-        senderPubkey: 'pk',
-        recipientPubkey: 'rpk',
-        rawContent: 'From: a@a.com\r\nSubject: Second\r\n\r\nBody',
-        createdAt: DateTime.utc(2024, 1, 3),
+      final email2 = createRecord(
+        'batch-2',
+        date: DateTime.utc(2024, 1, 3),
+        subject: 'Second',
+        from: 'a@a.com',
       );
-      final email3 = Email(
-        id: 'batch-3',
-        senderPubkey: 'pk',
-        recipientPubkey: 'rpk',
-        rawContent: 'From: a@a.com\r\nSubject: Third\r\n\r\nBody',
-        createdAt: DateTime.utc(2024, 1, 2),
+      final email3 = createRecord(
+        'batch-3',
+        date: DateTime.utc(2024, 1, 2),
+        subject: 'Third',
+        from: 'a@a.com',
       );
 
-      await store.saveEmail(email1);
-      await store.saveEmail(email2);
-      await store.saveEmail(email3);
+      await repo.save(email1);
+      await repo.save(email2);
+      await repo.save(email3);
 
-      final emails = await store.getEmailsByIds([
+      final emails = (await repo.getByIds([
         'batch-1',
         'batch-3',
         'batch-2',
-      ]);
+      ])).map((r) => r.toEmail()).toList();
 
       expect(emails.length, 3);
       expect(emails[0].id, 'batch-2'); // Most recent first
@@ -543,35 +559,39 @@ void main() {
     });
 
     test('getEmailsByIds returns empty list for empty input', () async {
-      final emails = await store.getEmailsByIds([]);
+      final emails = (await repo.getByIds([])).map((r) => r.toEmail()).toList();
 
       expect(emails, isEmpty);
     });
 
     test('getEmailsByIds ignores non-existent IDs', () async {
-      final email = Email(
-        id: 'exists',
-        senderPubkey: 'pk',
-        recipientPubkey: 'rpk',
-        rawContent: 'From: a@a.com\r\nSubject: Exists\r\n\r\nBody',
-        createdAt: DateTime.utc(2024, 1, 1),
+      final email = createRecord(
+        'exists',
+        date: DateTime.utc(2024, 1, 1),
+        subject: 'Exists',
+        from: 'a@a.com',
       );
-      await store.saveEmail(email);
+      await repo.save(email);
 
-      final emails = await store.getEmailsByIds(['exists', 'does-not-exist']);
+      final emails = (await repo.getByIds([
+        'exists',
+        'does-not-exist',
+      ])).map((r) => r.toEmail()).toList();
 
       expect(emails.length, 1);
       expect(emails[0].id, 'exists');
     });
 
     test('clearAll removes all emails', () async {
-      await store.saveEmail(createTestEmail('email-1'));
-      await store.saveEmail(createTestEmail('email-2'));
-      await store.saveEmail(createTestEmail('email-3'));
+      await repo.save(createRecord('email-1'));
+      await repo.save(createRecord('email-2'));
+      await repo.save(createRecord('email-3'));
 
-      await store.clearAll();
+      await repo.clearAll();
 
-      final emails = await store.getEmails();
+      final emails = (await repo.query(
+        EmailQuery(),
+      )).items.map((r) => r.toEmail()).toList();
       expect(emails, isEmpty);
     });
   });
@@ -610,76 +630,76 @@ void main() {
   });
 
   group('LabelStore', () {
-    late LabelStore store;
+    late LabelRepository repo;
 
     setUp(() async {
       final db = await databaseFactoryMemory.openDatabase(
         'test_label_db_${dbCounter++}',
       );
-      store = LabelStore(db);
+      repo = LabelRepository(db);
     });
 
     test('saveLabel and getLabelEventId', () async {
-      await store.saveLabel(
+      await repo.saveLabel(
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
         timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
 
-      final eventId = await store.getLabelEventId('email-1', 'folder:trash');
+      final eventId = await repo.getLabelEventId('email-1', 'folder:trash');
 
       expect(eventId, 'label-event-1');
     });
 
     test('getLabelEventId returns null for non-existent label', () async {
-      final eventId = await store.getLabelEventId('email-1', 'folder:trash');
+      final eventId = await repo.getLabelEventId('email-1', 'folder:trash');
 
       expect(eventId, isNull);
     });
 
     test('removeLabel deletes the label', () async {
-      await store.saveLabel(
+      await repo.saveLabel(
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
         timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
 
-      await store.removeLabel('email-1', 'folder:trash');
-      final eventId = await store.getLabelEventId('email-1', 'folder:trash');
+      await repo.removeLabel('email-1', 'folder:trash');
+      final eventId = await repo.getLabelEventId('email-1', 'folder:trash');
 
       expect(eventId, isNull);
     });
 
     test('getLabelsForEmail returns all labels for an email', () async {
-      await store.saveLabel(
+      await repo.saveLabel(
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
         timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
-      await store.saveLabel(
+      await repo.saveLabel(
         emailId: 'email-1',
         label: 'state:read',
         labelEventId: 'label-event-2',
         timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
-      await store.saveLabel(
+      await repo.saveLabel(
         emailId: 'email-1',
         label: 'flag:starred',
         labelEventId: 'label-event-3',
         timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
       // Different email
-      await store.saveLabel(
+      await repo.saveLabel(
         emailId: 'email-2',
         label: 'folder:archive',
         labelEventId: 'label-event-4',
         timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
 
-      final labels = await store.getLabelsForEmail('email-1');
+      final labels = await repo.getLabelsForEmail('email-1');
 
       expect(labels.length, 3);
       expect(labels, contains('folder:trash'));
@@ -691,26 +711,26 @@ void main() {
     test(
       'getEmailIdsWithLabel returns all emails with a specific label',
       () async {
-        await store.saveLabel(
+        await repo.saveLabel(
           emailId: 'email-1',
           label: 'folder:trash',
           labelEventId: 'label-event-1',
           timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
         );
-        await store.saveLabel(
+        await repo.saveLabel(
           emailId: 'email-2',
           label: 'folder:trash',
           labelEventId: 'label-event-2',
           timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
         );
-        await store.saveLabel(
+        await repo.saveLabel(
           emailId: 'email-3',
           label: 'folder:archive',
           labelEventId: 'label-event-3',
           timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
         );
 
-        final trashedIds = await store.getEmailIdsWithLabel('folder:trash');
+        final trashedIds = await repo.getEmailIdsWithLabel('folder:trash');
 
         expect(trashedIds.length, 2);
         expect(trashedIds, contains('email-1'));
@@ -720,44 +740,44 @@ void main() {
     );
 
     test('hasLabel returns true when label exists', () async {
-      await store.saveLabel(
+      await repo.saveLabel(
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
         timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
 
-      final hasTrash = await store.hasLabel('email-1', 'folder:trash');
-      final hasRead = await store.hasLabel('email-1', 'state:read');
+      final hasTrash = await repo.hasLabel('email-1', 'folder:trash');
+      final hasRead = await repo.hasLabel('email-1', 'state:read');
 
       expect(hasTrash, isTrue);
       expect(hasRead, isFalse);
     });
 
     test('deleteLabelsForEmail removes all labels for an email', () async {
-      await store.saveLabel(
+      await repo.saveLabel(
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
         timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
-      await store.saveLabel(
+      await repo.saveLabel(
         emailId: 'email-1',
         label: 'state:read',
         labelEventId: 'label-event-2',
         timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
-      await store.saveLabel(
+      await repo.saveLabel(
         emailId: 'email-2',
         label: 'folder:trash',
         labelEventId: 'label-event-3',
         timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
 
-      await store.deleteLabelsForEmail('email-1');
+      await repo.deleteLabelsForEmail('email-1');
 
-      final labels1 = await store.getLabelsForEmail('email-1');
-      final labels2 = await store.getLabelsForEmail('email-2');
+      final labels1 = await repo.getLabelsForEmail('email-1');
+      final labels2 = await repo.getLabelsForEmail('email-2');
 
       expect(labels1, isEmpty);
       expect(labels2.length, 1);
@@ -765,21 +785,21 @@ void main() {
     });
 
     test('saveLabel updates existing label event ID', () async {
-      await store.saveLabel(
+      await repo.saveLabel(
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'old-event-id',
         timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
-      await store.saveLabel(
+      await repo.saveLabel(
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'new-event-id',
         timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
 
-      final eventId = await store.getLabelEventId('email-1', 'folder:trash');
-      final labels = await store.getLabelsForEmail('email-1');
+      final eventId = await repo.getLabelEventId('email-1', 'folder:trash');
+      final labels = await repo.getLabelsForEmail('email-1');
 
       expect(eventId, 'new-event-id');
       expect(labels.length, 1); // Should not duplicate
@@ -787,42 +807,42 @@ void main() {
 
     // TODO this test fail when run after other tests, need to investigate why
     test('getEmailIdsWithLabel returns empty list when no matches', () async {
-      final ids = await store.getEmailIdsWithLabel('folder:trash');
+      final ids = await repo.getEmailIdsWithLabel('folder:trash');
 
       expect(ids, isEmpty);
     });
 
     test('getLabelsForEmail returns empty list when no labels', () async {
-      final labels = await store.getLabelsForEmail('email-without-labels');
+      final labels = await repo.getLabelsForEmail('email-without-labels');
 
       expect(labels, isEmpty);
     });
 
     test('clearAll removes all labels', () async {
-      await store.saveLabel(
+      await repo.saveLabel(
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
         timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
-      await store.saveLabel(
+      await repo.saveLabel(
         emailId: 'email-2',
         label: 'state:read',
         labelEventId: 'label-event-2',
         timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       );
 
-      await store.clearAll();
+      await repo.clearAll();
 
-      final labels1 = await store.getLabelsForEmail('email-1');
-      final labels2 = await store.getLabelsForEmail('email-2');
+      final labels1 = await repo.getLabelsForEmail('email-1');
+      final labels2 = await repo.getLabelsForEmail('email-2');
       expect(labels1, isEmpty);
       expect(labels2, isEmpty);
     });
   });
 
   group('GiftWrapStore', () {
-    late GiftWrapStore store;
+    late GiftWrapRepository repo;
 
     Nip01Event createTestEvent(String id) {
       return Nip01Event(
@@ -840,46 +860,46 @@ void main() {
       final db = await databaseFactoryMemory.openDatabase(
         'test_gift_wrap_db_${dbCounter++}',
       );
-      store = GiftWrapStore(db);
+      repo = GiftWrapRepository(db);
     });
 
     test('save returns true for new event', () async {
-      final result = await store.save(createTestEvent('event-1'));
+      final result = await repo.save(createTestEvent('event-1'));
 
       expect(result, isTrue);
     });
 
     test('save returns false for existing event', () async {
-      await store.save(createTestEvent('event-1'));
-      final result = await store.save(createTestEvent('event-1'));
+      await repo.save(createTestEvent('event-1'));
+      final result = await repo.save(createTestEvent('event-1'));
 
       expect(result, isFalse);
     });
 
     test('save does not overwrite existing entry', () async {
-      await store.save(createTestEvent('event-1'));
-      await store.markProcessed('event-1');
-      await store.save(createTestEvent('event-1'));
+      await repo.save(createTestEvent('event-1'));
+      await repo.markProcessed('event-1');
+      await repo.save(createTestEvent('event-1'));
 
-      final unprocessed = await store.getUnprocessedEvents();
+      final unprocessed = await repo.getUnprocessedEvents();
       expect(unprocessed.map((e) => e.id), isNot(contains('event-1')));
     });
 
     test('markProcessed updates event to processed', () async {
-      await store.save(createTestEvent('event-1'));
-      await store.markProcessed('event-1');
+      await repo.save(createTestEvent('event-1'));
+      await repo.markProcessed('event-1');
 
-      final unprocessed = await store.getUnprocessedEvents();
+      final unprocessed = await repo.getUnprocessedEvents();
       expect(unprocessed.map((e) => e.id), isNot(contains('event-1')));
     });
 
     test('getUnprocessedEvents returns only unprocessed events', () async {
-      await store.save(createTestEvent('event-1'));
-      await store.save(createTestEvent('event-2'));
-      await store.save(createTestEvent('event-3'));
-      await store.markProcessed('event-2');
+      await repo.save(createTestEvent('event-1'));
+      await repo.save(createTestEvent('event-2'));
+      await repo.save(createTestEvent('event-3'));
+      await repo.markProcessed('event-2');
 
-      final unprocessed = await store.getUnprocessedEvents();
+      final unprocessed = await repo.getUnprocessedEvents();
 
       expect(unprocessed.length, 2);
       expect(unprocessed.map((e) => e.id), contains('event-1'));
@@ -888,22 +908,22 @@ void main() {
     });
 
     test('getUnprocessedEvents respects limit', () async {
-      await store.save(createTestEvent('event-1'));
-      await store.save(createTestEvent('event-2'));
-      await store.save(createTestEvent('event-3'));
+      await repo.save(createTestEvent('event-1'));
+      await repo.save(createTestEvent('event-2'));
+      await repo.save(createTestEvent('event-3'));
 
-      final unprocessed = await store.getUnprocessedEvents(limit: 2);
+      final unprocessed = await repo.getUnprocessedEvents(limit: 2);
 
       expect(unprocessed.length, 2);
     });
 
     test('getFailedCount returns count of unprocessed events', () async {
-      await store.save(createTestEvent('event-1'));
-      await store.save(createTestEvent('event-2'));
-      await store.save(createTestEvent('event-3'));
-      await store.markProcessed('event-2');
+      await repo.save(createTestEvent('event-1'));
+      await repo.save(createTestEvent('event-2'));
+      await repo.save(createTestEvent('event-3'));
+      await repo.markProcessed('event-2');
 
-      final count = await store.getFailedCount();
+      final count = await repo.getFailedCount();
 
       expect(count, 2);
     });
@@ -920,9 +940,9 @@ void main() {
         content: 'encrypted content',
         sig: 'signature-123',
       );
-      await store.save(event);
+      await repo.save(event);
 
-      final unprocessed = await store.getUnprocessedEvents();
+      final unprocessed = await repo.getUnprocessedEvents();
 
       expect(unprocessed.length, 1);
       expect(unprocessed.first.id, 'test-id');
@@ -937,15 +957,15 @@ void main() {
     });
 
     test('clearAll removes all gift wraps', () async {
-      await store.save(createTestEvent('event-1'));
-      await store.save(createTestEvent('event-2'));
-      await store.markProcessed('event-1');
+      await repo.save(createTestEvent('event-1'));
+      await repo.save(createTestEvent('event-2'));
+      await repo.markProcessed('event-1');
 
-      await store.clearAll();
+      await repo.clearAll();
 
-      final unprocessed = await store.getUnprocessedEvents();
+      final unprocessed = await repo.getUnprocessedEvents();
       expect(unprocessed, isEmpty);
-      expect(await store.getFailedCount(), 0);
+      expect(await repo.getFailedCount(), 0);
     });
   });
 }
