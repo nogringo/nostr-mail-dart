@@ -5,6 +5,7 @@ import '../constants.dart';
 import '../exceptions.dart';
 import '../models/mail_event.dart';
 import 'event_bus.dart';
+import 'relay_resolver.dart';
 import 'sync_engine.dart';
 
 /// Manages real-time Nostr subscriptions and routes incoming events
@@ -13,14 +14,9 @@ class WatchManager {
   final Ndk _ndk;
   final SyncEngine _sync;
   final EventBus _bus;
-  final List<String> _defaultDmRelays;
+  final RelayResolver _relays;
 
-  WatchManager(
-    this._ndk,
-    this._sync,
-    this._bus, {
-    List<String>? defaultDmRelays,
-  }) : _defaultDmRelays = defaultDmRelays ?? recommendedDmRelays;
+  WatchManager(this._ndk, this._sync, this._bus, this._relays);
 
   String? get _pubkey => _ndk.accounts.getPublicKey();
 
@@ -66,8 +62,8 @@ class WatchManager {
   // ── Subscriptions ───────────────────────────────────────────────────────
 
   Future<void> _setupSubscriptions(String pubkey) async {
-    final dmRelays = await _getDmRelays(pubkey);
-    final writeRelays = await _getWriteRelays(pubkey);
+    final dmRelays = await _relays.getDmRelays(pubkey);
+    final writeRelays = await _relays.getWriteRelays(pubkey);
 
     // Gift wraps (emails)
     final emailSub = _ndk.requests.subscription(
@@ -118,42 +114,5 @@ class WatchManager {
     labelSub.stream.listen(_sync.onLabelAddition);
     labelDeletionSub.stream.listen(_sync.onLabelDeletion);
     emailDeletionSub.stream.listen(_sync.onEmailDeletion);
-  }
-
-  // ── Relay helpers ───────────────────────────────────────────────────────
-
-  Future<List<String>> _getDmRelays(String pubkey) async {
-    final response = _ndk.requests.query(
-      filter: ndk.Filter(kinds: [dmRelayListKind], authors: [pubkey], limit: 1),
-    );
-    final events = await response.future;
-    if (events.isEmpty) return _defaultDmRelays;
-
-    final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
-    final relays = event.tags
-        .where((t) => t.isNotEmpty && t[0] == 'relay')
-        .map((t) => t[1])
-        .toList();
-    return relays.isNotEmpty ? relays : _defaultDmRelays;
-  }
-
-  Future<List<String>> _getWriteRelays(String pubkey) async {
-    final response = _ndk.requests.query(
-      filter: ndk.Filter(kinds: [relayListKind], authors: [pubkey], limit: 1),
-    );
-    final events = await response.future;
-    if (events.isEmpty) return _defaultDmRelays;
-
-    final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
-    final relays = event.tags
-        .where(
-          (t) =>
-              t.isNotEmpty &&
-              t[0] == 'r' &&
-              (t.length == 2 || (t.length == 3 && t[2] != 'read')),
-        )
-        .map((t) => t[1])
-        .toList();
-    return relays.isNotEmpty ? relays : _defaultDmRelays;
   }
 }

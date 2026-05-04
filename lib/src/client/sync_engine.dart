@@ -9,6 +9,7 @@ import '../storage/email_repository.dart';
 import '../storage/gift_wrap_repository.dart';
 import '../storage/label_repository.dart';
 import '../utils/email_record_builder.dart';
+import 'relay_resolver.dart';
 import '../utils/event_email_parser.dart';
 import 'event_bus.dart';
 import 'gap_sync.dart';
@@ -22,7 +23,7 @@ class SyncEngine {
   final LabelRepository _labels;
   final GiftWrapRepository _giftWraps;
   final EventBus _bus;
-  final List<String> _defaultDmRelays;
+  final RelayResolver _relays;
   final List<String> _defaultBlossomServers;
 
   SyncEngine(
@@ -30,11 +31,10 @@ class SyncEngine {
     this._emails,
     this._labels,
     this._giftWraps,
-    this._bus, {
-    List<String>? defaultDmRelays,
+    this._bus,
+    this._relays, {
     List<String>? defaultBlossomServers,
-  }) : _defaultDmRelays = defaultDmRelays ?? recommendedDmRelays,
-       _defaultBlossomServers =
+  }) : _defaultBlossomServers =
            defaultBlossomServers ?? recommendedBlossomServers;
 
   String? get _pubkey => _ndk.accounts.getPublicKey();
@@ -56,8 +56,8 @@ class SyncEngine {
     final effectiveUntil = until ?? now;
 
     final (dmRelays, writeRelays) = await (
-      _getDmRelays(pubkey),
-      _getWriteRelays(pubkey),
+      _relays.getDmRelays(pubkey),
+      _relays.getWriteRelays(pubkey),
     ).wait;
 
     await _EmailGapSync(
@@ -127,8 +127,8 @@ class SyncEngine {
     final pubkey = _pubkey!;
 
     final (dmRelays, writeRelays) = await (
-      _getDmRelays(pubkey),
-      _getWriteRelays(pubkey),
+      _relays.getDmRelays(pubkey),
+      _relays.getWriteRelays(pubkey),
     ).wait;
 
     final emails = await _fetchEvents(_emailFilter(pubkey), dmRelays);
@@ -365,43 +365,6 @@ class SyncEngine {
     } catch (_) {
       return null;
     }
-  }
-
-  // ── Relay helpers ───────────────────────────────────────────────────────
-
-  Future<List<String>> _getDmRelays(String pubkey) async {
-    final response = _ndk.requests.query(
-      filter: ndk.Filter(kinds: [dmRelayListKind], authors: [pubkey], limit: 1),
-    );
-    final events = await response.future;
-    if (events.isEmpty) return _defaultDmRelays;
-
-    final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
-    final relays = event.tags
-        .where((t) => t.isNotEmpty && t[0] == 'relay')
-        .map((t) => t[1])
-        .toList();
-    return relays.isNotEmpty ? relays : _defaultDmRelays;
-  }
-
-  Future<List<String>> _getWriteRelays(String pubkey) async {
-    final response = _ndk.requests.query(
-      filter: ndk.Filter(kinds: [relayListKind], authors: [pubkey], limit: 1),
-    );
-    final events = await response.future;
-    if (events.isEmpty) return _defaultDmRelays;
-
-    final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
-    final relays = event.tags
-        .where(
-          (t) =>
-              t.isNotEmpty &&
-              t[0] == 'r' &&
-              (t.length == 2 || (t.length == 3 && t[2] != 'read')),
-        )
-        .map((t) => t[1])
-        .toList();
-    return relays.isNotEmpty ? relays : _defaultDmRelays;
   }
 
   Future<List<Nip01Event>> _fetchEvents(

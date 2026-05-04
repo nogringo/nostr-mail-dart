@@ -1,11 +1,11 @@
 import 'package:ndk/ndk.dart';
-import 'package:ndk/domain_layer/entities/filter.dart' as ndk;
 
 import '../constants.dart';
 import '../exceptions.dart';
 import '../models/mail_event.dart';
 import '../storage/label_repository.dart';
 import 'event_bus.dart';
+import 'relay_resolver.dart';
 
 /// Manages NIP-32 labels with local-first semantics.
 ///
@@ -14,16 +14,10 @@ import 'event_bus.dart';
 class LabelManager {
   final Ndk _ndk;
   final LabelRepository _labels;
+  final RelayResolver _relays;
   final EventBus _bus;
-  final List<String> _defaultWriteRelays;
 
-  LabelManager(
-    this._ndk,
-    this._labels,
-
-    this._bus, {
-    List<String>? defaultWriteRelays,
-  }) : _defaultWriteRelays = defaultWriteRelays ?? recommendedDmRelays;
+  LabelManager(this._ndk, this._labels, this._relays, this._bus);
 
   String? get _pubkey => _ndk.accounts.getPublicKey();
 
@@ -77,7 +71,7 @@ class LabelManager {
     );
 
     // Broadcast in background (don't await)
-    _getWriteRelays(pubkey).then((relays) {
+    _relays.getWriteRelays(pubkey).then((relays) {
       _ndk.broadcast.broadcast(nostrEvent: signed, specificRelays: relays);
     });
   }
@@ -108,7 +102,7 @@ class LabelManager {
     );
 
     _ndk.accounts.sign(deletionEvent).then((signed) {
-      _getWriteRelays(pubkey).then((relays) {
+      _relays.getWriteRelays(pubkey).then((relays) {
         _ndk.broadcast.broadcast(nostrEvent: signed, specificRelays: relays);
       });
     });
@@ -152,26 +146,4 @@ class LabelManager {
 
   Future<void> deleteLabelsForEmail(String emailId) =>
       _labels.deleteLabelsForEmail(emailId);
-
-  // ── Relay helper ────────────────────────────────────────────────────────
-
-  Future<List<String>> _getWriteRelays(String pubkey) async {
-    final response = _ndk.requests.query(
-      filter: ndk.Filter(kinds: [relayListKind], authors: [pubkey], limit: 1),
-    );
-    final events = await response.future;
-    if (events.isEmpty) return _defaultWriteRelays;
-
-    final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
-    final relays = event.tags
-        .where(
-          (t) =>
-              t.isNotEmpty &&
-              t[0] == 'r' &&
-              (t.length == 2 || (t.length == 3 && t[2] != 'read')),
-        )
-        .map((t) => t[1])
-        .toList();
-    return relays.isNotEmpty ? relays : _defaultWriteRelays;
-  }
 }

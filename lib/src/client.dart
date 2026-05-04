@@ -11,6 +11,7 @@ import 'client/label_manager.dart';
 import 'client/settings_manager.dart';
 import 'client/sync_engine.dart';
 import 'client/watch_manager.dart';
+import 'client/relay_resolver.dart';
 import 'constants.dart';
 import 'exceptions.dart';
 import 'models/email.dart';
@@ -54,14 +55,15 @@ class NostrMailClient {
     final settingsRepo = SettingsRepository(db);
     final bus = EventBus();
 
-    final settingsManager = SettingsManager(ndk, settingsRepo);
+    final relayResolver = RelayResolver(ndk, defaultDmRelays: defaultDmRelays);
+    final settingsManager = SettingsManager(ndk, settingsRepo, relayResolver);
     final syncEngine = SyncEngine(
       ndk,
       emailRepo,
       labelRepo,
       giftWrapRepo,
       bus,
-      defaultDmRelays: defaultDmRelays,
+      relayResolver,
       defaultBlossomServers: defaultBlossomServers,
     );
 
@@ -74,19 +76,14 @@ class NostrMailClient {
       sender: EmailSender(
         ndk,
         settingsManager,
-        defaultDmRelays: defaultDmRelays,
+        relayResolver,
         defaultBlossomServers: defaultBlossomServers,
         nip05Overrides: nip05Overrides,
       ),
-      labels: LabelManager(ndk, labelRepo, bus),
+      labels: LabelManager(ndk, labelRepo, relayResolver, bus),
       settings: settingsManager,
       sync: syncEngine,
-      watch: WatchManager(
-        ndk,
-        syncEngine,
-        bus,
-        defaultDmRelays: defaultDmRelays,
-      ),
+      watch: WatchManager(ndk, syncEngine, bus, relayResolver),
       nip05Overrides: nip05Overrides,
     );
   }

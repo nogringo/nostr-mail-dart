@@ -1,9 +1,9 @@
+import 'relay_resolver.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
-import 'package:ndk/domain_layer/entities/filter.dart' as ndk;
 
 import '../constants.dart';
 import '../exceptions.dart';
@@ -18,18 +18,19 @@ class EmailSender {
   final Ndk _ndk;
   final EmailParser _parser;
   final SettingsManager _settings;
-  final List<String> _defaultDmRelays;
+  final RelayResolver _relays;
   final List<String> _defaultBlossomServers;
   final Map<String, String>? nip05Overrides;
 
   EmailSender(
     this._ndk,
-    this._settings, {
-    List<String>? defaultDmRelays,
+    this._settings,
+    this._relays, {
+
     List<String>? defaultBlossomServers,
     this.nip05Overrides,
   }) : _parser = EmailParser(),
-       _defaultDmRelays = defaultDmRelays ?? recommendedDmRelays,
+
        _defaultBlossomServers =
            defaultBlossomServers ?? recommendedBlossomServers;
 
@@ -221,7 +222,7 @@ class EmailSender {
 
       final signedPublicEvent = await _ndk.accounts.sign(emailEvent);
 
-      final writeRelays = await _getWriteRelays(senderPubkey);
+      final writeRelays = await _relays.getWriteRelays(senderPubkey);
       final broadcast = _ndk.broadcast.broadcast(
         nostrEvent: signedPublicEvent,
         specificRelays: writeRelays,
@@ -311,25 +312,5 @@ class EmailSender {
     );
     final broadcast = _ndk.broadcast.broadcast(nostrEvent: giftWrapEvent);
     await broadcast.broadcastDoneFuture;
-  }
-
-  Future<List<String>> _getWriteRelays(String pubkey) async {
-    final response = _ndk.requests.query(
-      filter: ndk.Filter(kinds: [relayListKind], authors: [pubkey], limit: 1),
-    );
-    final events = await response.future;
-    if (events.isEmpty) return _defaultDmRelays;
-
-    final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
-    final relays = event.tags
-        .where(
-          (t) =>
-              t.isNotEmpty &&
-              t[0] == 'r' &&
-              (t.length == 2 || (t.length == 3 && t[2] != 'read')),
-        )
-        .map((t) => t[1])
-        .toList();
-    return relays.isNotEmpty ? relays : _defaultDmRelays;
   }
 }

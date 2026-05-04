@@ -1,67 +1,55 @@
 import 'package:enough_mail_plus/enough_mail.dart';
-import 'package:ndk/ndk.dart';
-import 'package:ndk/shared/nips/nip01/bip340.dart';
-import 'package:nostr_mail/nostr_mail.dart';
-import 'package:sembast/sembast_memory.dart';
+import 'package:ndk/shared/nips/nip19/nip19.dart';
 import 'package:test/test.dart';
+
+import 'mocks/mock_blossom_server.dart';
+import 'mocks/mock_relay.dart';
+import 'models/test_user.dart';
 
 void main() {
   test(
     'send and receive large email (> 32KB) via Blossom',
     () async {
-      final senderDb = await databaseFactoryMemory.openDatabase('sender');
-      final recipientDb = await databaseFactoryMemory.openDatabase('recipient');
+      final relay = MockRelay(name: 'relay', explicitPort: 19003);
+      await relay.startServer();
+      addTearDown(() async => await relay.stopServer());
 
-      final senderKeys = Bip340.generatePrivateKey();
-      final recipientKeys = Bip340.generatePrivateKey();
+      final blossomServer = MockBlossomServer(port: 3457);
+      await blossomServer.start();
+      addTearDown(() async => await blossomServer.stop());
 
-      final senderNdk = Ndk(
-        NdkConfig(
-          eventVerifier: Bip340EventVerifier(),
-          cache: MemCacheManager(),
-          bootstrapRelays: ["wss://nostr-01.uid.ovh"],
-          logLevel: LogLevel.off,
-        ),
-      );
-      final recipientNdk = Ndk(
-        NdkConfig(
-          eventVerifier: Bip340EventVerifier(),
-          cache: MemCacheManager(),
-          bootstrapRelays: ["wss://nostr-01.uid.ovh"],
-          logLevel: LogLevel.off,
-        ),
-      );
+      final blossomUrl = 'http://localhost:${blossomServer.port}';
 
-      senderNdk.accounts.loginPrivateKey(
-        pubkey: senderKeys.publicKey,
-        privkey: senderKeys.privateKey!,
-      );
-      recipientNdk.accounts.loginPrivateKey(
-        pubkey: recipientKeys.publicKey,
-        privkey: recipientKeys.privateKey!,
-      );
+      final sender = await TestUser(
+        'sender',
+        defaultDmRelays: [relay.url],
+        defaultBlossomServers: [blossomUrl],
+      ).create();
+      addTearDown(() async => await sender.destroy());
 
-      final senderClient = NostrMailClient(ndk: senderNdk, db: senderDb);
-      final recipientClient = NostrMailClient(
-        ndk: recipientNdk,
-        db: recipientDb,
-      );
+      final recipient = await TestUser(
+        'recipient',
+        defaultDmRelays: [relay.url],
+        defaultBlossomServers: [blossomUrl],
+      ).create();
+      addTearDown(() async => await recipient.destroy());
 
-      recipientClient.watch().listen((e) => print(e));
+      recipient.client.watch().listen((e) => print(e));
+
+      // Allow NDK to establish relay connections before sending
+      await Future.delayed(const Duration(seconds: 3));
 
       // Create large body (> 60KB)
       final largeBody = 'A' * (100 * 1024); // 100KB of text
       final testSubject =
           'Large Email Test - ${DateTime.now().toIso8601String()}';
 
-      await Future.delayed(const Duration(seconds: 5));
-
       final sw = Stopwatch()..start();
-      await senderClient.send(
+      await sender.client.send(
         to: [
           MailAddress(
             null,
-            "${Nip19.encodePubKey(recipientKeys.publicKey)}@nostr",
+            "${Nip19.encodePubKey(recipient.keyPair.publicKey)}@nostr",
           ),
         ],
         subject: testSubject,
@@ -70,13 +58,14 @@ void main() {
       sw.stop();
       print("Send took ${sw.elapsedMilliseconds}ms");
 
-      await Future.delayed(const Duration(seconds: 15));
+      // Allow the relay to process the broadcast and the recipient to receive it
+      await Future.delayed(const Duration(seconds: 2));
 
-      await recipientClient.fetchRecent();
+      await recipient.client.fetchRecent();
 
-      await Future.delayed(const Duration(seconds: 5));
+      await Future.delayed(const Duration(seconds: 1));
 
-      final receivedEmails = await recipientClient.getInboxEmails();
+      final receivedEmails = await recipient.client.getInboxEmails();
       print(receivedEmails);
       expect(receivedEmails, isNotEmpty);
 
@@ -88,8 +77,8 @@ void main() {
       expect(email.body, contains("AAAAAAA"));
       expect(email.mime.fromEmail, isNotEmpty);
       expect(email.mime.to?.first.email, isNotEmpty);
-      expect(email.senderPubkey, equals(senderKeys.publicKey));
-      expect(email.recipientPubkey, equals(recipientKeys.publicKey));
+      expect(email.senderPubkey, equals(sender.keyPair.publicKey));
+      expect(email.recipientPubkey, equals(recipient.keyPair.publicKey));
     },
     timeout: Timeout(const Duration(seconds: 300)),
   );

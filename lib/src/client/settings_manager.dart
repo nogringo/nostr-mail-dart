@@ -6,14 +6,16 @@ import '../constants.dart';
 import '../exceptions.dart';
 import '../models/private_settings.dart';
 import '../storage/settings_repository.dart';
+import 'relay_resolver.dart';
 
 /// Manages NIP-78 private settings (cross-device encrypted sync).
 class SettingsManager {
   final Ndk _ndk;
   final SettingsRepository _repo;
+  final RelayResolver _relays;
   final Map<String, PrivateSettings?> _cache = {};
 
-  SettingsManager(this._ndk, this._repo);
+  SettingsManager(this._ndk, this._repo, this._relays);
 
   String? get _pubkey => _ndk.accounts.getPublicKey();
 
@@ -62,7 +64,7 @@ class SettingsManager {
 
     final pubkey = _pubkey!;
     final account = _ndk.accounts.getLoggedAccount()!;
-    final writeRelays = await _getWriteRelays(pubkey);
+    final writeRelays = await _relays.getWriteRelays(pubkey);
 
     final response = _ndk.requests.query(
       filter: ndk.Filter(kinds: [appSettingsKind], authors: [pubkey], limit: 1)
@@ -127,7 +129,7 @@ class SettingsManager {
       identities: settings.identities,
     );
 
-    final writeRelays = await _getWriteRelays(pubkey);
+    final writeRelays = await _relays.getWriteRelays(pubkey);
     final broadcast = _ndk.broadcast.broadcast(
       nostrEvent: signed,
       specificRelays: writeRelays,
@@ -159,27 +161,5 @@ class SettingsManager {
   void clearCache() {
     _cache.clear();
     _repo.clear();
-  }
-
-  // ── Relay helpers (duplicated from old client — can be extracted later) ──
-
-  Future<List<String>> _getWriteRelays(String pubkey) async {
-    final response = _ndk.requests.query(
-      filter: ndk.Filter(kinds: [relayListKind], authors: [pubkey], limit: 1),
-    );
-    final events = await response.future;
-    if (events.isEmpty) return recommendedDmRelays;
-
-    final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
-    final relays = event.tags
-        .where(
-          (t) =>
-              t.isNotEmpty &&
-              t[0] == 'r' &&
-              (t.length == 2 || (t.length == 3 && t[2] != 'read')),
-        )
-        .map((t) => t[1])
-        .toList();
-    return relays.isNotEmpty ? relays : recommendedDmRelays;
   }
 }
