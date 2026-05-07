@@ -1,3 +1,7 @@
+## 1.14.1
+
+- **Improvement**: split client.dart in multiple files
+
 ## 1.14.0
 
 - **New**: NIP-18 repost support
