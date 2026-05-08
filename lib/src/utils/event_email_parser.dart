@@ -114,6 +114,5 @@ Future<String> _parseMime({
     return utf8.decode(decryptedBytes);
   }
 
-  // Inline email: unfold headers and return
-  return rawContent.replaceAll(RegExp(r'\r?\n[ \t]+'), '');
+  return rawContent;
 }

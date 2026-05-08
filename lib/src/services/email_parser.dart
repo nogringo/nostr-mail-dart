@@ -46,14 +46,11 @@ class EmailParser {
     required DateTime createdAt,
   }) async {
     try {
-      // Unfold headers
-      final unfolded = rawContent.replaceAll(RegExp(r'\r?\n[ \t]+'), '');
-
       return Email(
         id: eventId,
         senderPubkey: senderPubkey,
         recipientPubkey: recipientPubkey,
-        rawContent: unfolded,
+        rawContent: rawContent,
         createdAt: createdAt,
       );
     } catch (e) {

@@ -1,3 +1,7 @@
+## 1.14.2
+
+- **Fix**: Removed manual MIME header unfolding - delegate to `enough_mail_plus` which correctly handles RFC 2822 folding
+
 ## 1.14.1
 
 - **Improvement**: split client.dart in multiple files
