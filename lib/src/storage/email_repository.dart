@@ -23,8 +23,7 @@ class EmailRepository {
     return EmailRecord.fromJson(record as Map<String, dynamic>);
   }
 
-  /// Query emails with filters, sorting and pagination.
-  Future<PaginatedResult<EmailRecord>> query(EmailQuery q) async {
+  Filter? _buildFilter(EmailQuery q) {
     final filters = <Filter>[
       if (q.folder != null) Filter.equals('folder', q.folder),
       if (q.isRead != null) Filter.equals('isRead', q.isRead),
@@ -42,10 +41,19 @@ class EmailRepository {
           ),
         ),
     ];
+    if (filters.isEmpty) return null;
+    return filters.length == 1 ? filters.first : Filter.and(filters);
+  }
 
-    final filter = filters.isEmpty
-        ? null
-        : (filters.length == 1 ? filters.first : Filter.and(filters));
+  /// Count emails matching [q] without loading any records.
+  /// Use this for badge counters where the records themselves aren't needed.
+  Future<int> count(EmailQuery q) {
+    return _store.count(_db, filter: _buildFilter(q));
+  }
+
+  /// Query emails with filters, sorting and pagination.
+  Future<PaginatedResult<EmailRecord>> query(EmailQuery q) async {
+    final filter = _buildFilter(q);
 
     final sortOrder = q.sort == EmailSort.dateDesc
         ? SortOrder('date', false)

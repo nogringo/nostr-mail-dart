@@ -30,6 +30,7 @@ dependencies:
   http: ^1.6.0
   html: ^0.15.6
   cryptography: ^2.9.0
+  rxdart: ^0.28.0
 
 dev_dependencies:
   bip340: ^0.3.1

@@ -41,6 +41,11 @@ class WatchManager {
 
   // ── Stream helpers ──────────────────────────────────────────────────────
 
+  /// All mail events from the internal bus, including those emitted by
+  /// local actions (e.g. [LabelManager.markAsRead]) regardless of whether
+  /// network subscriptions have been started via [watch].
+  Stream<MailEvent> get events => _bus.stream;
+
   Stream<MailEvent> get onLabel =>
       _bus.stream.where((e) => e is LabelAdded || e is LabelRemoved);
 

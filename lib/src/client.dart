@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:enough_mail_plus/enough_mail.dart' hide MailEvent;
 import 'package:ndk/ndk.dart' hide Filter;
 import 'package:ndk/domain_layer/entities/filter.dart' as ndk;
+import 'package:rxdart/rxdart.dart';
 import 'package:sembast/sembast.dart';
 
 import 'client/email_sender.dart';
@@ -199,6 +200,40 @@ class NostrMailClient {
   Future<List<Email>> getStarredEmails() async {
     final result = await _emailRepo.query(const EmailQuery(isStarred: true));
     return result.items.map((r) => r.toEmail()).toList();
+  }
+
+  // ── Counts ──────────────────────────────────────────────────────────────
+
+  /// Number of unread emails, optionally scoped to a [folder]
+  /// (`'inbox'`, `'archive'`, `'sent'`, `'trash'`, ...).
+  /// Pass `null` to count across all folders.
+  Future<int> getUnreadCount({String? folder}) {
+    return _emailRepo.count(EmailQuery(folder: folder, isRead: false));
+  }
+
+  /// Reactive stream of [getUnreadCount] for [folder].
+  ///
+  /// Emits the current value immediately, then re-emits whenever the count
+  /// may have changed (new email received, mark as read/unread, folder
+  /// change, deletion). Ideal for driving a folder badge with
+  /// `StreamBuilder`.
+  Stream<int> watchUnreadCount({String? folder}) {
+    return Rx.defer(() {
+      return Rx.merge<Object?>([
+            Stream.value(null),
+            _watch.events
+                .where(
+                  (e) =>
+                      e is EmailReceived ||
+                      e is LabelAdded ||
+                      e is LabelRemoved ||
+                      e is EmailDeleted,
+                )
+                .debounceTime(const Duration(milliseconds: 50)),
+          ])
+          .switchMap((_) => Stream.fromFuture(getUnreadCount(folder: folder)))
+          .distinct();
+    }, reusable: true);
   }
 
   // ── NIP-59 Introspection ────────────────────────────────────────────────
