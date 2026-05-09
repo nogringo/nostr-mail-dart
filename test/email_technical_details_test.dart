@@ -5,8 +5,14 @@ import 'package:nostr_mail/nostr_mail.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
 
+import 'mocks/mock_relay.dart';
+
 void main() {
   test("Get Technical Details", () async {
+    final relay = MockRelay(name: 'relay', explicitPort: 19014);
+    await relay.startServer();
+    addTearDown(() async => await relay.stopServer());
+
     final db = await databaseFactoryMemory.openDatabase('db');
 
     final keyPair = Bip340.generatePrivateKey();
@@ -16,7 +22,7 @@ void main() {
       NdkConfig(
         eventVerifier: Bip340EventVerifier(),
         cache: MemCacheManager(),
-        bootstrapRelays: ["wss://nostr-01.uid.ovh"],
+        bootstrapRelays: [relay.url],
         logLevel: LogLevel.off,
       ),
     );
@@ -26,7 +32,11 @@ void main() {
       privkey: keyPair.privateKey!,
     );
 
-    final client = NostrMailClient(ndk: ndk, db: db);
+    final client = NostrMailClient(
+      ndk: ndk,
+      db: db,
+      defaultDmRelays: [relay.url],
+    );
 
     await client.send(
       to: [

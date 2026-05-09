@@ -2,29 +2,34 @@ import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
 import 'package:test/test.dart';
 
+import 'mocks/mock_relay.dart';
 import 'models/test_user.dart';
 
 void main() {
   test("nostr cc bcc", () async {
+    final relay = MockRelay(name: 'relay', explicitPort: 19011);
+    await relay.startServer();
+    addTearDown(() async => await relay.stopServer());
+
     final fromUser = await TestUser(
       "from user",
-      defaultDmRelays: ['ws://localhost:7777'],
+      defaultDmRelays: [relay.url],
     ).create();
     final toUser = await TestUser(
       "to user",
-      defaultDmRelays: ['ws://localhost:7777'],
+      defaultDmRelays: [relay.url],
     ).create();
     final ccUser = await TestUser(
       "cc user",
-      defaultDmRelays: ['ws://localhost:7777'],
+      defaultDmRelays: [relay.url],
     ).create();
     final bcc1User = await TestUser(
       "bcc user",
-      defaultDmRelays: ['ws://localhost:7777'],
+      defaultDmRelays: [relay.url],
     ).create();
     final bcc2User = await TestUser(
       "bcc user",
-      defaultDmRelays: ['ws://localhost:7777'],
+      defaultDmRelays: [relay.url],
     ).create();
 
     await fromUser.client.send(

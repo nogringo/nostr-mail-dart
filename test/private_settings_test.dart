@@ -7,13 +7,20 @@ import 'package:nostr_mail/nostr_mail.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
 
+import 'mocks/mock_relay.dart';
+
 void main() {
   group("Integration", () {
     test("main", () async {
+      final relay = MockRelay(name: 'relay', explicitPort: 19016);
+      await relay.startServer();
+      addTearDown(() async => await relay.stopServer());
+
       final ndk = Ndk(
         NdkConfig(
           eventVerifier: Bip340EventVerifier(),
           cache: MemCacheManager(),
+          bootstrapRelays: [relay.url],
         ),
       );
 
@@ -28,7 +35,11 @@ void main() {
         'test_private_settings_${DateTime.now().millisecondsSinceEpoch}',
       );
 
-      final client = NostrMailClient(ndk: ndk, db: db);
+      final client = NostrMailClient(
+        ndk: ndk,
+        db: db,
+        defaultDmRelays: [relay.url],
+      );
 
       expect(client.cachedPrivateSettings, isNull);
 
@@ -39,7 +50,11 @@ void main() {
       final db2 = await databaseFactoryMemory.openDatabase(
         'test_private_settings_${DateTime.now().millisecondsSinceEpoch}',
       );
-      final client2 = NostrMailClient(ndk: ndk, db: db2);
+      final client2 = NostrMailClient(
+        ndk: ndk,
+        db: db2,
+        defaultDmRelays: [relay.url],
+      );
 
       final settings = await client2.getPrivateSettings();
 
@@ -218,14 +233,18 @@ void main() {
   group('PrivateSettings integration', () {
     late Ndk ndk;
     late NostrMailClient client;
+    late MockRelay relay;
 
     setUp(() async {
+      relay = MockRelay(name: 'relay', explicitPort: 19012);
+      await relay.startServer();
+
       final db = await databaseFactoryMemory.openDatabase(
         'test_private_settings_${DateTime.now().millisecondsSinceEpoch}',
       );
       ndk = Ndk(
         NdkConfig(
-          bootstrapRelays: ['wss://nostr-01.uid.ovh'],
+          bootstrapRelays: [relay.url],
           eventVerifier: Bip340EventVerifier(),
           cache: MemCacheManager(),
         ),
@@ -237,11 +256,16 @@ void main() {
         privkey: keyPair.privateKey!,
       );
 
-      client = NostrMailClient(ndk: ndk, db: db);
+      client = NostrMailClient(
+        ndk: ndk,
+        db: db,
+        defaultDmRelays: [relay.url],
+      );
     });
 
     tearDown(() async {
       await ndk.destroy();
+      await relay.stopServer();
     });
 
     test('cachedPrivateSettings is null before first fetch', () {
@@ -289,6 +313,9 @@ void main() {
         await client.updatePrivateSettings(signature: 'First signature');
         var settings = await client.getPrivateSettings();
         expect(settings!.signature, 'First signature');
+
+        // Ensure new event has a strictly greater createdAt (1 s resolution).
+        await Future.delayed(const Duration(seconds: 1));
 
         await client.updatePrivateSettings(signature: 'Updated signature');
         settings = await client.getPrivateSettings();
@@ -351,6 +378,8 @@ void main() {
         await client.getPrivateSettings();
         expect(client.cachedPrivateSettings!.signature, 'To be cleared');
 
+        await Future.delayed(const Duration(seconds: 1));
+
         await client.updatePrivateSettings(clearSignature: true);
 
         final settings = await client.getPrivateSettings();
@@ -407,6 +436,8 @@ void main() {
         );
         await client.getPrivateSettings();
         expect(client.cachedPrivateSettings!.identities, isNotNull);
+
+        await Future.delayed(const Duration(seconds: 1));
 
         await client.updatePrivateSettings(clearIdentities: true);
 
