@@ -11,6 +11,7 @@ import 'package:nostr_mail/src/storage/models/email_query.dart';
 void main() {
   group('EmailRepository', () {
     late EmailRepository repo;
+    const rpk = 'rpk';
 
     setUp(() async {
       final db = await databaseFactoryMemoryFs.openDatabase(
@@ -31,7 +32,7 @@ void main() {
       return EmailRecord(
         id: id,
         senderPubkey: 'pk',
-        recipientPubkey: 'rpk',
+        recipientPubkey: rpk,
         rawContent: 'raw',
         isPublic: false,
         createdAt: 1000,
@@ -52,7 +53,7 @@ void main() {
     test('save and getById', () async {
       final record = makeRecord('e1');
       await repo.save(record);
-      final found = await repo.getById('e1');
+      final found = await repo.getById('e1', recipientPubkey: rpk);
       expect(found, isNotNull);
       expect(found!.id, 'e1');
     });
@@ -62,7 +63,9 @@ void main() {
       await repo.save(makeRecord('e2', folder: 'sent'));
       await repo.save(makeRecord('e3', folder: 'trash'));
 
-      final result = await repo.query(const EmailQuery(folder: 'inbox'));
+      final result = await repo.query(
+        const EmailQuery(recipientPubkey: rpk, folder: 'inbox'),
+      );
       expect(result.items.length, 1);
       expect(result.items.first.id, 'e1');
     });
@@ -71,7 +74,9 @@ void main() {
       await repo.save(makeRecord('e1', isRead: true));
       await repo.save(makeRecord('e2', isRead: false));
 
-      final result = await repo.query(const EmailQuery(isRead: true));
+      final result = await repo.query(
+        const EmailQuery(recipientPubkey: rpk, isRead: true),
+      );
       expect(result.items.length, 1);
       expect(result.items.first.id, 'e1');
     });
@@ -80,7 +85,9 @@ void main() {
       await repo.save(makeRecord('e1', attachmentCount: 2));
       await repo.save(makeRecord('e2', attachmentCount: 0));
 
-      final result = await repo.query(const EmailQuery(hasAttachments: true));
+      final result = await repo.query(
+        const EmailQuery(recipientPubkey: rpk, hasAttachments: true),
+      );
       expect(result.items.length, 1);
       expect(result.items.first.id, 'e1');
     });
@@ -89,7 +96,9 @@ void main() {
       await repo.save(makeRecord('e1', searchText: 'hello world'));
       await repo.save(makeRecord('e2', searchText: 'goodbye moon'));
 
-      final result = await repo.query(const EmailQuery(search: 'hello'));
+      final result = await repo.query(
+        const EmailQuery(recipientPubkey: rpk, search: 'hello'),
+      );
       expect(result.items.length, 1);
       expect(result.items.first.id, 'e1');
     });
@@ -99,16 +108,22 @@ void main() {
         await repo.save(makeRecord('e$i', date: 2000 - i));
       }
 
-      final page1 = await repo.query(const EmailQuery(limit: 2, offset: 0));
+      final page1 = await repo.query(
+        const EmailQuery(recipientPubkey: rpk, limit: 2, offset: 0),
+      );
       expect(page1.items.length, 2);
       expect(page1.total, 5);
       expect(page1.hasMore, true);
 
-      final page2 = await repo.query(const EmailQuery(limit: 2, offset: 2));
+      final page2 = await repo.query(
+        const EmailQuery(recipientPubkey: rpk, limit: 2, offset: 2),
+      );
       expect(page2.items.length, 2);
       expect(page2.hasMore, true);
 
-      final page3 = await repo.query(const EmailQuery(limit: 2, offset: 4));
+      final page3 = await repo.query(
+        const EmailQuery(recipientPubkey: rpk, limit: 2, offset: 4),
+      );
       expect(page3.items.length, 1);
       expect(page3.hasMore, false);
     });
@@ -125,7 +140,12 @@ void main() {
       );
 
       final result = await repo.query(
-        const EmailQuery(folder: 'inbox', isRead: false, isStarred: true),
+        const EmailQuery(
+          recipientPubkey: rpk,
+          folder: 'inbox',
+          isRead: false,
+          isStarred: true,
+        ),
       );
       expect(result.items.length, 1);
       expect(result.items.first.id, 'e1');
@@ -135,21 +155,22 @@ void main() {
       await repo.save(makeRecord('e1', searchText: 'invoice from acme'));
       await repo.save(makeRecord('e2', searchText: 'receipt from shop'));
 
-      final results = await repo.search('acme');
+      final results = await repo.search('acme', recipientPubkey: rpk);
       expect(results.length, 1);
       expect(results.first.id, 'e1');
     });
 
     test('delete removes record', () async {
       await repo.save(makeRecord('e1'));
-      await repo.delete('e1');
-      expect(await repo.getById('e1'), isNull);
+      await repo.delete('e1', recipientPubkey: rpk);
+      expect(await repo.getById('e1', recipientPubkey: rpk), isNull);
     });
   });
 
   group('LabelRepository', () {
     late LabelRepository labels;
     late EmailRepository emails;
+    const rpk = 'rpk';
 
     setUp(() async {
       final db = await databaseFactoryMemoryFs.openDatabase(
@@ -163,7 +184,7 @@ void main() {
         EmailRecord(
           id: 'e1',
           senderPubkey: 'pk',
-          recipientPubkey: 'rpk',
+          recipientPubkey: rpk,
           rawContent: 'raw',
           isPublic: false,
           createdAt: 1000,
@@ -188,9 +209,20 @@ void main() {
         label: 'flag:starred',
         labelEventId: 'ev1',
         timestamp: 1000,
+        recipientPubkey: rpk,
       );
-      expect(await labels.hasLabel('e1', 'flag:starred'), true);
-      expect(await labels.getLabelEventId('e1', 'flag:starred'), 'ev1');
+      expect(
+        await labels.hasLabel('e1', 'flag:starred', recipientPubkey: rpk),
+        true,
+      );
+      expect(
+        await labels.getLabelEventId(
+          'e1',
+          'flag:starred',
+          recipientPubkey: rpk,
+        ),
+        'ev1',
+      );
     });
 
     test('saveLabel denormalizes into email record', () async {
@@ -199,8 +231,9 @@ void main() {
         label: 'flag:starred',
         labelEventId: 'ev1',
         timestamp: 1000,
+        recipientPubkey: rpk,
       );
-      final email = await emails.getById('e1');
+      final email = await emails.getById('e1', recipientPubkey: rpk);
       expect(email!.isStarred, true);
     });
 
@@ -210,8 +243,9 @@ void main() {
         label: 'folder:trash',
         labelEventId: 'ev2',
         timestamp: 1000,
+        recipientPubkey: rpk,
       );
-      final email = await emails.getById('e1');
+      final email = await emails.getById('e1', recipientPubkey: rpk);
       expect(email!.folder, 'trash');
     });
 
@@ -221,9 +255,10 @@ void main() {
         label: 'state:read',
         labelEventId: 'ev3',
         timestamp: 1000,
+        recipientPubkey: rpk,
       );
-      await labels.removeLabel('e1', 'state:read');
-      final email = await emails.getById('e1');
+      await labels.removeLabel('e1', 'state:read', recipientPubkey: rpk);
+      final email = await emails.getById('e1', recipientPubkey: rpk);
       expect(email!.isRead, false);
     });
 
@@ -233,14 +268,16 @@ void main() {
         label: 'flag:starred',
         labelEventId: 'ev1',
         timestamp: 1000,
+        recipientPubkey: rpk,
       );
       await labels.saveLabel(
         emailId: 'e1',
         label: 'custom:tag',
         labelEventId: 'ev2',
         timestamp: 1000,
+        recipientPubkey: rpk,
       );
-      final list = await labels.getLabelsForEmail('e1');
+      final list = await labels.getLabelsForEmail('e1', recipientPubkey: rpk);
       expect(list.length, 2);
     });
 
@@ -250,9 +287,13 @@ void main() {
         label: 'flag:starred',
         labelEventId: 'ev1',
         timestamp: 1000,
+        recipientPubkey: rpk,
       );
-      await labels.deleteLabelsForEmail('e1');
-      expect(await labels.getLabelsForEmail('e1'), isEmpty);
+      await labels.deleteLabelsForEmail('e1', recipientPubkey: rpk);
+      expect(
+        await labels.getLabelsForEmail('e1', recipientPubkey: rpk),
+        isEmpty,
+      );
     });
   });
 

@@ -2,7 +2,11 @@
 ///
 /// Covers the 80 % use-case: folder + read/starred state + attachments +
 /// free-text search, with native Sembast pagination.
+///
+/// Every query is scoped to a single account via [recipientPubkey] — this
+/// is what prevents emails from one logged-in account leaking into another.
 class EmailQuery {
+  final String recipientPubkey;
   final String? folder;
   final bool? isRead;
   final bool? isStarred;
@@ -13,6 +17,7 @@ class EmailQuery {
   final EmailSort sort;
 
   const EmailQuery({
+    required this.recipientPubkey,
     this.folder,
     this.isRead,
     this.isStarred,
@@ -25,6 +30,7 @@ class EmailQuery {
 
   /// Preset for the inbox (received, not sent).
   const EmailQuery.inbox({
+    required this.recipientPubkey,
     this.isRead,
     this.isStarred,
     this.hasAttachments,
@@ -36,6 +42,7 @@ class EmailQuery {
 
   /// Preset for sent items.
   const EmailQuery.sent({
+    required this.recipientPubkey,
     this.isRead,
     this.isStarred,
     this.hasAttachments,
@@ -47,6 +54,7 @@ class EmailQuery {
 
   /// Preset for trash.
   const EmailQuery.trash({
+    required this.recipientPubkey,
     this.isRead,
     this.isStarred,
     this.hasAttachments,
@@ -58,6 +66,7 @@ class EmailQuery {
 
   /// Preset for archive.
   const EmailQuery.archive({
+    required this.recipientPubkey,
     this.isRead,
     this.isStarred,
     this.hasAttachments,
@@ -68,6 +77,7 @@ class EmailQuery {
        sort = EmailSort.dateDesc;
 
   EmailQuery copyWith({
+    String? recipientPubkey,
     String? folder,
     bool? isRead,
     bool? isStarred,
@@ -78,6 +88,7 @@ class EmailQuery {
     EmailSort? sort,
   }) {
     return EmailQuery(
+      recipientPubkey: recipientPubkey ?? this.recipientPubkey,
       folder: folder ?? this.folder,
       isRead: isRead ?? this.isRead,
       isStarred: isStarred ?? this.isStarred,

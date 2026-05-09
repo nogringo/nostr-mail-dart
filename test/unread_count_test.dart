@@ -44,7 +44,7 @@ void main() {
       return EmailRecord(
         id: id,
         senderPubkey: 'sender-pubkey',
-        recipientPubkey: 'recipient-pubkey',
+        recipientPubkey: user.keyPair.publicKey,
         rawContent: 'From: a@b.com\r\nSubject: T\r\n\r\nBody',
         isPublic: false,
         createdAt: ts,

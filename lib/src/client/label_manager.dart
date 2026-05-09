@@ -34,7 +34,10 @@ class LabelManager {
 
     // Mutual exclusion for folder labels
     if (label.startsWith('folder:')) {
-      final all = await _labels.getLabelsForEmail(emailId);
+      final all = await _labels.getLabelsForEmail(
+        emailId,
+        recipientPubkey: pubkey,
+      );
       for (final existing in all) {
         if (existing.startsWith('folder:') && existing != label) {
           await removeLabel(emailId, existing);
@@ -42,7 +45,7 @@ class LabelManager {
       }
     }
 
-    if (await _labels.hasLabel(emailId, label)) return;
+    if (await _labels.hasLabel(emailId, label, recipientPubkey: pubkey)) return;
 
     final labelEvent = Nip01Event(
       pubKey: pubkey,
@@ -63,6 +66,7 @@ class LabelManager {
       label: label,
       labelEventId: signed.id,
       timestamp: signed.createdAt,
+      recipientPubkey: pubkey,
     );
 
     // Notify listeners immediately
@@ -81,11 +85,15 @@ class LabelManager {
     _assertPubkey();
     final pubkey = _pubkey!;
 
-    final labelEventId = await _labels.getLabelEventId(emailId, label);
+    final labelEventId = await _labels.getLabelEventId(
+      emailId,
+      label,
+      recipientPubkey: pubkey,
+    );
     if (labelEventId == null) return;
 
     // Remove locally FIRST
-    await _labels.removeLabel(emailId, label);
+    await _labels.removeLabel(emailId, label, recipientPubkey: pubkey);
 
     // Notify listeners immediately
     _bus.emit(LabelRemoved(emailId: emailId, label: label));
@@ -110,11 +118,15 @@ class LabelManager {
 
   // ── Convenience helpers ─────────────────────────────────────────────────
 
-  Future<List<String>> getLabels(String emailId) =>
-      _labels.getLabelsForEmail(emailId);
+  Future<List<String>> getLabels(String emailId) {
+    _assertPubkey();
+    return _labels.getLabelsForEmail(emailId, recipientPubkey: _pubkey!);
+  }
 
-  Future<bool> hasLabel(String emailId, String label) =>
-      _labels.hasLabel(emailId, label);
+  Future<bool> hasLabel(String emailId, String label) {
+    _assertPubkey();
+    return _labels.hasLabel(emailId, label, recipientPubkey: _pubkey!);
+  }
 
   Future<void> moveToTrash(String emailId) => addLabel(emailId, 'folder:trash');
   Future<void> restoreFromTrash(String emailId) =>
@@ -135,15 +147,40 @@ class LabelManager {
   Future<bool> isRead(String emailId) => hasLabel(emailId, 'state:read');
   Future<bool> isStarred(String emailId) => hasLabel(emailId, 'flag:starred');
 
-  Future<List<String>> getTrashedEmailIds() =>
-      _labels.getEmailIdsWithLabel('folder:trash');
-  Future<List<String>> getArchivedEmailIds() =>
-      _labels.getEmailIdsWithLabel('folder:archive');
-  Future<List<String>> getStarredEmailIds() =>
-      _labels.getEmailIdsWithLabel('flag:starred');
-  Future<List<String>> getReadEmailIds() =>
-      _labels.getEmailIdsWithLabel('state:read');
+  Future<List<String>> getTrashedEmailIds() {
+    _assertPubkey();
+    return _labels.getEmailIdsWithLabel(
+      'folder:trash',
+      recipientPubkey: _pubkey!,
+    );
+  }
 
-  Future<void> deleteLabelsForEmail(String emailId) =>
-      _labels.deleteLabelsForEmail(emailId);
+  Future<List<String>> getArchivedEmailIds() {
+    _assertPubkey();
+    return _labels.getEmailIdsWithLabel(
+      'folder:archive',
+      recipientPubkey: _pubkey!,
+    );
+  }
+
+  Future<List<String>> getStarredEmailIds() {
+    _assertPubkey();
+    return _labels.getEmailIdsWithLabel(
+      'flag:starred',
+      recipientPubkey: _pubkey!,
+    );
+  }
+
+  Future<List<String>> getReadEmailIds() {
+    _assertPubkey();
+    return _labels.getEmailIdsWithLabel(
+      'state:read',
+      recipientPubkey: _pubkey!,
+    );
+  }
+
+  Future<void> deleteLabelsForEmail(String emailId) {
+    _assertPubkey();
+    return _labels.deleteLabelsForEmail(emailId, recipientPubkey: _pubkey!);
+  }
 }

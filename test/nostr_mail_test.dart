@@ -383,7 +383,7 @@ void main() {
       return EmailRecord(
         id: id,
         senderPubkey: 'pk-$id',
-        recipientPubkey: 'rpk-$id',
+        recipientPubkey: 'rpk',
         rawContent: raw,
         isPublic: false,
         createdAt: effectiveDate.millisecondsSinceEpoch ~/ 1000,
@@ -406,7 +406,10 @@ void main() {
       final email = createRecord('save-test');
 
       await repo.save(email);
-      final retrieved = (await repo.getById('save-test'))?.toEmail();
+      final retrieved = (await repo.getById(
+        'save-test',
+        recipientPubkey: 'rpk',
+      ))?.toEmail();
 
       expect(retrieved, isNotNull);
       expect(retrieved!.id, 'save-test');
@@ -414,7 +417,10 @@ void main() {
     });
 
     test('getEmailById returns null for non-existent email', () async {
-      final result = (await repo.getById('non-existent'))?.toEmail();
+      final result = (await repo.getById(
+        'non-existent',
+        recipientPubkey: 'rpk',
+      ))?.toEmail();
 
       expect(result, isNull);
     });
@@ -444,7 +450,7 @@ void main() {
       await repo.save(email3);
 
       final emails = (await repo.query(
-        EmailQuery(),
+        EmailQuery(recipientPubkey: 'rpk'),
       )).items.map((r) => r.toEmail()).toList();
 
       expect(emails.length, 3);
@@ -459,7 +465,7 @@ void main() {
       }
 
       final emails = (await repo.query(
-        EmailQuery(limit: 3),
+        EmailQuery(recipientPubkey: 'rpk', limit: 3),
       )).items.map((r) => r.toEmail()).toList();
 
       expect(emails.length, 3);
@@ -477,7 +483,7 @@ void main() {
       }
 
       final emails = (await repo.query(
-        EmailQuery(offset: 2, limit: 2),
+        EmailQuery(recipientPubkey: 'rpk', offset: 2, limit: 2),
       )).items.map((r) => r.toEmail()).toList();
 
       expect(emails.length, 2);
@@ -489,8 +495,11 @@ void main() {
       final email = createRecord('delete-test');
       await repo.save(email);
 
-      await repo.delete('delete-test');
-      final result = (await repo.getById('delete-test'))?.toEmail();
+      await repo.delete('delete-test', recipientPubkey: 'rpk');
+      final result = (await repo.getById(
+        'delete-test',
+        recipientPubkey: 'rpk',
+      ))?.toEmail();
 
       expect(result, isNull);
     });
@@ -513,9 +522,12 @@ void main() {
       await repo.save(updated);
 
       final emails = (await repo.query(
-        EmailQuery(),
+        EmailQuery(recipientPubkey: 'rpk'),
       )).items.map((r) => r.toEmail()).toList();
-      final retrieved = (await repo.getById('update-test'))?.toEmail();
+      final retrieved = (await repo.getById(
+        'update-test',
+        recipientPubkey: 'rpk',
+      ))?.toEmail();
 
       expect(emails.length, 1);
       expect(retrieved!.mime.decodeSubject(), 'Updated Subject');
@@ -550,7 +562,7 @@ void main() {
         'batch-1',
         'batch-3',
         'batch-2',
-      ])).map((r) => r.toEmail()).toList();
+      ], recipientPubkey: 'rpk')).map((r) => r.toEmail()).toList();
 
       expect(emails.length, 3);
       expect(emails[0].id, 'batch-2'); // Most recent first
@@ -559,7 +571,10 @@ void main() {
     });
 
     test('getEmailsByIds returns empty list for empty input', () async {
-      final emails = (await repo.getByIds([])).map((r) => r.toEmail()).toList();
+      final emails = (await repo.getByIds(
+        [],
+        recipientPubkey: 'rpk',
+      )).map((r) => r.toEmail()).toList();
 
       expect(emails, isEmpty);
     });
@@ -576,7 +591,7 @@ void main() {
       final emails = (await repo.getByIds([
         'exists',
         'does-not-exist',
-      ])).map((r) => r.toEmail()).toList();
+      ], recipientPubkey: 'rpk')).map((r) => r.toEmail()).toList();
 
       expect(emails.length, 1);
       expect(emails[0].id, 'exists');
@@ -590,7 +605,7 @@ void main() {
       await repo.clearAll();
 
       final emails = (await repo.query(
-        EmailQuery(),
+        EmailQuery(recipientPubkey: 'rpk'),
       )).items.map((r) => r.toEmail()).toList();
       expect(emails, isEmpty);
     });
@@ -631,6 +646,8 @@ void main() {
 
   group('LabelStore', () {
     late LabelRepository repo;
+    const rpk = 'rpk';
+    int ts() => DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
     setUp(() async {
       final db = await databaseFactoryMemory.openDatabase(
@@ -644,16 +661,25 @@ void main() {
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
-        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        timestamp: ts(),
+        recipientPubkey: rpk,
       );
 
-      final eventId = await repo.getLabelEventId('email-1', 'folder:trash');
+      final eventId = await repo.getLabelEventId(
+        'email-1',
+        'folder:trash',
+        recipientPubkey: rpk,
+      );
 
       expect(eventId, 'label-event-1');
     });
 
     test('getLabelEventId returns null for non-existent label', () async {
-      final eventId = await repo.getLabelEventId('email-1', 'folder:trash');
+      final eventId = await repo.getLabelEventId(
+        'email-1',
+        'folder:trash',
+        recipientPubkey: rpk,
+      );
 
       expect(eventId, isNull);
     });
@@ -663,11 +689,16 @@ void main() {
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
-        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        timestamp: ts(),
+        recipientPubkey: rpk,
       );
 
-      await repo.removeLabel('email-1', 'folder:trash');
-      final eventId = await repo.getLabelEventId('email-1', 'folder:trash');
+      await repo.removeLabel('email-1', 'folder:trash', recipientPubkey: rpk);
+      final eventId = await repo.getLabelEventId(
+        'email-1',
+        'folder:trash',
+        recipientPubkey: rpk,
+      );
 
       expect(eventId, isNull);
     });
@@ -677,29 +708,36 @@ void main() {
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
-        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        timestamp: ts(),
+        recipientPubkey: rpk,
       );
       await repo.saveLabel(
         emailId: 'email-1',
         label: 'state:read',
         labelEventId: 'label-event-2',
-        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        timestamp: ts(),
+        recipientPubkey: rpk,
       );
       await repo.saveLabel(
         emailId: 'email-1',
         label: 'flag:starred',
         labelEventId: 'label-event-3',
-        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        timestamp: ts(),
+        recipientPubkey: rpk,
       );
       // Different email
       await repo.saveLabel(
         emailId: 'email-2',
         label: 'folder:archive',
         labelEventId: 'label-event-4',
-        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        timestamp: ts(),
+        recipientPubkey: rpk,
       );
 
-      final labels = await repo.getLabelsForEmail('email-1');
+      final labels = await repo.getLabelsForEmail(
+        'email-1',
+        recipientPubkey: rpk,
+      );
 
       expect(labels.length, 3);
       expect(labels, contains('folder:trash'));
@@ -715,22 +753,28 @@ void main() {
           emailId: 'email-1',
           label: 'folder:trash',
           labelEventId: 'label-event-1',
-          timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          timestamp: ts(),
+          recipientPubkey: rpk,
         );
         await repo.saveLabel(
           emailId: 'email-2',
           label: 'folder:trash',
           labelEventId: 'label-event-2',
-          timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          timestamp: ts(),
+          recipientPubkey: rpk,
         );
         await repo.saveLabel(
           emailId: 'email-3',
           label: 'folder:archive',
           labelEventId: 'label-event-3',
-          timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          timestamp: ts(),
+          recipientPubkey: rpk,
         );
 
-        final trashedIds = await repo.getEmailIdsWithLabel('folder:trash');
+        final trashedIds = await repo.getEmailIdsWithLabel(
+          'folder:trash',
+          recipientPubkey: rpk,
+        );
 
         expect(trashedIds.length, 2);
         expect(trashedIds, contains('email-1'));
@@ -744,11 +788,20 @@ void main() {
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
-        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        timestamp: ts(),
+        recipientPubkey: rpk,
       );
 
-      final hasTrash = await repo.hasLabel('email-1', 'folder:trash');
-      final hasRead = await repo.hasLabel('email-1', 'state:read');
+      final hasTrash = await repo.hasLabel(
+        'email-1',
+        'folder:trash',
+        recipientPubkey: rpk,
+      );
+      final hasRead = await repo.hasLabel(
+        'email-1',
+        'state:read',
+        recipientPubkey: rpk,
+      );
 
       expect(hasTrash, isTrue);
       expect(hasRead, isFalse);
@@ -759,25 +812,34 @@ void main() {
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
-        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        timestamp: ts(),
+        recipientPubkey: rpk,
       );
       await repo.saveLabel(
         emailId: 'email-1',
         label: 'state:read',
         labelEventId: 'label-event-2',
-        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        timestamp: ts(),
+        recipientPubkey: rpk,
       );
       await repo.saveLabel(
         emailId: 'email-2',
         label: 'folder:trash',
         labelEventId: 'label-event-3',
-        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        timestamp: ts(),
+        recipientPubkey: rpk,
       );
 
-      await repo.deleteLabelsForEmail('email-1');
+      await repo.deleteLabelsForEmail('email-1', recipientPubkey: rpk);
 
-      final labels1 = await repo.getLabelsForEmail('email-1');
-      final labels2 = await repo.getLabelsForEmail('email-2');
+      final labels1 = await repo.getLabelsForEmail(
+        'email-1',
+        recipientPubkey: rpk,
+      );
+      final labels2 = await repo.getLabelsForEmail(
+        'email-2',
+        recipientPubkey: rpk,
+      );
 
       expect(labels1, isEmpty);
       expect(labels2.length, 1);
@@ -789,17 +851,26 @@ void main() {
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'old-event-id',
-        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        timestamp: ts(),
+        recipientPubkey: rpk,
       );
       await repo.saveLabel(
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'new-event-id',
-        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        timestamp: ts(),
+        recipientPubkey: rpk,
       );
 
-      final eventId = await repo.getLabelEventId('email-1', 'folder:trash');
-      final labels = await repo.getLabelsForEmail('email-1');
+      final eventId = await repo.getLabelEventId(
+        'email-1',
+        'folder:trash',
+        recipientPubkey: rpk,
+      );
+      final labels = await repo.getLabelsForEmail(
+        'email-1',
+        recipientPubkey: rpk,
+      );
 
       expect(eventId, 'new-event-id');
       expect(labels.length, 1); // Should not duplicate
@@ -807,13 +878,19 @@ void main() {
 
     // TODO this test fail when run after other tests, need to investigate why
     test('getEmailIdsWithLabel returns empty list when no matches', () async {
-      final ids = await repo.getEmailIdsWithLabel('folder:trash');
+      final ids = await repo.getEmailIdsWithLabel(
+        'folder:trash',
+        recipientPubkey: rpk,
+      );
 
       expect(ids, isEmpty);
     });
 
     test('getLabelsForEmail returns empty list when no labels', () async {
-      final labels = await repo.getLabelsForEmail('email-without-labels');
+      final labels = await repo.getLabelsForEmail(
+        'email-without-labels',
+        recipientPubkey: rpk,
+      );
 
       expect(labels, isEmpty);
     });
@@ -823,19 +900,27 @@ void main() {
         emailId: 'email-1',
         label: 'folder:trash',
         labelEventId: 'label-event-1',
-        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        timestamp: ts(),
+        recipientPubkey: rpk,
       );
       await repo.saveLabel(
         emailId: 'email-2',
         label: 'state:read',
         labelEventId: 'label-event-2',
-        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        timestamp: ts(),
+        recipientPubkey: rpk,
       );
 
       await repo.clearAll();
 
-      final labels1 = await repo.getLabelsForEmail('email-1');
-      final labels2 = await repo.getLabelsForEmail('email-2');
+      final labels1 = await repo.getLabelsForEmail(
+        'email-1',
+        recipientPubkey: rpk,
+      );
+      final labels2 = await repo.getLabelsForEmail(
+        'email-2',
+        recipientPubkey: rpk,
+      );
       expect(labels1, isEmpty);
       expect(labels2, isEmpty);
     });

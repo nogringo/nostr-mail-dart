@@ -211,13 +211,16 @@ class SyncEngine {
         return false;
       }
 
-      final recipientPubkey = rumor.getFirstTag('p') ?? myPubkey;
       final isPublicRef = rumor.getFirstTag('public-ref') != null;
 
+      // The recipient for storage purposes is always the active account —
+      // gift wraps are addressed to us, so we own this row. Using the
+      // rumor's first 'p' tag is wrong for cc/bcc, where it points at the
+      // primary "to" recipient instead of us.
       final email = await parseEmailEvent(
         event: rumor,
         ndk: _ndk,
-        recipientPubkey: recipientPubkey,
+        recipientPubkey: myPubkey,
         isPublic: isPublicRef,
         defaultBlossomServers: _defaultBlossomServers,
       );
@@ -271,13 +274,15 @@ class SyncEngine {
   }
 
   Future<void> onEmailDeletion(Nip01Event event) async {
+    final pubkey = _pubkey;
+    if (pubkey == null) return;
     for (final tag in event.tags) {
       if (tag.isNotEmpty && tag[0] == 'e') {
         final emailId = tag[1];
-        final email = await _emails.getById(emailId);
+        final email = await _emails.getById(emailId, recipientPubkey: pubkey);
         if (email != null) {
-          await _emails.delete(emailId);
-          await _labels.deleteLabelsForEmail(emailId);
+          await _emails.delete(emailId, recipientPubkey: pubkey);
+          await _labels.deleteLabelsForEmail(emailId, recipientPubkey: pubkey);
           await _giftWraps.remove(emailId);
           _bus.emit(EmailDeleted(emailId: emailId));
         }
@@ -286,6 +291,14 @@ class SyncEngine {
   }
 
   Future<void> onLabelAddition(Nip01Event event) async {
+    final pubkey = _pubkey;
+    if (pubkey == null) return;
+
+    // A label event must be authored by the active account — labels are
+    // published by the account that owns them, so a label whose author
+    // differs from the active pubkey belongs to someone else.
+    if (event.pubKey != pubkey) return;
+
     final namespaceTag = event.tags.firstWhere(
       (t) => t.isNotEmpty && t[0] == 'L' && t[1] == labelNamespace,
       orElse: () => [],
@@ -306,13 +319,16 @@ class SyncEngine {
     if (emailTag.isEmpty) return;
     final emailId = emailTag[1];
 
-    if (await _labels.hasLabel(emailId, label)) return;
+    if (await _labels.hasLabel(emailId, label, recipientPubkey: pubkey)) {
+      return;
+    }
 
     await _labels.saveLabel(
       emailId: emailId,
       label: label,
       labelEventId: event.id,
       timestamp: event.createdAt,
+      recipientPubkey: pubkey,
     );
 
     _bus.emit(
@@ -326,15 +342,19 @@ class SyncEngine {
   }
 
   Future<void> onLabelDeletion(Nip01Event event) async {
+    final pubkey = _pubkey;
+    if (pubkey == null) return;
+    if (event.pubKey != pubkey) return;
+
     for (final tag in event.tags) {
       if (tag.isNotEmpty && tag[0] == 'e') {
         final deletedEventId = tag[1];
-        final allLabels = await _labels.getAllLabels();
+        final allLabels = await _labels.getAllLabels(recipientPubkey: pubkey);
         for (final labelRecord in allLabels) {
           if (labelRecord['labelEventId'] == deletedEventId) {
             final emailId = labelRecord['emailId'] as String;
             final label = labelRecord['label'] as String;
-            await _labels.removeLabel(emailId, label);
+            await _labels.removeLabel(emailId, label, recipientPubkey: pubkey);
             _bus.emit(
               LabelRemoved(
                 emailId: emailId,

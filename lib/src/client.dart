@@ -114,21 +114,41 @@ class NostrMailClient {
 
   // ── Reading ─────────────────────────────────────────────────────────────
 
+  String _requirePubkey() {
+    final pk = _ndk.accounts.getPublicKey();
+    if (pk == null) {
+      throw NostrMailException('No account configured in ndk');
+    }
+    return pk;
+  }
+
   Future<List<Email>> getEmails({int? limit, int? offset}) async {
     final result = await _emailRepo.query(
-      EmailQuery(limit: limit, offset: offset),
+      EmailQuery(
+        recipientPubkey: _requirePubkey(),
+        limit: limit,
+        offset: offset,
+      ),
     );
     return result.items.map((r) => r.toEmail()).toList();
   }
 
   Future<Email?> getEmail(String id) async {
-    final record = await _emailRepo.getById(id);
+    final record = await _emailRepo.getById(
+      id,
+      recipientPubkey: _requirePubkey(),
+    );
     return record?.toEmail();
   }
 
   Future<List<Email>> search(String query, {int? limit, int? offset}) async {
     final result = await _emailRepo.query(
-      EmailQuery(search: query, limit: limit, offset: offset),
+      EmailQuery(
+        recipientPubkey: _requirePubkey(),
+        search: query,
+        limit: limit,
+        offset: offset,
+      ),
     );
     return result.items.map((r) => r.toEmail()).toList();
   }
@@ -140,7 +160,11 @@ class NostrMailClient {
     bool includeArchived = false,
   }) async {
     final result = await _emailRepo.query(
-      EmailQuery.sent(limit: limit, offset: offset),
+      EmailQuery.sent(
+        recipientPubkey: _requirePubkey(),
+        limit: limit,
+        offset: offset,
+      ),
     );
     if (includeTrashed && includeArchived) {
       return result.items.map((r) => r.toEmail()).toList();
@@ -162,7 +186,11 @@ class NostrMailClient {
     bool includeArchived = false,
   }) async {
     final result = await _emailRepo.query(
-      EmailQuery.inbox(limit: limit, offset: offset),
+      EmailQuery.inbox(
+        recipientPubkey: _requirePubkey(),
+        limit: limit,
+        offset: offset,
+      ),
     );
     if (includeTrashed && includeArchived) {
       return result.items.map((r) => r.toEmail()).toList();
@@ -178,27 +206,35 @@ class NostrMailClient {
   }
 
   Future<List<Email>> getTrashedEmails() async {
-    final result = await _emailRepo.query(const EmailQuery.trash());
+    final result = await _emailRepo.query(
+      EmailQuery.trash(recipientPubkey: _requirePubkey()),
+    );
     return result.items.map((r) => r.toEmail()).toList();
   }
 
   Future<List<Email>> getTrashedEmailsOlderThan(Duration duration) async {
+    final pubkey = _requirePubkey();
     final cutoff = DateTime.now().subtract(duration);
     final ids = await _labelRepo.getEmailIdsWithLabelOlderThan(
       'folder:trash',
       cutoff,
+      recipientPubkey: pubkey,
     );
-    final records = await _emailRepo.getByIds(ids);
+    final records = await _emailRepo.getByIds(ids, recipientPubkey: pubkey);
     return records.map((r) => r.toEmail()).toList();
   }
 
   Future<List<Email>> getArchivedEmails() async {
-    final result = await _emailRepo.query(const EmailQuery.archive());
+    final result = await _emailRepo.query(
+      EmailQuery.archive(recipientPubkey: _requirePubkey()),
+    );
     return result.items.map((r) => r.toEmail()).toList();
   }
 
   Future<List<Email>> getStarredEmails() async {
-    final result = await _emailRepo.query(const EmailQuery(isStarred: true));
+    final result = await _emailRepo.query(
+      EmailQuery(recipientPubkey: _requirePubkey(), isStarred: true),
+    );
     return result.items.map((r) => r.toEmail()).toList();
   }
 
@@ -208,7 +244,13 @@ class NostrMailClient {
   /// (`'inbox'`, `'archive'`, `'sent'`, `'trash'`, ...).
   /// Pass `null` to count across all folders.
   Future<int> getUnreadCount({String? folder}) {
-    return _emailRepo.count(EmailQuery(folder: folder, isRead: false));
+    return _emailRepo.count(
+      EmailQuery(
+        recipientPubkey: _requirePubkey(),
+        folder: folder,
+        isRead: false,
+      ),
+    );
   }
 
   /// Reactive stream of [getUnreadCount] for [folder].
@@ -264,7 +306,7 @@ class NostrMailClient {
       throw NostrMailException('No account configured in ndk');
     }
 
-    final email = await _emailRepo.getById(id);
+    final email = await _emailRepo.getById(id, recipientPubkey: pubkey);
     if (email == null) {
       throw NostrMailException('Email not found');
     }
@@ -288,8 +330,8 @@ class NostrMailClient {
     );
     await broadcast.broadcastDoneFuture;
 
-    await _emailRepo.delete(id);
-    await _labelRepo.deleteLabelsForEmail(id);
+    await _emailRepo.delete(id, recipientPubkey: pubkey);
+    await _labelRepo.deleteLabelsForEmail(id, recipientPubkey: pubkey);
     await _giftWrapRepo.remove(id);
   }
 

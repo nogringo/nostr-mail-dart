@@ -24,11 +24,11 @@ void main() {
       defaultDmRelays: [relay.url],
     ).create();
     final bcc1User = await TestUser(
-      "bcc user",
+      "bcc1 user",
       defaultDmRelays: [relay.url],
     ).create();
     final bcc2User = await TestUser(
-      "bcc user",
+      "bcc2 user",
       defaultDmRelays: [relay.url],
     ).create();
 

@@ -17,6 +17,8 @@ void main() {
     late LabelRepository labelRepo;
     late MockRelay relay;
 
+    late String accountPubkey;
+
     setUp(() async {
       relay = MockRelay(name: 'relay', explicitPort: 19015);
       await relay.startServer();
@@ -33,6 +35,7 @@ void main() {
       );
 
       final keyPair = Bip340.generatePrivateKey();
+      accountPubkey = keyPair.publicKey;
       ndk.accounts.loginPrivateKey(
         pubkey: keyPair.publicKey,
         privkey: keyPair.privateKey!,
@@ -52,7 +55,7 @@ void main() {
       return EmailRecord(
         id: id,
         senderPubkey: 'sender-pubkey',
-        recipientPubkey: 'recipient-pubkey',
+        recipientPubkey: accountPubkey,
         rawContent: 'From: from@test.com\r\nSubject: Test\r\n\r\nTest Body',
         isPublic: false,
         createdAt: date ?? DateTime.now().millisecondsSinceEpoch ~/ 1000,
@@ -91,6 +94,7 @@ void main() {
         label: 'folder:trash',
         labelEventId: 'label-event-old',
         timestamp: oldTimestamp,
+        recipientPubkey: accountPubkey,
       );
 
       await labelRepo.saveLabel(
@@ -98,6 +102,7 @@ void main() {
         label: 'folder:trash',
         labelEventId: 'label-event-new',
         timestamp: currentTimestamp,
+        recipientPubkey: accountPubkey,
       );
 
       final oldTrashedEmails = await client.getTrashedEmailsOlderThan(

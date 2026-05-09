@@ -80,6 +80,7 @@ void main() {
       // Search by subject (case insensitive)
       var results = (await repo.search(
         'meeting',
+        recipientPubkey: 'rpk',
       )).map((r) => r.toEmail()).toList();
       expect(results.length, 2);
       var ids = results.map((e) => e.id).toList();
@@ -87,18 +88,25 @@ void main() {
       expect(ids, contains('s3'));
 
       // Search by body
-      results = (await repo.search('beach')).map((r) => r.toEmail()).toList();
+      results = (await repo.search(
+        'beach',
+        recipientPubkey: 'rpk',
+      )).map((r) => r.toEmail()).toList();
       expect(results.length, 1);
       expect(results.first.id, 's2');
 
       // Search by from
-      results = (await repo.search('charlie')).map((r) => r.toEmail()).toList();
+      results = (await repo.search(
+        'charlie',
+        recipientPubkey: 'rpk',
+      )).map((r) => r.toEmail()).toList();
       expect(results.length, 1);
       expect(results.first.id, 's2');
 
       // No results
       results = (await repo.search(
         'nonexistent',
+        recipientPubkey: 'rpk',
       )).map((r) => r.toEmail()).toList();
       expect(results, isEmpty);
     });
@@ -116,7 +124,12 @@ void main() {
       }
 
       final results = (await repo.query(
-        EmailQuery(search: 'match', limit: 2, offset: 1),
+        EmailQuery(
+          recipientPubkey: 'rpk',
+          search: 'match',
+          limit: 2,
+          offset: 1,
+        ),
       )).items.map((r) => r.toEmail()).toList();
 
       expect(results.length, 2);
