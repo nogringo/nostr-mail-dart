@@ -7,16 +7,15 @@ import 'package:nostr_mail/src/storage/models/email_record.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
 
-import 'mocks/mock_relay.dart';
+import '../../mocks/mock_relay.dart';
 
 void main() {
-  group('NostrMailClient - Trashed Emails', () {
+  group('NostrMailClient.getTrashedEmailsOlderThan', () {
     late Ndk ndk;
     late NostrMailClient client;
     late EmailRepository emailRepo;
     late LabelRepository labelRepo;
     late MockRelay relay;
-
     late String accountPubkey;
 
     setUp(() async {
@@ -51,15 +50,16 @@ void main() {
       await relay.stopServer();
     });
 
-    EmailRecord createTestRecord(String id, {int? date}) {
+    EmailRecord makeRecord(String id, {int? date}) {
+      final ts = date ?? DateTime.now().millisecondsSinceEpoch ~/ 1000;
       return EmailRecord(
         id: id,
         senderPubkey: 'sender-pubkey',
         recipientPubkey: accountPubkey,
         rawContent: 'From: from@test.com\r\nSubject: Test\r\n\r\nTest Body',
         isPublic: false,
-        createdAt: date ?? DateTime.now().millisecondsSinceEpoch ~/ 1000,
-        date: date ?? DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        createdAt: ts,
+        date: ts,
         from: 'from@test.com',
         subject: 'Test',
         bodyPlain: 'Test Body',
@@ -68,29 +68,23 @@ void main() {
         folder: 'inbox',
         isRead: false,
         isStarred: false,
-        labels: [],
+        labels: const [],
         isBridged: false,
       );
     }
 
-    test('getTrashedEmailsOlderThan returns only old trashed emails', () async {
+    test('returns only emails trashed before the threshold', () async {
       final now = DateTime.now();
       final currentTimestamp = now.millisecondsSinceEpoch ~/ 1000;
       final oldTimestamp =
           now.subtract(const Duration(days: 35)).millisecondsSinceEpoch ~/ 1000;
 
-      final oldRecord = createTestRecord('old-email-id', date: oldTimestamp);
-      final newRecord = createTestRecord(
-        'new-email-id',
-        date: currentTimestamp,
-      );
+      await emailRepo.save(makeRecord('old-email-id', date: oldTimestamp));
+      await emailRepo.save(makeRecord('new-email-id', date: currentTimestamp));
 
-      await emailRepo.save(oldRecord);
-      await emailRepo.save(newRecord);
-
-      // Add labels manually to control the timestamp
+      // Add labels manually to control the timestamp.
       await labelRepo.saveLabel(
-        emailId: oldRecord.id,
+        emailId: 'old-email-id',
         label: 'folder:trash',
         labelEventId: 'label-event-old',
         timestamp: oldTimestamp,
@@ -98,19 +92,19 @@ void main() {
       );
 
       await labelRepo.saveLabel(
-        emailId: newRecord.id,
+        emailId: 'new-email-id',
         label: 'folder:trash',
         labelEventId: 'label-event-new',
         timestamp: currentTimestamp,
         recipientPubkey: accountPubkey,
       );
 
-      final oldTrashedEmails = await client.getTrashedEmailsOlderThan(
+      final old = await client.getTrashedEmailsOlderThan(
         const Duration(days: 30),
       );
 
-      expect(oldTrashedEmails.length, 1);
-      expect(oldTrashedEmails.first.id, oldRecord.id);
+      expect(old, hasLength(1));
+      expect(old.first.id, 'old-email-id');
     });
   });
 }

@@ -10,15 +10,14 @@ import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:ndk/shared/nips/nip01/key_pair.dart';
 import 'package:nostr_mail/nostr_mail.dart';
+import 'package:nostr_mail/src/storage/email_repository.dart';
+import 'package:nostr_mail/src/storage/label_repository.dart';
+import 'package:nostr_mail/src/storage/models/email_query.dart';
+import 'package:nostr_mail/src/storage/models/email_record.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
 
-import 'package:nostr_mail/src/storage/email_repository.dart';
-import 'package:nostr_mail/src/storage/label_repository.dart';
-import 'package:nostr_mail/src/storage/models/email_record.dart';
-import 'package:nostr_mail/src/storage/models/email_query.dart';
-
-import 'mocks/mock_relay.dart';
+import '../../mocks/mock_relay.dart';
 
 void main() {
   final aliceKeys = Bip340.generatePrivateKey();
@@ -68,7 +67,7 @@ void main() {
       labels = LabelRepository(db);
     });
 
-    test('inbox query for Alice does not leak Bob\'s emails', () async {
+    test("inbox query for Alice does not leak Bob's emails", () async {
       await emails.save(makeRecord(id: 'a1', recipientPubkey: alice));
       await emails.save(makeRecord(id: 'a2', recipientPubkey: alice));
       await emails.save(makeRecord(id: 'b1', recipientPubkey: bob));
@@ -80,7 +79,7 @@ void main() {
       expect(
         result.items.map((e) => e.id).toSet(),
         {'a1', 'a2'},
-        reason: 'Alice\'s inbox must not include Bob\'s emails',
+        reason: "Alice's inbox must not include Bob's emails",
       );
     });
 
@@ -95,7 +94,7 @@ void main() {
       expect(aliceCount, 1, reason: 'Alice has 1 inbox email');
     });
 
-    test('search does not return another account\'s matches', () async {
+    test("search does not return another account's matches", () async {
       await emails.save(
         makeRecord(id: 'a1', recipientPubkey: alice, subject: 'shared keyword'),
       );
@@ -112,16 +111,15 @@ void main() {
       );
     });
 
-    test('getById cannot be used to fetch another account\'s email', () async {
+    test("getById cannot fetch another account's email", () async {
       await emails.save(makeRecord(id: 'b1', recipientPubkey: bob));
 
-      // Alice asking for Bob's id must get nothing — defense in depth on
-      // top of the query filter.
+      // Defense in depth on top of the query filter.
       final stolen = await emails.getById('b1', recipientPubkey: alice);
       expect(
         stolen,
         isNull,
-        reason: 'Alice must not be able to read Bob\'s email by id',
+        reason: "Alice must not be able to read Bob's email by id",
       );
     });
 
@@ -183,9 +181,6 @@ void main() {
       aliceAccount = Bip340.generatePrivateKey();
       bobAccount = Bip340.generatePrivateKey();
 
-      // Alice is logged in initially. Tests that need Bob add him
-      // themselves (via addAccount + switchAccount, or via a full
-      // logout + loginPrivateKey flow).
       ndk.accounts.loginPrivateKey(
         pubkey: aliceAccount.publicKey,
         privkey: aliceAccount.privateKey!,
@@ -240,25 +235,22 @@ void main() {
     }
 
     test(
-      'reading after switchAccount only returns the new account\'s emails',
+      "reading after switchAccount only returns the new account's emails",
       () async {
         addBob();
 
-        // Alice has one inbox email.
         await seedEmailFor(aliceAccount.publicKey, 'alice-1');
         expect((await client.getInboxEmails()).map((e) => e.id), ['alice-1']);
 
-        // NDK switches to Bob — same client, same db.
         ndk.accounts.switchAccount(pubkey: bobAccount.publicKey);
 
         final inbox = await client.getInboxEmails();
         expect(
           inbox,
           isEmpty,
-          reason: 'Bob must not see Alice\'s emails after switchAccount',
+          reason: "Bob must not see Alice's emails after switchAccount",
         );
 
-        // And Bob's count agrees.
         expect(await client.getUnreadCount(folder: 'inbox'), 0);
       },
     );
@@ -269,8 +261,6 @@ void main() {
         await seedEmailFor(aliceAccount.publicKey, 'alice-1');
         expect((await client.getInboxEmails()).map((e) => e.id), ['alice-1']);
 
-        // Full re-login flow (the path nmail likely takes when the user
-        // signs out and signs in with a different key).
         ndk.accounts.logout();
         ndk.accounts.loginPrivateKey(
           pubkey: bobAccount.publicKey,
@@ -279,7 +269,6 @@ void main() {
 
         expect(await client.getInboxEmails(), isEmpty);
 
-        // Switch back to Alice — her email is still there, untouched.
         ndk.accounts.logout();
         ndk.accounts.loginPrivateKey(
           pubkey: aliceAccount.publicKey,

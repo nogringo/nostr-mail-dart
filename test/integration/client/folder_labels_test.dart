@@ -4,10 +4,10 @@ import 'package:nostr_mail/nostr_mail.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
 
-import 'mocks/mock_relay.dart';
+import '../../mocks/mock_relay.dart';
 
 void main() {
-  group('Folder Label Mutual Exclusion Bug', () {
+  group('Folder label mutual exclusion', () {
     late Ndk ndk;
     late NostrMailClient client;
     late MockRelay relay;
@@ -17,7 +17,7 @@ void main() {
       await relay.startServer();
 
       final db = await databaseFactoryMemory.openDatabase(
-        'test_db_${DateTime.now().millisecondsSinceEpoch}',
+        'test_db_${DateTime.now().microsecondsSinceEpoch}',
       );
       ndk = Ndk(
         NdkConfig(
@@ -41,29 +41,21 @@ void main() {
       await relay.stopServer();
     });
 
-    test('adding folder:trash should remove folder:archive label', () async {
-      final emailId = 'test-email-1';
+    test('moveToTrash removes a previously-set folder:archive label', () async {
+      const emailId = 'test-email-1';
 
       await client.moveToArchive(emailId);
 
-      bool isArchived = await client.isArchived(emailId);
-      bool isTrashed = await client.isTrashed(emailId);
-      expect(isArchived, isTrue);
-      expect(isTrashed, isFalse);
+      expect(await client.isArchived(emailId), isTrue);
+      expect(await client.isTrashed(emailId), isFalse);
 
       await client.moveToTrash(emailId);
 
-      isArchived = await client.isArchived(emailId);
-      isTrashed = await client.isTrashed(emailId);
-
-      expect(isArchived, isFalse);
-      expect(isTrashed, isTrue);
+      expect(await client.isArchived(emailId), isFalse);
+      expect(await client.isTrashed(emailId), isTrue);
 
       final labels = await client.getLabels(emailId);
-
-      expect(labels.length, 1);
-      expect(labels, isNot(contains('folder:archive')));
-      expect(labels, contains('folder:trash'));
+      expect(labels, ['folder:trash']);
     });
   });
 }

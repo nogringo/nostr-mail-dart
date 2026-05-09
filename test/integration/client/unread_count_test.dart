@@ -2,12 +2,12 @@ import 'package:nostr_mail/src/storage/email_repository.dart';
 import 'package:nostr_mail/src/storage/models/email_record.dart';
 import 'package:test/test.dart';
 
-import 'mocks/mock_blossom_server.dart';
-import 'mocks/mock_relay.dart';
-import 'models/test_user.dart';
+import '../../helpers/test_user.dart';
+import '../../mocks/mock_blossom_server.dart';
+import '../../mocks/mock_relay.dart';
 
 void main() {
-  group('NostrMailClient - Unread Count', () {
+  group('NostrMailClient unread count', () {
     late MockRelay relay;
     late MockBlossomServer blossom;
     late TestUser user;
@@ -57,7 +57,7 @@ void main() {
         folder: folder,
         isRead: isRead,
         isStarred: false,
-        labels: [],
+        labels: const [],
         isBridged: false,
       );
     }
@@ -85,7 +85,6 @@ void main() {
             .watchUnreadCount(folder: 'inbox')
             .listen(emissions.add);
 
-        // Wait for the initial async emission.
         await Future.delayed(const Duration(milliseconds: 100));
         expect(emissions, [2]);
 
