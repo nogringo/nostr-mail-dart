@@ -40,11 +40,7 @@ void main() {
 
       emailRepo = EmailRepository(db);
       labelRepo = LabelRepository(db);
-      client = NostrMailClient(
-        ndk: ndk,
-        db: db,
-        defaultDmRelays: [relay.url],
-      );
+      client = NostrMailClient(ndk: ndk, db: db, defaultDmRelays: [relay.url]);
     });
 
     tearDown(() async {
