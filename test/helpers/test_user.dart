@@ -39,7 +39,7 @@ class TestUser {
 
     db = await databaseFactoryMemory.openDatabase(id);
 
-    client = NostrMailClient(
+    client = await NostrMailClient.create(
       ndk: ndk,
       db: db,
       defaultDmRelays: defaultDmRelays,

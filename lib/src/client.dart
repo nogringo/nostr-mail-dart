@@ -22,6 +22,7 @@ import 'models/private_settings.dart';
 import 'storage/email_repository.dart';
 import 'storage/gift_wrap_repository.dart';
 import 'storage/label_repository.dart';
+import 'storage/schema_migrator.dart';
 import 'storage/settings_repository.dart';
 import 'storage/models/email_query.dart';
 
@@ -43,13 +44,20 @@ class NostrMailClient {
 
   final Map<String, String>? nip05Overrides;
 
-  factory NostrMailClient({
+  /// Build a [NostrMailClient] after running any pending schema migration.
+  ///
+  /// This is the only supported entry point. The migration is fast (a single
+  /// drop per store + ndk fetched-ranges clear) and runs automatically on
+  /// every version mismatch so the caller cannot accidentally read records in
+  /// a stale format.
+  static Future<NostrMailClient> create({
     required Ndk ndk,
     required Database db,
     List<String>? defaultDmRelays,
     List<String>? defaultBlossomServers,
     Map<String, String>? nip05Overrides,
-  }) {
+  }) async {
+    await migrateSchemaIfNeeded(db: db, ndk: ndk);
     final emailRepo = EmailRepository(db);
     final labelRepo = LabelRepository(db);
     final giftWrapRepo = GiftWrapRepository(db);

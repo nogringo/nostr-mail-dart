@@ -36,7 +36,7 @@ void main() {
           'test_private_settings_${DateTime.now().microsecondsSinceEpoch}',
         );
 
-        final clientA = NostrMailClient(
+        final clientA = await NostrMailClient.create(
           ndk: ndk,
           db: db,
           defaultDmRelays: [relay.url],
@@ -52,7 +52,7 @@ void main() {
         final db2 = await databaseFactoryMemory.openDatabase(
           'test_private_settings_${DateTime.now().microsecondsSinceEpoch}_b',
         );
-        final clientB = NostrMailClient(
+        final clientB = await NostrMailClient.create(
           ndk: ndk,
           db: db2,
           defaultDmRelays: [relay.url],
@@ -95,7 +95,11 @@ void main() {
         privkey: keyPair.privateKey!,
       );
 
-      client = NostrMailClient(ndk: ndk, db: db, defaultDmRelays: [relay.url]);
+      client = await NostrMailClient.create(
+        ndk: ndk,
+        db: db,
+        defaultDmRelays: [relay.url],
+      );
     });
 
     tearDown(() async {

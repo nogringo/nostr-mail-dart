@@ -51,7 +51,7 @@ class MockBridge {
 
     db = await databaseFactoryMemory.openDatabase('bridge_$domain');
 
-    client = NostrMailClient(
+    client = await NostrMailClient.create(
       ndk: ndk,
       db: db,
       defaultDmRelays: defaultDmRelays,

@@ -33,7 +33,11 @@ void main() {
         privkey: keyPair.privateKey!,
       );
 
-      client = NostrMailClient(ndk: ndk, db: db, defaultDmRelays: [relay.url]);
+      client = await NostrMailClient.create(
+        ndk: ndk,
+        db: db,
+        defaultDmRelays: [relay.url],
+      );
     });
 
     tearDown(() async {

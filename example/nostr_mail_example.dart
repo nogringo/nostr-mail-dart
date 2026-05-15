@@ -23,8 +23,8 @@ void main() async {
     privkey: keyPair.privateKey!,
   );
 
-  // Create the mail client
-  final client = NostrMailClient(ndk: ndk, db: db);
+  // Create the mail client (runs any pending schema migration first)
+  final client = await NostrMailClient.create(ndk: ndk, db: db);
 
   // Sync emails from relays
   await client.sync();

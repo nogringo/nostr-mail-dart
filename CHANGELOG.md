@@ -1,3 +1,12 @@
+## 1.15.0
+
+- **New**: Automatic schema migration on client construction
+  - Local stores (`emails`, `labels`, `gift_wraps`, `private_settings`) and ndk fetched ranges are wiped and rebuilt on every schema version mismatch — the client re-syncs from relays and Blossom on next sync.
+  - `kSchemaVersion` constant: bump it whenever the shape of any locally stored record changes.
+  - `migrateSchemaIfNeeded(db:, ndk:)` exposed for advanced cases (manual force-resync, tests). Returns `true` when a migration ran.
+- **API change**: `NostrMailClient(...)` → `await NostrMailClient.create(...)`
+  - The factory is now async so the migration runs before any repository touches the DB. Update call sites accordingly.
+
 ## 1.14.2
 
 - **Fix**: Removed manual MIME header unfolding - delegate to `enough_mail_plus` which correctly handles RFC 2822 folding
