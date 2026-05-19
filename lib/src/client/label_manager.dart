@@ -1,3 +1,4 @@
+import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
 import 'package:ndk/ndk.dart';
 
 import '../constants.dart';
@@ -10,14 +11,22 @@ import 'relay_resolver.dart';
 /// Manages NIP-32 labels with local-first semantics.
 ///
 /// Labels are applied to local storage immediately and broadcast to relays
-/// in the background.
+/// via the offline broadcast queue, which persists the signed event and
+/// retries until every targeted write relay has acknowledged delivery.
 class LabelManager {
   final Ndk _ndk;
   final LabelRepository _labels;
   final RelayResolver _relays;
   final EventBus _bus;
+  final OfflineBroadcast _broadcastQueue;
 
-  LabelManager(this._ndk, this._labels, this._relays, this._bus);
+  LabelManager(
+    this._ndk,
+    this._labels,
+    this._relays,
+    this._bus,
+    this._broadcastQueue,
+  );
 
   String? get _pubkey => _ndk.accounts.getPublicKey();
 
@@ -74,9 +83,11 @@ class LabelManager {
       LabelAdded(emailId: emailId, label: label, labelEventId: signed.id),
     );
 
-    // Broadcast in background (don't await)
+    // Enqueue for durable broadcast. The outbox persists the event before
+    // any network attempt and retries until every write relay has acked,
+    // so a label survives offline use and process death.
     _relays.getWriteRelays(pubkey).then((relays) {
-      _ndk.broadcast.broadcast(nostrEvent: signed, specificRelays: relays);
+      _broadcastQueue.broadcast(signed, relays: relays);
     });
   }
 
@@ -111,7 +122,7 @@ class LabelManager {
 
     _ndk.accounts.sign(deletionEvent).then((signed) {
       _relays.getWriteRelays(pubkey).then((relays) {
-        _ndk.broadcast.broadcast(nostrEvent: signed, specificRelays: relays);
+        _broadcastQueue.broadcast(signed, relays: relays);
       });
     });
   }

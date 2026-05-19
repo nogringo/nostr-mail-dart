@@ -2,12 +2,16 @@ import 'relay_resolver.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
 
 import '../constants.dart';
 import '../exceptions.dart';
+import '../models/email.dart';
 import '../services/email_parser.dart';
+import '../storage/email_repository.dart';
+import '../utils/email_record_builder.dart';
 import '../utils/encrypt_blob.dart';
 import '../utils/mime_message_cleaner.dart';
 import '../utils/recipient_resolver.dart';
@@ -19,18 +23,20 @@ class EmailSender {
   final EmailParser _parser;
   final SettingsManager _settings;
   final RelayResolver _relays;
+  final OfflineBroadcast _broadcastQueue;
+  final EmailRepository _emailRepo;
   final List<String> _defaultBlossomServers;
   final Map<String, String>? nip05Overrides;
 
   EmailSender(
     this._ndk,
     this._settings,
-    this._relays, {
-
+    this._relays,
+    this._broadcastQueue,
+    this._emailRepo, {
     List<String>? defaultBlossomServers,
     this.nip05Overrides,
   }) : _parser = EmailParser(),
-
        _defaultBlossomServers =
            defaultBlossomServers ?? recommendedBlossomServers;
 
@@ -223,11 +229,7 @@ class EmailSender {
       final signedPublicEvent = await _ndk.accounts.sign(emailEvent);
 
       final writeRelays = await _relays.getWriteRelays(senderPubkey);
-      final broadcast = _ndk.broadcast.broadcast(
-        nostrEvent: signedPublicEvent,
-        specificRelays: writeRelays,
-      );
-      await broadcast.broadcastDoneFuture;
+      await _broadcastQueue.broadcast(signedPublicEvent, relays: writeRelays);
 
       final bccTags = List<List<String>>.from(baseTags)
         ..add(['public-ref', signedPublicEvent.id, ...writeRelays]);
@@ -260,6 +262,12 @@ class EmailSender {
             ? await _ndk.accounts.sign(senderEmailEvent)
             : senderEmailEvent;
 
+        await _saveSelfCopy(
+          rumor: signedSenderRumor,
+          mimeContent: rawContent,
+          senderPubkey: senderPubkey,
+          isPublic: true,
+        );
         await _publishGiftWrapped(signedSenderRumor, senderPubkey);
       }
 
@@ -295,11 +303,46 @@ class EmailSender {
             ? await _ndk.accounts.sign(emailEvent)
             : emailEvent;
 
+        if (keepCopy && pubkey == senderPubkey) {
+          await _saveSelfCopy(
+            rumor: eventToPublish,
+            mimeContent: rawContent,
+            senderPubkey: senderPubkey,
+            isPublic: false,
+          );
+        }
+
         await _publishGiftWrapped(eventToPublish, pubkey);
       });
 
       await Future.wait(sendFutures);
     }
+  }
+
+  /// Optimistic local write of the sender's own copy.
+  ///
+  /// The same rumor will eventually come back via the gift wrap sync. Saving
+  /// it now means the UI shows the email in `Sent` instantly, independently
+  /// of relay round-trips. The save is idempotent on `rumor.id`, so the
+  /// sync-engine path is a no-op once the gift wrap arrives.
+  Future<void> _saveSelfCopy({
+    required Nip01Event rumor,
+    required String mimeContent,
+    required String senderPubkey,
+    required bool isPublic,
+  }) async {
+    final mimeMessage = MimeMessage.parseFromText(mimeContent);
+    final email = Email(
+      id: rumor.id,
+      senderPubkey: senderPubkey,
+      recipientPubkey: senderPubkey,
+      rawContent: mimeContent,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(rumor.createdAt * 1000),
+      isPublic: isPublic,
+      mimeMessage: mimeMessage,
+    );
+    final record = buildEmailRecord(email: email, folder: 'sent');
+    await _emailRepo.save(record);
   }
 
   Future<void> _publishGiftWrapped(
@@ -310,7 +353,8 @@ class EmailSender {
       rumor: event,
       recipientPubkey: recipientPubkey,
     );
-    final broadcast = _ndk.broadcast.broadcast(nostrEvent: giftWrapEvent);
-    await broadcast.broadcastDoneFuture;
+    // Gift wraps go to the recipient's DM relays (NIP-17).
+    final dmRelays = await _relays.getDmRelays(recipientPubkey);
+    await _broadcastQueue.broadcast(giftWrapEvent, relays: dmRelays);
   }
 }

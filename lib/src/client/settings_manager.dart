@@ -1,3 +1,4 @@
+import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
 import 'package:ndk/domain_layer/entities/filter.dart' as ndk;
@@ -13,9 +14,10 @@ class SettingsManager {
   final Ndk _ndk;
   final SettingsRepository _repo;
   final RelayResolver _relays;
+  final OfflineBroadcast _broadcastQueue;
   final Map<String, PrivateSettings?> _cache = {};
 
-  SettingsManager(this._ndk, this._repo, this._relays);
+  SettingsManager(this._ndk, this._repo, this._relays, this._broadcastQueue);
 
   String? get _pubkey => _ndk.accounts.getPublicKey();
 
@@ -130,11 +132,7 @@ class SettingsManager {
     );
 
     final writeRelays = await _relays.getWriteRelays(pubkey);
-    final broadcast = _ndk.broadcast.broadcast(
-      nostrEvent: signed,
-      specificRelays: writeRelays,
-    );
-    await broadcast.broadcastDoneFuture;
+    await _broadcastQueue.broadcast(signed, relays: writeRelays);
   }
 
   /// Update a single field in private settings.

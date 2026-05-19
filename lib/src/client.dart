@@ -1,8 +1,8 @@
 import 'dart:async';
 
+import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
 import 'package:enough_mail_plus/enough_mail.dart' hide MailEvent;
-import 'package:ndk/ndk.dart' hide Filter;
-import 'package:ndk/domain_layer/entities/filter.dart' as ndk;
+import 'package:ndk/ndk.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:sembast/sembast.dart';
 
@@ -42,6 +42,18 @@ class NostrMailClient {
   final SyncEngine _sync;
   final WatchManager _watch;
 
+  /// Direct access to the offline broadcast queue. Use this to surface
+  /// pending broadcasts in the UI (`watchPending()`), inspect history
+  /// (`listAll()`), or force a retry pass (`retryNow()`).
+  ///
+  /// When the client was constructed without an explicit queue, it owns
+  /// this instance and disposes it as part of [dispose]. When you pass
+  /// your own queue to [create], its lifecycle is yours to manage.
+  final OfflineBroadcast broadcastQueue;
+  final bool _ownsBroadcastQueue;
+
+  final RelayResolver _relayResolver;
+
   final Map<String, String>? nip05Overrides;
 
   /// Build a [NostrMailClient] after running any pending schema migration.
@@ -50,12 +62,21 @@ class NostrMailClient {
   /// drop per store + ndk fetched-ranges clear) and runs automatically on
   /// every version mismatch so the caller cannot accidentally read records in
   /// a stale format.
+  ///
+  /// Pass [broadcastQueue] to share a single queue across SDKs, tune its
+  /// parameters, or inject a custom one in tests. When you provide your own
+  /// queue, you also own its lifecycle: call `.start()` yourself before
+  /// `create()` (or before the first send) and `.dispose()` when you no
+  /// longer need it. When [broadcastQueue] is null, the client instantiates
+  /// and starts an internal `OfflineBroadcast.withNdk(ndk, db: db)`, and
+  /// `NostrMailClient.dispose()` disposes it.
   static Future<NostrMailClient> create({
     required Ndk ndk,
     required Database db,
     List<String>? defaultDmRelays,
     List<String>? defaultBlossomServers,
     Map<String, String>? nip05Overrides,
+    OfflineBroadcast? broadcastQueue,
   }) async {
     await migrateSchemaIfNeeded(db: db, ndk: ndk);
     final emailRepo = EmailRepository(db);
@@ -65,7 +86,23 @@ class NostrMailClient {
     final bus = EventBus();
 
     final relayResolver = RelayResolver(ndk, defaultDmRelays: defaultDmRelays);
-    final settingsManager = SettingsManager(ndk, settingsRepo, relayResolver);
+    final OfflineBroadcast queue;
+    final bool ownsQueue;
+    if (broadcastQueue != null) {
+      queue = broadcastQueue;
+      ownsQueue = false;
+    } else {
+      queue = OfflineBroadcast.withNdk(ndk, db: db);
+      queue.start();
+      ownsQueue = true;
+    }
+
+    final settingsManager = SettingsManager(
+      ndk,
+      settingsRepo,
+      relayResolver,
+      queue,
+    );
     final syncEngine = SyncEngine(
       ndk,
       emailRepo,
@@ -86,13 +123,18 @@ class NostrMailClient {
         ndk,
         settingsManager,
         relayResolver,
+        queue,
+        emailRepo,
         defaultBlossomServers: defaultBlossomServers,
         nip05Overrides: nip05Overrides,
       ),
-      labels: LabelManager(ndk, labelRepo, relayResolver, bus),
+      labels: LabelManager(ndk, labelRepo, relayResolver, bus, queue),
       settings: settingsManager,
       sync: syncEngine,
       watch: WatchManager(ndk, syncEngine, bus, relayResolver),
+      broadcastQueue: queue,
+      ownsBroadcastQueue: ownsQueue,
+      relayResolver: relayResolver,
       nip05Overrides: nip05Overrides,
     );
   }
@@ -108,6 +150,9 @@ class NostrMailClient {
     required SettingsManager settings,
     required SyncEngine sync,
     required WatchManager watch,
+    required this.broadcastQueue,
+    required bool ownsBroadcastQueue,
+    required RelayResolver relayResolver,
     this.nip05Overrides,
   }) : _ndk = ndk,
        _emailRepo = emailRepo,
@@ -118,7 +163,9 @@ class NostrMailClient {
        _labels = labels,
        _settings = settings,
        _sync = sync,
-       _watch = watch;
+       _watch = watch,
+       _ownsBroadcastQueue = ownsBroadcastQueue,
+       _relayResolver = relayResolver;
 
   // ── Reading ─────────────────────────────────────────────────────────────
 
@@ -319,8 +366,6 @@ class NostrMailClient {
       throw NostrMailException('Email not found');
     }
 
-    final dmRelays = await _getDmRelays(pubkey);
-
     final deletionEvent = Nip01Event(
       pubKey: pubkey,
       kind: deletionRequestKind,
@@ -332,15 +377,16 @@ class NostrMailClient {
     );
 
     final signed = await _ndk.accounts.sign(deletionEvent);
-    final broadcast = _ndk.broadcast.broadcast(
-      nostrEvent: signed,
-      specificRelays: dmRelays,
-    );
-    await broadcast.broadcastDoneFuture;
 
+    // Local-first: remove from local storage immediately, then enqueue the
+    // deletion request for durable broadcast. The queue persists the event
+    // before any network attempt and retries until every DM relay has acked.
     await _emailRepo.delete(id, recipientPubkey: pubkey);
     await _labelRepo.deleteLabelsForEmail(id, recipientPubkey: pubkey);
     await _giftWrapRepo.remove(id);
+
+    final dmRelays = await _relayResolver.getDmRelays(pubkey);
+    await broadcastQueue.broadcast(signed, relays: dmRelays);
   }
 
   // ── Repost ──────────────────────────────────────────────────────────────
@@ -351,7 +397,7 @@ class NostrMailClient {
       throw NostrMailException('No account configured in ndk');
     }
 
-    final writeRelays = await _getWriteRelays(pubkey);
+    final writeRelays = await _relayResolver.getWriteRelays(pubkey);
 
     final tags = <List<String>>[
       ['e', emailEvent.id],
@@ -369,18 +415,9 @@ class NostrMailClient {
 
     final signedRepost = await _ndk.accounts.sign(repostEvent);
 
-    final emailBroadcast = _ndk.broadcast.broadcast(
-      nostrEvent: emailEvent,
-      specificRelays: writeRelays,
-    );
-    final repostBroadcast = _ndk.broadcast.broadcast(
-      nostrEvent: signedRepost,
-      specificRelays: writeRelays,
-    );
-
     await Future.wait([
-      emailBroadcast.broadcastDoneFuture,
-      repostBroadcast.broadcastDoneFuture,
+      broadcastQueue.broadcast(emailEvent, relays: writeRelays),
+      broadcastQueue.broadcast(signedRepost, relays: writeRelays),
     ]);
   }
 
@@ -526,40 +563,44 @@ class NostrMailClient {
     _settings.clearCache();
   }
 
-  // ── Relay helpers (duplicated — kept for delete / repost) ───────────────
-
-  Future<List<String>> _getDmRelays(String pubkey) async {
-    final response = _ndk.requests.query(
-      filter: ndk.Filter(kinds: [dmRelayListKind], authors: [pubkey], limit: 1),
-    );
-    final events = await response.future;
-    if (events.isEmpty) return recommendedDmRelays;
-
-    final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
-    final relays = event.tags
-        .where((t) => t.isNotEmpty && t[0] == 'relay')
-        .map((t) => t[1])
-        .toList();
-    return relays.isNotEmpty ? relays : recommendedDmRelays;
+  /// Stops background workers and, if this client owns the broadcast queue,
+  /// disposes it and waits for any in-flight attempt to finish. Call before
+  /// closing the underlying sembast database.
+  ///
+  /// When a queue was passed to [create] explicitly, the caller owns its
+  /// lifecycle and must dispose it themselves.
+  Future<void> dispose() async {
+    stopWatching();
+    if (_ownsBroadcastQueue) {
+      await broadcastQueue.dispose();
+    }
   }
 
-  Future<List<String>> _getWriteRelays(String pubkey) async {
-    final response = _ndk.requests.query(
-      filter: ndk.Filter(kinds: [relayListKind], authors: [pubkey], limit: 1),
-    );
-    final events = await response.future;
-    if (events.isEmpty) return recommendedDmRelays;
+  // ── Broadcast queue ─────────────────────────────────────────────────────
 
-    final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
-    final relays = event.tags
-        .where(
-          (t) =>
-              t.isNotEmpty &&
-              t[0] == 'r' &&
-              (t.length == 2 || (t.length == 3 && t[2] != 'read')),
-        )
-        .map((t) => t[1])
-        .toList();
-    return relays.isNotEmpty ? relays : recommendedDmRelays;
+  /// Waits until every queued broadcast has been acknowledged by every
+  /// targeted relay, or until [timeout] elapses. Useful in tests and in
+  /// suspend handlers that want to ensure delivery before going idle.
+  ///
+  /// Throws [TimeoutException] if delivery is still incomplete when
+  /// [timeout] expires.
+  Future<void> flushBroadcasts({
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (true) {
+      final all = await broadcastQueue.listAll();
+      final undelivered = all.where((b) => b.deliveredAt == null).toList();
+      if (undelivered.isEmpty) return;
+      if (DateTime.now().isAfter(deadline)) {
+        throw TimeoutException(
+          'flushBroadcasts timed out with ${undelivered.length} undelivered '
+          'broadcast(s)',
+          timeout,
+        );
+      }
+      await broadcastQueue.retryNow();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
   }
 }
