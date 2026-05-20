@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:blossom_cache/blossom_cache.dart';
+import 'package:blossom_upload_queue_shim_for_ndk/blossom_upload_queue_shim_for_ndk.dart';
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
 import 'package:enough_mail_plus/enough_mail.dart' hide MailEvent;
 import 'package:ndk/ndk.dart';
@@ -52,6 +54,16 @@ class NostrMailClient {
   final OfflineBroadcast broadcastQueue;
   final bool _ownsBroadcastQueue;
 
+  /// Direct access to the offline Blossom upload queue. Use this to surface
+  /// pending blob uploads in the UI (`watchPending()`), inspect history
+  /// (`listAll()`), or force a retry pass (`retryNow()`).
+  ///
+  /// When the client was constructed without an explicit queue, it owns
+  /// this instance and disposes it as part of [dispose]. When you pass
+  /// your own queue to [create], its lifecycle is yours to manage.
+  final OfflineBlossomUpload blossomUploadQueue;
+  final bool _ownsBlossomUploadQueue;
+
   final RelayResolver _relayResolver;
 
   final Map<String, String>? nip05Overrides;
@@ -70,13 +82,29 @@ class NostrMailClient {
   /// longer need it. When [broadcastQueue] is null, the client instantiates
   /// and starts an internal `OfflineBroadcast.withNdk(ndk, db: db)`, and
   /// `NostrMailClient.dispose()` disposes it.
+  ///
+  /// [blossomCache] is the local blob store that holds the encrypted bytes
+  /// of large emails until every Blossom server has acked the upload. The
+  /// caller picks the backend that matches their platform
+  /// (`IdbBlossomCache.open(factory: idbFactoryBrowser)` on web,
+  /// `idbFactorySembastIo` on native, `newIdbFactoryMemory()` in tests).
+  /// The SDK does not own this cache: it will not be closed by [dispose].
+  ///
+  /// Pass [blossomUploadQueue] to share an upload queue across SDKs, tune
+  /// its parameters, or inject a custom one in tests. Same lifecycle rules
+  /// as [broadcastQueue]: when you provide it, you own it; when null, the
+  /// client instantiates and starts an internal
+  /// `OfflineBlossomUpload.withNdk(ndk, cache: blossomCache, db: db)` and
+  /// disposes it as part of [dispose].
   static Future<NostrMailClient> create({
     required Ndk ndk,
     required Database db,
+    required BlossomCache blossomCache,
     List<String>? defaultDmRelays,
     List<String>? defaultBlossomServers,
     Map<String, String>? nip05Overrides,
     OfflineBroadcast? broadcastQueue,
+    OfflineBlossomUpload? blossomUploadQueue,
   }) async {
     await migrateSchemaIfNeeded(db: db, ndk: ndk);
     final emailRepo = EmailRepository(db);
@@ -95,6 +123,21 @@ class NostrMailClient {
       queue = OfflineBroadcast.withNdk(ndk, db: db);
       queue.start();
       ownsQueue = true;
+    }
+
+    final OfflineBlossomUpload blossomQueue;
+    final bool ownsBlossomQueue;
+    if (blossomUploadQueue != null) {
+      blossomQueue = blossomUploadQueue;
+      ownsBlossomQueue = false;
+    } else {
+      blossomQueue = OfflineBlossomUpload.withNdk(
+        ndk,
+        cache: blossomCache,
+        db: db,
+      );
+      blossomQueue.start();
+      ownsBlossomQueue = true;
     }
 
     final settingsManager = SettingsManager(
@@ -124,6 +167,8 @@ class NostrMailClient {
         settingsManager,
         relayResolver,
         queue,
+        blossomQueue,
+        blossomCache,
         emailRepo,
         defaultBlossomServers: defaultBlossomServers,
         nip05Overrides: nip05Overrides,
@@ -134,6 +179,8 @@ class NostrMailClient {
       watch: WatchManager(ndk, syncEngine, bus, relayResolver),
       broadcastQueue: queue,
       ownsBroadcastQueue: ownsQueue,
+      blossomUploadQueue: blossomQueue,
+      ownsBlossomUploadQueue: ownsBlossomQueue,
       relayResolver: relayResolver,
       nip05Overrides: nip05Overrides,
     );
@@ -152,6 +199,8 @@ class NostrMailClient {
     required WatchManager watch,
     required this.broadcastQueue,
     required bool ownsBroadcastQueue,
+    required this.blossomUploadQueue,
+    required bool ownsBlossomUploadQueue,
     required RelayResolver relayResolver,
     this.nip05Overrides,
   }) : _ndk = ndk,
@@ -165,6 +214,7 @@ class NostrMailClient {
        _sync = sync,
        _watch = watch,
        _ownsBroadcastQueue = ownsBroadcastQueue,
+       _ownsBlossomUploadQueue = ownsBlossomUploadQueue,
        _relayResolver = relayResolver;
 
   // ── Reading ─────────────────────────────────────────────────────────────
@@ -563,16 +613,21 @@ class NostrMailClient {
     _settings.clearCache();
   }
 
-  /// Stops background workers and, if this client owns the broadcast queue,
-  /// disposes it and waits for any in-flight attempt to finish. Call before
-  /// closing the underlying sembast database.
+  /// Stops background workers and, if this client owns either of the
+  /// internal queues, disposes them and waits for any in-flight attempt
+  /// to finish. Call before closing the underlying sembast database and
+  /// Blossom cache.
   ///
   /// When a queue was passed to [create] explicitly, the caller owns its
-  /// lifecycle and must dispose it themselves.
+  /// lifecycle and must dispose it themselves. The Blossom cache is never
+  /// owned by the client.
   Future<void> dispose() async {
     stopWatching();
     if (_ownsBroadcastQueue) {
       await broadcastQueue.dispose();
+    }
+    if (_ownsBlossomUploadQueue) {
+      await blossomUploadQueue.dispose();
     }
   }
 
@@ -600,6 +655,34 @@ class NostrMailClient {
         );
       }
       await broadcastQueue.retryNow();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+  }
+
+  // ── Blossom upload queue ────────────────────────────────────────────────
+
+  /// Waits until every queued Blossom upload has been acknowledged by every
+  /// targeted server, or until [timeout] elapses. Useful in tests and in
+  /// suspend handlers that want to ensure delivery before going idle.
+  ///
+  /// Throws [TimeoutException] if delivery is still incomplete when
+  /// [timeout] expires.
+  Future<void> flushBlossomUploads({
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (true) {
+      final all = await blossomUploadQueue.listAll();
+      final undelivered = all.where((u) => u.deliveredAt == null).toList();
+      if (undelivered.isEmpty) return;
+      if (DateTime.now().isAfter(deadline)) {
+        throw TimeoutException(
+          'flushBlossomUploads timed out with ${undelivered.length} '
+          'undelivered upload(s)',
+          timeout,
+        );
+      }
+      await blossomUploadQueue.retryNow();
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
   }

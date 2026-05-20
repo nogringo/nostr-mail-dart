@@ -5,6 +5,7 @@ import 'package:nostr_mail/nostr_mail.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
 
+import '../../helpers/test_blossom_cache.dart';
 import '../../mocks/mock_relay.dart';
 
 void main() {
@@ -39,6 +40,7 @@ void main() {
         final clientA = await NostrMailClient.create(
           ndk: ndk,
           db: db,
+          blossomCache: await openTestBlossomCache('private_settings_a'),
           defaultDmRelays: [relay.url],
         );
 
@@ -55,6 +57,7 @@ void main() {
         final clientB = await NostrMailClient.create(
           ndk: ndk,
           db: db2,
+          blossomCache: await openTestBlossomCache('private_settings_b'),
           defaultDmRelays: [relay.url],
         );
 
@@ -98,6 +101,7 @@ void main() {
       client = await NostrMailClient.create(
         ndk: ndk,
         db: db,
+        blossomCache: await openTestBlossomCache('private_settings_c'),
         defaultDmRelays: [relay.url],
       );
     });

@@ -2,7 +2,10 @@ import 'relay_resolver.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:blossom_cache/blossom_cache.dart';
+import 'package:blossom_upload_queue_shim_for_ndk/blossom_upload_queue_shim_for_ndk.dart';
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
+import 'package:crypto/crypto.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
 
@@ -24,6 +27,8 @@ class EmailSender {
   final SettingsManager _settings;
   final RelayResolver _relays;
   final OfflineBroadcast _broadcastQueue;
+  final OfflineBlossomUpload _blossomUploadQueue;
+  final BlossomCache _blossomCache;
   final EmailRepository _emailRepo;
   final List<String> _defaultBlossomServers;
   final Map<String, String>? nip05Overrides;
@@ -33,6 +38,8 @@ class EmailSender {
     this._settings,
     this._relays,
     this._broadcastQueue,
+    this._blossomUploadQueue,
+    this._blossomCache,
     this._emailRepo, {
     List<String>? defaultBlossomServers,
     this.nip05Overrides,
@@ -186,16 +193,19 @@ class EmailSender {
         allBlossomServers.addAll(_defaultBlossomServers);
       }
 
-      final uploadResults = await _ndk.blossom.uploadBlob(
-        data: encryptedBlob.bytes,
-        serverUrls: allBlossomServers.toSet().toList(),
+      final sha256Hash = sha256.convert(encryptedBlob.bytes).toString();
+      // The queue reads bytes from the cache when it actually uploads, so
+      // the blob has to be there before we enqueue.
+      await _blossomCache.put(
+        sha256Hash,
+        encryptedBlob.bytes,
+        type: 'application/octet-stream',
       );
-
-      final successfulUpload = uploadResults.firstWhere(
-        (result) => result.success && result.descriptor != null,
-        orElse: () => throw NostrMailException('Failed to upload to Blossom'),
+      await _blossomUploadQueue.upload(
+        sha256: sha256Hash,
+        servers: allBlossomServers.toSet().toList(),
+        contentType: 'application/octet-stream',
       );
-      final sha256Hash = successfulUpload.descriptor!.sha256;
 
       baseTags
         ..add(['x', sha256Hash])

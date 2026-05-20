@@ -17,6 +17,7 @@ import 'package:nostr_mail/src/storage/models/email_record.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
 
+import '../../helpers/test_blossom_cache.dart';
 import '../../mocks/mock_relay.dart';
 
 void main() {
@@ -189,6 +190,7 @@ void main() {
       client = await NostrMailClient.create(
         ndk: ndk,
         db: db,
+        blossomCache: await openTestBlossomCache('account_isolation_test'),
         defaultDmRelays: [relay.url],
       );
     });

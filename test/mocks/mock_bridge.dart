@@ -8,6 +8,8 @@ import 'package:nostr_mail/src/models/email.dart';
 
 import 'package:sembast/sembast_memory.dart';
 
+import '../helpers/test_blossom_cache.dart';
+
 class MockBridge {
   final String domain;
   List<String>? defaultDmRelays;
@@ -54,6 +56,7 @@ class MockBridge {
     client = await NostrMailClient.create(
       ndk: ndk,
       db: db,
+      blossomCache: await openTestBlossomCache('bridge_$domain'),
       defaultDmRelays: defaultDmRelays,
       defaultBlossomServers: defaultBlossomServers,
       nip05Overrides: nip05Overrides,

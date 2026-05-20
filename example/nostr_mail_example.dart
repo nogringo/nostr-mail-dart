@@ -1,4 +1,6 @@
+import 'package:blossom_cache/blossom_cache.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
+import 'package:idb_shim/idb_client_memory.dart';
 import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:nostr_mail/nostr_mail.dart';
@@ -23,8 +25,19 @@ void main() async {
     privkey: keyPair.privateKey!,
   );
 
+  // Local store for large-email blobs while they are uploading to Blossom.
+  // On web use `idbFactoryBrowser`; on native use `idbFactorySembastIo` so
+  // pending uploads survive restarts.
+  final BlossomCache blossomCache = await IdbBlossomCache.open(
+    factory: newIdbFactoryMemory(),
+  );
+
   // Create the mail client (runs any pending schema migration first)
-  final client = await NostrMailClient.create(ndk: ndk, db: db);
+  final client = await NostrMailClient.create(
+    ndk: ndk,
+    db: db,
+    blossomCache: blossomCache,
+  );
 
   // Sync emails from relays
   await client.sync();

@@ -1,3 +1,5 @@
+import 'package:blossom_cache/blossom_cache.dart';
+import 'package:idb_shim/idb_client_memory.dart' hide Database;
 import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:ndk/shared/nips/nip01/key_pair.dart';
@@ -13,6 +15,7 @@ class TestUser {
   late KeyPair keyPair;
   late Ndk ndk;
   late Database db;
+  late BlossomCache blossomCache;
   late NostrMailClient client;
 
   TestUser(
@@ -38,10 +41,15 @@ class TestUser {
     );
 
     db = await databaseFactoryMemory.openDatabase(id);
+    blossomCache = await IdbBlossomCache.open(
+      factory: newIdbFactoryMemory(),
+      dbName: 'blossom_cache_$id',
+    );
 
     client = await NostrMailClient.create(
       ndk: ndk,
       db: db,
+      blossomCache: blossomCache,
       defaultDmRelays: defaultDmRelays,
       defaultBlossomServers: defaultBlossomServers,
       nip05Overrides: nip05Overrides,
@@ -51,6 +59,7 @@ class TestUser {
   }
 
   Future<void> destroy() async {
+    await client.dispose();
     await ndk.destroy();
     await db.close();
   }
