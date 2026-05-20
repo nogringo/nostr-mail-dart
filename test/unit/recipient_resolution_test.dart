@@ -57,6 +57,24 @@ void main() {
       );
     });
 
+    test(
+      'resolveBridgePubkey throws NetworkRequiredException on transport error',
+      () async {
+        when(() => mockClient.get(any())).thenThrow(Exception('socket closed'));
+
+        await expectLater(
+          () => resolver.resolveBridgePubkey('example.com'),
+          throwsA(
+            isA<NetworkRequiredException>().having(
+              (e) => e.operation,
+              'operation',
+              'bridge',
+            ),
+          ),
+        );
+      },
+    );
+
     test('resolveBridgePubkey throws when _smtp not in response', () async {
       final responseBody = jsonEncode({
         'names': {'other': 'some-pubkey'},
@@ -124,13 +142,23 @@ void main() {
       expect(result, isNull);
     });
 
-    test('resolveNip05 returns null on network error', () async {
-      when(() => mockClient.get(any())).thenThrow(Exception('Network error'));
+    test(
+      'resolveNip05 throws NetworkRequiredException on transport error',
+      () async {
+        when(() => mockClient.get(any())).thenThrow(Exception('Network error'));
 
-      final result = await resolver.resolveNip05('user@example.com');
-
-      expect(result, isNull);
-    });
+        await expectLater(
+          () => resolver.resolveNip05('user@example.com'),
+          throwsA(
+            isA<NetworkRequiredException>().having(
+              (e) => e.operation,
+              'operation',
+              'nip05',
+            ),
+          ),
+        );
+      },
+    );
 
     test(
       'nip05Overrides short-circuit network calls for bridges and users',

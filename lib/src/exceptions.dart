@@ -24,3 +24,20 @@ class EmailParseException extends NostrMailException {
 class RelayException extends NostrMailException {
   RelayException(String details) : super('Relay error: $details');
 }
+
+/// Thrown when an operation cannot proceed because a required network call
+/// failed for connectivity reasons (DNS, socket, timeout, transport error).
+///
+/// The UI should treat this as "ask the user to reconnect, then retry."
+/// It is intentionally distinct from [BridgeResolutionException] and
+/// [RecipientResolutionException], which signal that the lookup itself
+/// produced a definitive negative answer (the relay/server is reachable
+/// and replied "no such name").
+///
+/// [operation] identifies the call site (`nip05`, `bridge`, …) so the UI
+/// can tailor the message without parsing strings.
+class NetworkRequiredException extends NostrMailException {
+  final String operation;
+  NetworkRequiredException(this.operation, String details)
+    : super('Network required for $operation: $details');
+}

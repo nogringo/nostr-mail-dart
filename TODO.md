@@ -3,9 +3,7 @@
 ## Local-First Architecture
 
 - [ ] Save labels locally BEFORE broadcasting to relays
-- [ ] Add a sync queue for pending operations
 - [ ] Mark labels as "pending sync" when broadcast fails
-- [ ] Auto-retry pending operations on reconnection
 - [ ] Handle offline mode gracefully
 
 ## Labels

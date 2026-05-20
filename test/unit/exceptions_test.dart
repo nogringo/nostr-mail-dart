@@ -33,5 +33,14 @@ void main() {
 
       expect(exception.toString(), contains('Connection failed'));
     });
+
+    test('NetworkRequiredException carries operation and details', () {
+      final exception = NetworkRequiredException('nip05', 'DNS failure');
+
+      expect(exception, isA<NostrMailException>());
+      expect(exception.operation, 'nip05');
+      expect(exception.toString(), contains('nip05'));
+      expect(exception.toString(), contains('DNS failure'));
+    });
   });
 }

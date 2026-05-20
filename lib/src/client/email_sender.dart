@@ -239,6 +239,35 @@ class EmailSender {
       final signedPublicEvent = await _ndk.accounts.sign(emailEvent);
 
       final writeRelays = await _relays.getWriteRelays(senderPubkey);
+
+      // Persist the sender's local copy before any broadcast is enqueued.
+      // From here on every step is either a local write or a durable
+      // enqueue, so a crash between save and broadcast cannot leave the
+      // user without a Sent entry.
+      Nip01Event? signedSenderRumor;
+      if (keepCopy) {
+        final senderTags = List<List<String>>.from(baseTags)
+          ..add(['p', senderPubkey]);
+
+        final senderEmailEvent = Nip01Event(
+          pubKey: senderPubkey,
+          kind: emailKind,
+          tags: senderTags,
+          content: rawContent,
+        );
+
+        signedSenderRumor = signRumor
+            ? await _ndk.accounts.sign(senderEmailEvent)
+            : senderEmailEvent;
+
+        await _saveSelfCopy(
+          rumor: signedSenderRumor,
+          mimeContent: rawContent,
+          senderPubkey: senderPubkey,
+          isPublic: true,
+        );
+      }
+
       await _broadcastQueue.broadcast(signedPublicEvent, relays: writeRelays);
 
       final bccTags = List<List<String>>.from(baseTags)
@@ -257,47 +286,56 @@ class EmailSender {
         await _publishGiftWrapped(signedBccRumor, pubkey);
       });
 
-      if (keepCopy) {
-        final senderTags = List<List<String>>.from(baseTags)
-          ..add(['p', senderPubkey]);
-
-        final senderEmailEvent = Nip01Event(
-          pubKey: senderPubkey,
-          kind: emailKind,
-          tags: senderTags,
-          content: rawContent,
-        );
-
-        final signedSenderRumor = signRumor
-            ? await _ndk.accounts.sign(senderEmailEvent)
-            : senderEmailEvent;
-
-        await _saveSelfCopy(
-          rumor: signedSenderRumor,
-          mimeContent: rawContent,
-          senderPubkey: senderPubkey,
-          isPublic: true,
-        );
+      if (signedSenderRumor != null) {
         await _publishGiftWrapped(signedSenderRumor, senderPubkey);
       }
 
       await Future.wait(bccFutures);
     } else {
+      // Build and persist the sender's local copy before any broadcast.
+      // Every network-required step (recipient resolution, Blossom server
+      // lookup) has already succeeded by this point — anything past here
+      // is a local write or a durable enqueue. Saving up-front guarantees
+      // the email lands in the local Sent folder even if a per-recipient
+      // sign call fails inside the parallel publish below.
+      Nip01Event? senderRumor;
+      if (keepCopy) {
+        final senderContentBytes = utf8.encode(rawContent);
+        final senderContent = senderContentBytes.length < maxInlineSize
+            ? rawContent
+            : content;
+        final senderTags = List<List<String>>.from(baseTags)
+          ..insert(0, ['p', senderPubkey]);
+        final senderEvent = Nip01Event(
+          pubKey: senderPubkey,
+          kind: emailKind,
+          tags: senderTags,
+          content: senderContent,
+        );
+        senderRumor = signRumor
+            ? await _ndk.accounts.sign(senderEvent)
+            : senderEvent;
+        await _saveSelfCopy(
+          rumor: senderRumor,
+          mimeContent: rawContent,
+          senderPubkey: senderPubkey,
+          isPublic: false,
+        );
+      }
+
       final sendFutures = targetPubkeys.map((pubkey) async {
-        String targetContent;
+        // Reuse the pre-built sender rumor so rumor.id stays stable:
+        // when the gift wrap comes back via sync, the dedup is a no-op.
         if (keepCopy && pubkey == senderPubkey) {
-          targetContent = rawContent;
-        } else {
-          targetContent = removeBccHeaders(rawContent);
+          await _publishGiftWrapped(senderRumor!, pubkey);
+          return;
         }
 
-        final String finalContent;
+        final targetContent = removeBccHeaders(rawContent);
         final targetContentBytes = utf8.encode(targetContent);
-        if (targetContentBytes.length < maxInlineSize) {
-          finalContent = targetContent;
-        } else {
-          finalContent = content;
-        }
+        final finalContent = targetContentBytes.length < maxInlineSize
+            ? targetContent
+            : content;
 
         final tags = List<List<String>>.from(baseTags)
           ..insert(0, ['p', pubkey]);
@@ -312,15 +350,6 @@ class EmailSender {
         final eventToPublish = signRumor
             ? await _ndk.accounts.sign(emailEvent)
             : emailEvent;
-
-        if (keepCopy && pubkey == senderPubkey) {
-          await _saveSelfCopy(
-            rumor: eventToPublish,
-            mimeContent: rawContent,
-            senderPubkey: senderPubkey,
-            isPublic: false,
-          );
-        }
 
         await _publishGiftWrapped(eventToPublish, pubkey);
       });
