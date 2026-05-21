@@ -12,6 +12,7 @@ import '../utils/email_record_builder.dart';
 import 'relay_resolver.dart';
 import '../utils/event_email_parser.dart';
 import 'event_bus.dart';
+import 'filters.dart';
 import 'gap_sync.dart';
 
 /// Orchestrates inbound synchronization from Nostr relays.
@@ -104,7 +105,7 @@ class SyncEngine {
       writeRelays,
       effectiveSince,
       effectiveUntil,
-      _repostFilter,
+      repostFilter,
     ).execute();
 
     await _PassiveGapSync(
@@ -113,7 +114,7 @@ class SyncEngine {
       writeRelays,
       effectiveSince,
       effectiveUntil,
-      _settingsFilter,
+      settingsFilter,
     ).execute();
 
     await _PassiveGapSync(
@@ -122,7 +123,7 @@ class SyncEngine {
       writeRelays,
       effectiveSince,
       effectiveUntil,
-      _metadataFilter,
+      metadataFilter,
     ).execute();
   }
 
@@ -132,13 +133,13 @@ class SyncEngine {
     final pubkey = _pubkey!;
 
     await Future.wait([
-      _ndk.fetchedRanges.clearForFilter(_emailFilter(pubkey)),
-      _ndk.fetchedRanges.clearForFilter(_deletionFilter(pubkey)),
-      _ndk.fetchedRanges.clearForFilter(_publicEmailFilter(pubkey)),
-      _ndk.fetchedRanges.clearForFilter(_labelFilter(pubkey)),
-      _ndk.fetchedRanges.clearForFilter(_repostFilter(pubkey)),
-      _ndk.fetchedRanges.clearForFilter(_settingsFilter(pubkey)),
-      _ndk.fetchedRanges.clearForFilter(_metadataFilter(pubkey)),
+      _ndk.fetchedRanges.clearForFilter(emailFilter(pubkey)),
+      _ndk.fetchedRanges.clearForFilter(deletionFilter(pubkey)),
+      _ndk.fetchedRanges.clearForFilter(publicEmailFilter(pubkey)),
+      _ndk.fetchedRanges.clearForFilter(labelFilter(pubkey)),
+      _ndk.fetchedRanges.clearForFilter(repostFilter(pubkey)),
+      _ndk.fetchedRanges.clearForFilter(settingsFilter(pubkey)),
+      _ndk.fetchedRanges.clearForFilter(metadataFilter(pubkey)),
     ]);
 
     await sync(since: since, until: until);
@@ -156,35 +157,32 @@ class SyncEngine {
 
     final allRelays = {...dmRelays, ...writeRelays}.toList();
 
-    final emails = await _fetchEvents(_emailFilter(pubkey), dmRelays);
+    final emails = await _fetchEvents(emailFilter(pubkey), dmRelays);
     for (final e in emails) {
       await onGiftWrap(e);
     }
 
-    final deletions = await _fetchEvents(_deletionFilter(pubkey), allRelays);
+    final deletions = await _fetchEvents(deletionFilter(pubkey), allRelays);
     for (final e in deletions) {
       await onDeletion(e);
     }
 
     final publicEmails = await _fetchEvents(
-      _publicEmailFilter(pubkey),
+      publicEmailFilter(pubkey),
       writeRelays,
     );
     for (final e in publicEmails) {
       await onPublicEmail(e);
     }
 
-    final labelAdditions = await _fetchEvents(
-      _labelFilter(pubkey),
-      writeRelays,
-    );
+    final labelAdditions = await _fetchEvents(labelFilter(pubkey), writeRelays);
     for (final e in labelAdditions) {
       await onLabelAddition(e);
     }
 
-    await _fetchEvents(_repostFilter(pubkey), writeRelays);
-    await _fetchEvents(_settingsFilter(pubkey), writeRelays);
-    await _fetchEvents(_metadataFilter(pubkey), writeRelays);
+    await _fetchEvents(repostFilter(pubkey), writeRelays);
+    await _fetchEvents(settingsFilter(pubkey), writeRelays);
+    await _fetchEvents(metadataFilter(pubkey), writeRelays);
   }
 
   /// Retry processing a single failed gift wrap.
@@ -421,43 +419,6 @@ class SyncEngine {
     );
     return response.future;
   }
-
-  // ── Filter builders ─────────────────────────────────────────────────────
-
-  ndk.Filter _emailFilter(String pubkey) =>
-      ndk.Filter(kinds: [GiftWrap.kGiftWrapEventkind], pTags: [pubkey]);
-
-  ndk.Filter _deletionFilter(String pubkey) =>
-      ndk.Filter(kinds: [deletionRequestKind], authors: [pubkey])..setTag('k', [
-        giftWrapKind.toString(),
-        emailKind.toString(),
-        labelKind.toString(),
-        genericRepostKind.toString(),
-      ]);
-
-  ndk.Filter _labelFilter(String pubkey) =>
-      ndk.Filter(kinds: [labelKind], authors: [pubkey])
-        ..setTag('L', [labelNamespace]);
-
-  ndk.Filter _publicEmailFilter(String pubkey) =>
-      ndk.Filter(kinds: [emailKind], pTags: [pubkey]);
-
-  ndk.Filter _repostFilter(String pubkey) =>
-      ndk.Filter(kinds: [genericRepostKind], authors: [pubkey]);
-
-  ndk.Filter _settingsFilter(String pubkey) =>
-      ndk.Filter(kinds: [appSettingsKind], authors: [pubkey])
-        ..setTag('d', [privateSettingsDTag]);
-
-  ndk.Filter _metadataFilter(String pubkey) => ndk.Filter(
-    kinds: [
-      metadataKind,
-      relayListKind,
-      dmRelayListKind,
-      blossomServerListKind,
-    ],
-    authors: [pubkey],
-  );
 }
 
 // ── Concrete GapSync implementations ──────────────────────────────────────
@@ -475,8 +436,7 @@ class _EmailGapSync extends GapSync<Nip01Event> {
   );
 
   @override
-  ndk.Filter buildFilter(String pubkey) =>
-      ndk.Filter(kinds: [GiftWrap.kGiftWrapEventkind], pTags: [pubkey]);
+  ndk.Filter buildFilter(String pubkey) => emailFilter(pubkey);
 
   @override
   Future<List<Nip01Event>> fetch(ndk.Filter filter, List<String> relays) {
@@ -504,13 +464,7 @@ class _DeletionGapSync extends GapSync<Nip01Event> {
   );
 
   @override
-  ndk.Filter buildFilter(String pubkey) =>
-      ndk.Filter(kinds: [deletionRequestKind], authors: [pubkey])..setTag('k', [
-        giftWrapKind.toString(),
-        emailKind.toString(),
-        labelKind.toString(),
-        genericRepostKind.toString(),
-      ]);
+  ndk.Filter buildFilter(String pubkey) => deletionFilter(pubkey);
 
   @override
   Future<List<Nip01Event>> fetch(ndk.Filter filter, List<String> relays) {
@@ -538,8 +492,7 @@ class _PublicEmailGapSync extends GapSync<Nip01Event> {
   );
 
   @override
-  ndk.Filter buildFilter(String pubkey) =>
-      ndk.Filter(kinds: [emailKind], pTags: [pubkey]);
+  ndk.Filter buildFilter(String pubkey) => publicEmailFilter(pubkey);
 
   @override
   Future<List<Nip01Event>> fetch(ndk.Filter filter, List<String> relays) {
@@ -567,9 +520,7 @@ class _LabelAdditionGapSync extends GapSync<Nip01Event> {
   );
 
   @override
-  ndk.Filter buildFilter(String pubkey) =>
-      ndk.Filter(kinds: [labelKind], authors: [pubkey])
-        ..setTag('L', [labelNamespace]);
+  ndk.Filter buildFilter(String pubkey) => labelFilter(pubkey);
 
   @override
   Future<List<Nip01Event>> fetch(ndk.Filter filter, List<String> relays) {

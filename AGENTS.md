@@ -123,7 +123,8 @@ test/
 
 - **`client.dart`** is a thin façade. All business logic lives in the **manager classes** under `lib/src/client/`.
 - **`RelayResolver`** eliminates duplication of `_getDmRelays()` / `_getWriteRelays()` across managers.
-- **`GapSync<T>`** (inside `sync_engine.dart`) is a template method that removes duplication between the 5 previous `_syncXxx` methods.
+- **`GapSync<T>`** (inside `sync_engine.dart`) is a template method that removes duplication between the filter-specific sync implementations.
+- **`filters.dart`** is the single source of truth for all Nostr query filters used by the SDK (7 filter categories). Both `SyncEngine` and `WatchManager` import from it, so filters can never diverge.
 - **Denormalized storage**: `EmailRecord` has flat fields (`folder`, `isRead`, `isStarred`, `attachmentCount`, `searchText`) so queries never need joins.
 - **`LabelRepository`** updates denormalized `EmailRecord` fields atomically inside Sembast transactions.
 
@@ -247,10 +248,10 @@ dart test test/cc_bcc_test.dart                # hard-codes ws://localhost:7777,
 - **`RelayResolver`** is a shared helper instantiated once in `NostrMailClient` and injected into all managers.
 - **DM relays**: read from NIP-17 kind 10050 event; fallback to `recommendedDmRelays`.
 - **Write relays**: read from NIP-65 kind 10002 event; fallback to `recommendedDmRelays`.
-- Both lists are fetched on-demand; there is **no in-memory cache** for relay lists yet (see `TODO.md`).
+- Both lists are fetched on-demand, but the `SyncEngine` proactively warms the NDK cache by syncing metadata & relay list events (kinds 0, 10002, 10050, 10063), so subsequent `RelayResolver` calls usually hit cache.
 
 ### FetchedRanges (Gap Sync)
-The client relies on NDK's `fetchedRanges` to avoid re-downloading already-synced time ranges. `sync()` only fills gaps. `resync()` clears ranges and starts over. `fetchRecent()` bypasses range optimization entirely.
+The client relies on NDK's `fetchedRanges` to avoid re-downloading already-synced time ranges. `sync()` only fills gaps across **all 7 filter categories** (emails, deletions, labels, reposts, settings, metadata). `resync()` clears ranges and starts over. `fetchRecent()` bypasses range optimization entirely.
 
 ### Label Event Format (NIP-32)
 ```json
@@ -277,6 +278,8 @@ An email is considered "bridged" if the sender's pubkey does **not** match the p
 |------|----------------|
 | `lib/src/client.dart` | Public façade; delegates to all managers. |
 | `lib/src/constants.dart` | All event kinds and protocol magic values. |
+| `lib/src/client/sync_engine.dart` | Fetches & processes all 7 filter categories; handles decryption. |
+| `lib/src/client/filters.dart` | Single source of truth for every Nostr query filter. |
 | `lib/src/client/relay_resolver.dart` | Shared relay lookup logic (NIP-17/65). |
 | `email-labels.md` | Formal spec for NIP-32 label usage in this project. |
 | `TODO.md` | Roadmap: local-first sync queue, label cleanup, performance caching. |

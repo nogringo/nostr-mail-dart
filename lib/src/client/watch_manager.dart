@@ -1,10 +1,9 @@
 import 'package:ndk/ndk.dart';
-import 'package:ndk/domain_layer/entities/filter.dart' as ndk;
 
-import '../constants.dart';
 import '../exceptions.dart';
 import '../models/mail_event.dart';
 import 'event_bus.dart';
+import 'filters.dart';
 import 'relay_resolver.dart';
 import 'sync_engine.dart';
 
@@ -73,74 +72,43 @@ class WatchManager {
 
     // Gift wraps (emails)
     final emailSub = _ndk.requests.subscription(
-      filter: ndk.Filter(
-        kinds: [GiftWrap.kGiftWrapEventkind],
-        pTags: [pubkey],
-        limit: 0,
-      ),
+      filter: emailFilter(pubkey)..limit = 0,
       explicitRelays: dmRelays,
     );
 
     // Public emails
     final publicSub = _ndk.requests.subscription(
-      filter: ndk.Filter(kinds: [emailKind], pTags: [pubkey], limit: 0),
+      filter: publicEmailFilter(pubkey)..limit = 0,
       explicitRelays: writeRelays,
     );
 
     // Label additions
     final labelSub = _ndk.requests.subscription(
-      filter: ndk.Filter(kinds: [labelKind], authors: [pubkey], limit: 0)
-        ..setTag('L', [labelNamespace]),
+      filter: labelFilter(pubkey)..limit = 0,
       explicitRelays: writeRelays,
     );
 
     // Unified deletions (emails, labels, reposts)
-    final deletionFilter =
-        ndk.Filter(kinds: [deletionRequestKind], authors: [pubkey], limit: 0)
-          ..setTag('k', [
-            giftWrapKind.toString(),
-            emailKind.toString(),
-            labelKind.toString(),
-            genericRepostKind.toString(),
-          ]);
     final deletionSub = _ndk.requests.subscription(
-      filter: deletionFilter,
+      filter: deletionFilter(pubkey)..limit = 0,
       explicitRelays: allRelays,
     );
 
     // Reposts
     final repostSub = _ndk.requests.subscription(
-      filter: ndk.Filter(
-        kinds: [genericRepostKind],
-        authors: [pubkey],
-        limit: 0,
-      ),
+      filter: repostFilter(pubkey)..limit = 0,
       explicitRelays: writeRelays,
     );
 
     // Private settings
-    final settingsFilter = ndk.Filter(
-      kinds: [appSettingsKind],
-      authors: [pubkey],
-      limit: 0,
-    )..setTag('d', [privateSettingsDTag]);
     final settingsSub = _ndk.requests.subscription(
-      filter: settingsFilter,
+      filter: settingsFilter(pubkey)..limit = 0,
       explicitRelays: writeRelays,
     );
 
     // Metadata & relay lists
     final metadataSub = _ndk.requests.subscription(
-      filter: ndk.Filter(
-        kinds: [
-          metadataKind,
-          relayListKind,
-          dmRelayListKind,
-          blossomServerListKind,
-        ],
-        authors: [pubkey],
-        limit: 0,
-      ),
+      filter: metadataFilter(pubkey)..limit = 0,
       explicitRelays: writeRelays,
     );
 
