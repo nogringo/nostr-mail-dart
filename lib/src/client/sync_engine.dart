@@ -157,32 +157,32 @@ class SyncEngine {
 
     final allRelays = {...dmRelays, ...writeRelays}.toList();
 
-    final emails = await _fetchEvents(emailFilter(pubkey), dmRelays);
+    // Fetch all filters in parallel; process sequentially to avoid races.
+    final (emails, deletions, publicEmails, labelAdditions, _, _, _) = await (
+      _fetchEvents(emailFilter(pubkey), dmRelays),
+      _fetchEvents(deletionFilter(pubkey), allRelays),
+      _fetchEvents(publicEmailFilter(pubkey), writeRelays),
+      _fetchEvents(labelFilter(pubkey), writeRelays),
+      _fetchEvents(repostFilter(pubkey), writeRelays),
+      _fetchEvents(settingsFilter(pubkey), writeRelays),
+      _fetchEvents(metadataFilter(pubkey), writeRelays),
+    ).wait;
+
     for (final e in emails) {
       await onGiftWrap(e);
     }
 
-    final deletions = await _fetchEvents(deletionFilter(pubkey), allRelays);
     for (final e in deletions) {
       await onDeletion(e);
     }
 
-    final publicEmails = await _fetchEvents(
-      publicEmailFilter(pubkey),
-      writeRelays,
-    );
     for (final e in publicEmails) {
       await onPublicEmail(e);
     }
 
-    final labelAdditions = await _fetchEvents(labelFilter(pubkey), writeRelays);
     for (final e in labelAdditions) {
       await onLabelAddition(e);
     }
-
-    await _fetchEvents(repostFilter(pubkey), writeRelays);
-    await _fetchEvents(settingsFilter(pubkey), writeRelays);
-    await _fetchEvents(metadataFilter(pubkey), writeRelays);
   }
 
   /// Retry processing a single failed gift wrap.
