@@ -19,6 +19,12 @@ const labelKind = 1985;
 /// Relay list event kind (NIP-65)
 const relayListKind = 10002;
 
+/// Metadata event kind (NIP-01)
+const metadataKind = 0;
+
+/// Blossom server list event kind (BUD-01/03)
+const blossomServerListKind = 10063;
+
 /// Text note repost kind (NIP-18)
 const textRepostKind = 6;
 

@@ -69,6 +69,7 @@ class WatchManager {
   Future<void> _setupSubscriptions(String pubkey) async {
     final dmRelays = await _relays.getDmRelays(pubkey);
     final writeRelays = await _relays.getWriteRelays(pubkey);
+    final allRelays = {...dmRelays, ...writeRelays}.toList();
 
     // Gift wraps (emails)
     final emailSub = _ndk.requests.subscription(
@@ -88,36 +89,67 @@ class WatchManager {
 
     // Label additions
     final labelSub = _ndk.requests.subscription(
-      filter: ndk.Filter(kinds: [labelKind], authors: [pubkey], limit: 0),
+      filter: ndk.Filter(kinds: [labelKind], authors: [pubkey], limit: 0)
+        ..setTag('L', [labelNamespace]),
       explicitRelays: writeRelays,
     );
 
-    // Label deletions
-    final labelDeletionFilter = ndk.Filter(
-      kinds: [deletionRequestKind],
-      authors: [pubkey],
-      limit: 0,
-    )..setTag('k', [labelKind.toString()]);
-    final labelDeletionSub = _ndk.requests.subscription(
-      filter: labelDeletionFilter,
+    // Unified deletions (emails, labels, reposts)
+    final deletionFilter =
+        ndk.Filter(kinds: [deletionRequestKind], authors: [pubkey], limit: 0)
+          ..setTag('k', [
+            giftWrapKind.toString(),
+            emailKind.toString(),
+            labelKind.toString(),
+            genericRepostKind.toString(),
+          ]);
+    final deletionSub = _ndk.requests.subscription(
+      filter: deletionFilter,
+      explicitRelays: allRelays,
+    );
+
+    // Reposts
+    final repostSub = _ndk.requests.subscription(
+      filter: ndk.Filter(
+        kinds: [genericRepostKind],
+        authors: [pubkey],
+        limit: 0,
+      ),
       explicitRelays: writeRelays,
     );
 
-    // Email deletions
-    final emailDeletionFilter = ndk.Filter(
-      kinds: [deletionRequestKind],
+    // Private settings
+    final settingsFilter = ndk.Filter(
+      kinds: [appSettingsKind],
       authors: [pubkey],
       limit: 0,
-    )..setTag('k', [giftWrapKind.toString()]);
-    final emailDeletionSub = _ndk.requests.subscription(
-      filter: emailDeletionFilter,
-      explicitRelays: dmRelays,
+    )..setTag('d', [privateSettingsDTag]);
+    final settingsSub = _ndk.requests.subscription(
+      filter: settingsFilter,
+      explicitRelays: writeRelays,
+    );
+
+    // Metadata & relay lists
+    final metadataSub = _ndk.requests.subscription(
+      filter: ndk.Filter(
+        kinds: [
+          metadataKind,
+          relayListKind,
+          dmRelayListKind,
+          blossomServerListKind,
+        ],
+        authors: [pubkey],
+        limit: 0,
+      ),
+      explicitRelays: writeRelays,
     );
 
     emailSub.stream.listen(_sync.onGiftWrap);
     publicSub.stream.listen(_sync.onPublicEmail);
     labelSub.stream.listen(_sync.onLabelAddition);
-    labelDeletionSub.stream.listen(_sync.onLabelDeletion);
-    emailDeletionSub.stream.listen(_sync.onEmailDeletion);
+    deletionSub.stream.listen(_sync.onDeletion);
+    repostSub.stream.listen((_) {});
+    settingsSub.stream.listen((_) {});
+    metadataSub.stream.listen((_) {});
   }
 }
