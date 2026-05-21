@@ -154,6 +154,7 @@ class NostrMailClient {
       bus,
       relayResolver,
       defaultBlossomServers: defaultBlossomServers,
+      blossomCache: blossomCache,
     );
 
     return NostrMailClient._internal(

@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:blossom_cache/blossom_cache.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
 
@@ -42,6 +44,7 @@ Future<Email> parseEmailEvent({
   required String recipientPubkey,
   bool isPublic = false,
   List<String>? defaultBlossomServers,
+  BlossomCache? blossomCache,
 }) async {
   // Extract Blossom tags (NIP-17 style)
   final blossomHash = event.getFirstTag('x');
@@ -57,6 +60,7 @@ Future<Email> parseEmailEvent({
     decryptionNonce: decryptionNonce,
     recipientPubkey: recipientPubkey,
     defaultBlossomServers: defaultBlossomServers,
+    blossomCache: blossomCache,
   );
 
   // Parse RFC 2822 MIME
@@ -84,29 +88,43 @@ Future<String> _parseMime({
   String? decryptionKey,
   String? decryptionNonce,
   List<String>? defaultBlossomServers,
+  BlossomCache? blossomCache,
 }) async {
   if (rawContent.isEmpty && blossomHash != null) {
-    // Get recipient's Blossom servers (BUD-03) or use default
-    final blossomServers = await ndk.blossomUserServerList.getUserServerList(
-      pubkeys: [recipientPubkey],
-    );
-
-    // Download from recipient's servers or default
-    final downloadResult = await ndk.blossom.getBlob(
-      sha256: blossomHash,
-      serverUrls:
-          blossomServers ?? defaultBlossomServers ?? recommendedBlossomServers,
-    );
-
     if (decryptionKey == null || decryptionNonce == null) {
       throw EmailParseException(
         'Missing decryption key or nonce for Blossom email (hash: $blossomHash)',
       );
     }
 
+    Uint8List? encryptedBytes = await blossomCache?.get(blossomHash);
+
+    if (encryptedBytes == null) {
+      // Get recipient's Blossom servers (BUD-03) or use default
+      final blossomServers = await ndk.blossomUserServerList.getUserServerList(
+        pubkeys: [recipientPubkey],
+      );
+
+      // Download from recipient's servers or default
+      final downloadResult = await ndk.blossom.getBlob(
+        sha256: blossomHash,
+        serverUrls:
+            blossomServers ??
+            defaultBlossomServers ??
+            recommendedBlossomServers,
+      );
+      encryptedBytes = downloadResult.data;
+
+      await blossomCache?.put(
+        blossomHash,
+        encryptedBytes,
+        type: 'application/octet-stream',
+      );
+    }
+
     // Decrypt with AES-GCM
     final decryptedBytes = await decryptBlob(
-      encryptedBytes: downloadResult.data,
+      encryptedBytes: encryptedBytes,
       key: decryptionKey,
       nonce: decryptionNonce,
     );

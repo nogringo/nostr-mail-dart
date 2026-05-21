@@ -1,3 +1,4 @@
+import 'package:blossom_cache/blossom_cache.dart';
 import 'package:ndk/ndk.dart';
 import 'package:ndk/domain_layer/entities/filter.dart' as ndk;
 
@@ -26,6 +27,7 @@ class SyncEngine {
   final EventBus _bus;
   final RelayResolver _relays;
   final List<String> _defaultBlossomServers;
+  final BlossomCache? _blossomCache;
 
   SyncEngine(
     this._ndk,
@@ -35,8 +37,10 @@ class SyncEngine {
     this._bus,
     this._relays, {
     List<String>? defaultBlossomServers,
+    BlossomCache? blossomCache,
   }) : _defaultBlossomServers =
-           defaultBlossomServers ?? recommendedBlossomServers;
+           defaultBlossomServers ?? recommendedBlossomServers,
+       _blossomCache = blossomCache;
 
   String? get _pubkey => _ndk.accounts.getPublicKey();
 
@@ -231,6 +235,7 @@ class SyncEngine {
         recipientPubkey: myPubkey,
         isPublic: isPublicRef,
         defaultBlossomServers: _defaultBlossomServers,
+        blossomCache: _blossomCache,
       );
 
       final folder = email.senderPubkey == myPubkey ? 'sent' : 'inbox';
@@ -269,6 +274,7 @@ class SyncEngine {
         recipientPubkey: recipientPubkey,
         isPublic: true,
         defaultBlossomServers: _defaultBlossomServers,
+        blossomCache: _blossomCache,
       );
 
       final folder = email.senderPubkey == recipientPubkey ? 'sent' : 'inbox';
