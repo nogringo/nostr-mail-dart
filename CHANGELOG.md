@@ -1,3 +1,12 @@
+## 1.16.0
+
+- **New**: Durable outbound queues - `OfflineBroadcast` for Nostr events and `OfflineBlossomUpload` for blob uploads. Both are exposed on `NostrMailClient` (`broadcastQueue`, `blossomUploadQueue`).
+- **New**: Local-first `send()` / `sendMime()` / `delete()` - persisted locally before any network attempt; enqueued for automatic retry until fully delivered.
+- **New**: `filters.dart` - single source of truth for all 7 Nostr query filters. Eliminates duplication between `SyncEngine` and `WatchManager`.
+- **Improvement**: `SyncEngine` now syncs all filters defined in `filters.md` (gift wraps, public emails, labels, reposts, settings, metadata/relay lists). Label and deletion filters are now more precise (`#L: mail`, unified `#k` tag).
+- **Improvement**: Parallelized `fetchRecent()` - fetches all 7 filter categories concurrently, then processes events in parallel via `GapSync.processBatch()` and `Future.wait`. Leverages NDK PR #632 signer concurrency queue to protect remote signers.
+- **Improvement**: Downloaded Blossom blobs are now cached locally. Subsequent reparses (e.g. after schema migration) reuse the cached encrypted blob instead of re-downloading.
+
 ## 1.15.0
 
 - **New**: Automatic schema migration on client construction
