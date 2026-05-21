@@ -18,6 +18,14 @@ abstract class GapSync<T> {
   Future<List<T>> fetch(Filter filter, List<String> relays);
   Future<void> process(T item);
 
+  /// Processes a batch of items. Override to parallelize (e.g. with
+  /// [Future.wait]) when the underlying operation benefits from concurrency.
+  Future<void> processBatch(List<T> items) async {
+    for (final item in items) {
+      await process(item);
+    }
+  }
+
   Future<void> execute() async {
     final baseFilter = buildFilter(pubkey);
     final existingRanges = await ndkClient.fetchedRanges.getForFilter(
@@ -29,9 +37,7 @@ abstract class GapSync<T> {
         ..since = since
         ..until = until;
       final items = await fetch(filter, relays);
-      for (final item in items) {
-        await process(item);
-      }
+      await processBatch(items);
       return;
     }
 
@@ -45,9 +51,7 @@ abstract class GapSync<T> {
 
     for (final gapFilter in optimizedFilters.values.expand((f) => f)) {
       final items = await fetch(gapFilter, relays);
-      for (final item in items) {
-        await process(item);
-      }
+      await processBatch(items);
     }
   }
 }

@@ -168,21 +168,13 @@ class SyncEngine {
       _fetchEvents(metadataFilter(pubkey), writeRelays),
     ).wait;
 
-    for (final e in emails) {
-      await onGiftWrap(e);
-    }
-
-    for (final e in deletions) {
-      await onDeletion(e);
-    }
-
-    for (final e in publicEmails) {
-      await onPublicEmail(e);
-    }
-
-    for (final e in labelAdditions) {
-      await onLabelAddition(e);
-    }
+    // Process all event types in parallel where safe.
+    // NDK PR #632 added configurable signer concurrency (default 100),
+    // so gift-wrap decryption no longer blocks sequentially.
+    await Future.wait(emails.map(onGiftWrap));
+    await Future.wait(deletions.map(onDeletion));
+    await Future.wait(publicEmails.map(onPublicEmail));
+    await Future.wait(labelAdditions.map(onLabelAddition));
   }
 
   /// Retry processing a single failed gift wrap.
@@ -449,6 +441,11 @@ class _EmailGapSync extends GapSync<Nip01Event> {
 
   @override
   Future<void> process(Nip01Event item) => _processor(item);
+
+  @override
+  Future<void> processBatch(List<Nip01Event> items) async {
+    await Future.wait(items.map(process));
+  }
 }
 
 class _DeletionGapSync extends GapSync<Nip01Event> {
