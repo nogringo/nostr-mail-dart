@@ -116,8 +116,8 @@ Future<String> _parseMime({
       encryptedBytes = downloadResult.data;
 
       await blossomCache?.put(
-        blossomHash,
         encryptedBytes,
+        sha256: blossomHash,
         type: 'application/octet-stream',
       );
     }

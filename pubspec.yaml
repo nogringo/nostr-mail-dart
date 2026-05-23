@@ -32,9 +32,8 @@ dependencies:
   cryptography: ^2.9.0
   rxdart: ^0.28.0
   broadcast_queue_shim_for_ndk: ^0.2.0
-  blossom_upload_queue_shim_for_ndk: ^0.1.0
-  blossom_cache: ^0.1.0
-  crypto: ^3.0.7
+  blossom_upload_queue_shim_for_ndk: ^0.3.0
+  blossom_cache: ^0.2.0
 
 dev_dependencies:
   bip340: ^0.3.1
@@ -44,3 +43,4 @@ dev_dependencies:
   shelf: ^1.4.2
   shelf_router: ^1.1.4
   test: ^1.31.0
+  crypto: ^3.0.7

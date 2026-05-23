@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:blossom_cache/blossom_cache.dart';
 import 'package:blossom_upload_queue_shim_for_ndk/blossom_upload_queue_shim_for_ndk.dart';
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
-import 'package:crypto/crypto.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
 
@@ -193,14 +192,13 @@ class EmailSender {
         allBlossomServers.addAll(_defaultBlossomServers);
       }
 
-      final sha256Hash = sha256.convert(encryptedBlob.bytes).toString();
       // The queue reads bytes from the cache when it actually uploads, so
       // the blob has to be there before we enqueue.
-      await _blossomCache.put(
-        sha256Hash,
+      final descriptor = await _blossomCache.put(
         encryptedBlob.bytes,
         type: 'application/octet-stream',
       );
+      final sha256Hash = descriptor.sha256;
       await _blossomUploadQueue.upload(
         sha256: sha256Hash,
         servers: allBlossomServers.toSet().toList(),
