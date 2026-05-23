@@ -1,14 +1,13 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:blossom_cache/blossom_cache.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
 
-import '../constants.dart';
 import '../exceptions.dart';
 import '../models/email.dart';
 import 'attachment_extractor.dart';
+import 'blob_fetcher.dart';
 import 'decrypt_blob.dart';
 
 /// Parse a NIP-01 event (kind 1301) into a local [Email] object.
@@ -59,7 +58,7 @@ Future<Email> parseEmailEvent({
     blossomHash: blossomHash,
     decryptionKey: decryptionKey,
     decryptionNonce: decryptionNonce,
-    recipientPubkey: recipientPubkey,
+    involvedPubkeys: [event.pubKey, recipientPubkey],
     defaultBlossomServers: defaultBlossomServers,
     blossomCache: blossomCache,
   );
@@ -93,7 +92,7 @@ Future<Email> parseEmailEvent({
 Future<String> _parseMime({
   required Ndk ndk,
   required String rawContent,
-  required String recipientPubkey,
+  required List<String> involvedPubkeys,
   required BlossomCache blossomCache,
   String? blossomHash,
   String? decryptionKey,
@@ -107,35 +106,19 @@ Future<String> _parseMime({
       );
     }
 
-    // Source-of-truth blob is pinned: if it ever gets evicted we lose the
-    // ability to reconstruct attachments without going back to the relays.
-    Uint8List? encryptedBytes = await blossomCache.get(blossomHash);
+    final serverUrls = await resolveBlobServers(
+      ndk: ndk,
+      pubkeys: involvedPubkeys,
+      defaultBlossomServers: defaultBlossomServers,
+    );
 
-    if (encryptedBytes == null) {
-      // Get recipient's Blossom servers (BUD-03) or use default
-      final blossomServers = await ndk.blossomUserServerList.getUserServerList(
-        pubkeys: [recipientPubkey],
-      );
+    final encryptedBytes = await fetchOrLoadEncryptedBlob(
+      blossomHash: blossomHash,
+      serverUrls: serverUrls,
+      cache: blossomCache,
+      ndk: ndk,
+    );
 
-      // Download from recipient's servers or default
-      final downloadResult = await ndk.blossom.getBlob(
-        sha256: blossomHash,
-        serverUrls:
-            blossomServers ??
-            defaultBlossomServers ??
-            recommendedBlossomServers,
-      );
-      encryptedBytes = downloadResult.data;
-
-      await blossomCache.put(
-        encryptedBytes,
-        sha256: blossomHash,
-        type: 'application/octet-stream',
-        pinned: true,
-      );
-    }
-
-    // Decrypt with AES-GCM
     final decryptedBytes = await decryptBlob(
       encryptedBytes: encryptedBytes,
       key: decryptionKey,

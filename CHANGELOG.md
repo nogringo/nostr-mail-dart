@@ -1,3 +1,14 @@
+## 2.0.0
+
+- **Breaking**: Attachments no longer live in Sembast. Each attachment is extracted at sync time and stored in `BlossomCache` keyed by its content sha256 (unpinned, LRU-evictable). The original encrypted Blossom blob remains pinned as the source of truth, so any evicted attachment can be regenerated locally without going back to the relays.
+- **Breaking**: `Email` no longer exposes `rawContent`. It now carries `lightMimeText` (the RFC 2822 envelope with attachment bodies emptied) and `attachmentRefs` (`{ filename, contentType, size, sha256, contentId }`). The `email.mime` getter still returns a parsed `MimeMessage`, but its attachment parts have empty bodies.
+- **Breaking**: `EmailRecord` mirrors the same shape change. Existing rows are wiped on upgrade via the `kSchemaVersion` bump (full resync from relays + Blossom servers).
+- **Breaking**: `EmailParser.parseMime` is removed. Construct `Email` directly, or use `MimeMessage.parseFromText` if all you need is a parsed MIME.
+- **Breaking**: `parseEmailEvent` and `SyncEngine` now require a non-null `BlossomCache`.
+- **New**: `NostrMailClient.getAttachmentBytes(email, ref)` - lazy load attachment bytes. Cache hit is instant; cache miss decrypts the source-of-truth blob and re-extracts every attachment, then serves the requested one.
+- **New**: `NostrMailClient.getRawMimeText(email)` and `getRawMime(email)` - reconstruct the original byte-exact RFC 2822 MIME on demand (for `.eml` export, reply with full quote, etc.).
+- **Fix**: Opening a folder containing emails with large attachments no longer triggers a multi-second MIME parse on every list load (previous behaviour pulled the full base64 attachment off disk for every row, just to display the list).
+
 ## 1.16.0
 
 - **New**: Durable outbound queues - `OfflineBroadcast` for Nostr events and `OfflineBlossomUpload` for blob uploads. Both are exposed on `NostrMailClient` (`broadcastQueue`, `blossomUploadQueue`).

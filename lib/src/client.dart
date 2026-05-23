@@ -8,6 +8,9 @@ import 'package:ndk/ndk.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:sembast/sembast.dart';
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'client/email_sender.dart';
 import 'client/event_bus.dart';
 import 'client/label_manager.dart';
@@ -17,6 +20,7 @@ import 'client/watch_manager.dart';
 import 'client/relay_resolver.dart';
 import 'constants.dart';
 import 'exceptions.dart';
+import 'models/attachment_ref.dart';
 import 'models/email.dart';
 import 'models/mail_event.dart';
 import 'models/private_settings.dart';
@@ -27,6 +31,9 @@ import 'storage/label_repository.dart';
 import 'storage/schema_migrator.dart';
 import 'storage/settings_repository.dart';
 import 'storage/models/email_query.dart';
+import 'utils/attachment_extractor.dart';
+import 'utils/blob_fetcher.dart';
+import 'utils/decrypt_blob.dart';
 
 /// Main entry-point for the nostr_mail SDK.
 ///
@@ -65,6 +72,10 @@ class NostrMailClient {
   final bool _ownsBlossomUploadQueue;
 
   final RelayResolver _relayResolver;
+
+  final BlossomCache _blossomCache;
+
+  final List<String>? _defaultBlossomServers;
 
   final Map<String, String>? nip05Overrides;
 
@@ -163,6 +174,8 @@ class NostrMailClient {
       labelRepo: labelRepo,
       giftWrapRepo: giftWrapRepo,
       settingsRepo: settingsRepo,
+      blossomCache: blossomCache,
+      defaultBlossomServers: defaultBlossomServers,
       sender: EmailSender(
         ndk,
         settingsManager,
@@ -193,6 +206,7 @@ class NostrMailClient {
     required LabelRepository labelRepo,
     required GiftWrapRepository giftWrapRepo,
     required SettingsRepository settingsRepo,
+    required BlossomCache blossomCache,
     required EmailSender sender,
     required LabelManager labels,
     required SettingsManager settings,
@@ -203,12 +217,15 @@ class NostrMailClient {
     required this.blossomUploadQueue,
     required bool ownsBlossomUploadQueue,
     required RelayResolver relayResolver,
+    List<String>? defaultBlossomServers,
     this.nip05Overrides,
   }) : _ndk = ndk,
        _emailRepo = emailRepo,
        _labelRepo = labelRepo,
        _giftWrapRepo = giftWrapRepo,
        _settingsRepo = settingsRepo,
+       _blossomCache = blossomCache,
+       _defaultBlossomServers = defaultBlossomServers,
        _sender = sender,
        _labels = labels,
        _settings = settings,
@@ -402,6 +419,84 @@ class NostrMailClient {
     final record = await _giftWrapRepo.getByRumorId(emailId);
     if (record == null || record['rumor'] == null) return null;
     return Nip01EventModel.fromJson(record['rumor'] as Map);
+  }
+
+  // ── Attachments and raw MIME ────────────────────────────────────────────
+
+  /// Load the decoded bytes for one of [email]'s attachments.
+  ///
+  /// Fast path: the bytes live in [BlossomCache] under [AttachmentRef.sha256],
+  /// where attachment extraction stored them at sync time.
+  ///
+  /// Slow path (cache miss, e.g. after LRU eviction): the original full MIME
+  /// is reconstructed (decrypted from the source-of-truth Blossom blob, or
+  /// read from the local rumor for inline emails) and every attachment is
+  /// re-extracted into the cache. The requested bytes are then served from
+  /// the cache.
+  ///
+  /// Returns `null` if the bytes cannot be recovered, e.g. the source-of-
+  /// truth blob has been evicted *and* never re-downloaded.
+  Future<Uint8List?> getAttachmentBytes(Email email, AttachmentRef ref) async {
+    final cached = await _blossomCache.get(ref.sha256);
+    if (cached != null) return cached;
+
+    final fullMime = await _reconstructFullMimeText(email);
+    if (fullMime == null) return null;
+
+    final mime = MimeMessage.parseFromText(fullMime);
+    await extractAttachments(mime: mime, cache: _blossomCache);
+
+    return _blossomCache.get(ref.sha256);
+  }
+
+  /// Reconstruct [email]'s original RFC 2822 MIME string with every
+  /// attachment body restored.
+  ///
+  /// Used for `.eml` export, replies that include the full quoted message,
+  /// or any consumer flow that needs byte-exact original content. Returns
+  /// `null` if the source data is unavailable locally (Blossom blob evicted
+  /// without re-download, or inline rumor missing from `gift_wraps`).
+  Future<String?> getRawMimeText(Email email) =>
+      _reconstructFullMimeText(email);
+
+  /// Convenience over [getRawMimeText] that returns the parsed MIME message.
+  Future<MimeMessage?> getRawMime(Email email) async {
+    final text = await _reconstructFullMimeText(email);
+    if (text == null) return null;
+    return MimeMessage.parseFromText(text);
+  }
+
+  Future<String?> _reconstructFullMimeText(Email email) async {
+    final hash = email.blossomHash;
+    if (hash != null) {
+      final key = email.decryptionKey;
+      final nonce = email.decryptionNonce;
+      if (key == null || nonce == null) return null;
+      final serverUrls = await resolveBlobServers(
+        ndk: _ndk,
+        pubkeys: [email.senderPubkey, email.recipientPubkey],
+        defaultBlossomServers: _defaultBlossomServers,
+      );
+      final encrypted = await fetchOrLoadEncryptedBlob(
+        blossomHash: hash,
+        serverUrls: serverUrls,
+        cache: _blossomCache,
+        ndk: _ndk,
+      );
+      final decrypted = await decryptBlob(
+        encryptedBytes: encrypted,
+        key: key,
+        nonce: nonce,
+      );
+      return utf8.decode(decrypted);
+    }
+
+    // Inline email: the original MIME lives in the rumor's `content`.
+    final record = await _giftWrapRepo.getByRumorId(email.id);
+    if (record == null || record['rumor'] == null) return null;
+    final rumor = Nip01EventModel.fromJson(record['rumor'] as Map);
+    final content = rumor.content;
+    return content.isEmpty ? null : content;
   }
 
   // ── Deletion ────────────────────────────────────────────────────────────
