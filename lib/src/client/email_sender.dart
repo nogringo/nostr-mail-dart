@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:blossom_cache/blossom_cache.dart';
 import 'package:blossom_upload_queue_shim_for_ndk/blossom_upload_queue_shim_for_ndk.dart';
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
-import 'package:crypto/crypto.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
 
@@ -14,6 +13,7 @@ import '../exceptions.dart';
 import '../models/email.dart';
 import '../services/email_parser.dart';
 import '../storage/email_repository.dart';
+import '../utils/attachment_extractor.dart';
 import '../utils/email_record_builder.dart';
 import '../utils/encrypt_blob.dart';
 import '../utils/mime_message_cleaner.dart';
@@ -193,14 +193,13 @@ class EmailSender {
         allBlossomServers.addAll(_defaultBlossomServers);
       }
 
-      final sha256Hash = sha256.convert(encryptedBlob.bytes).toString();
       // The queue reads bytes from the cache when it actually uploads, so
       // the blob has to be there before we enqueue.
-      await _blossomCache.put(
-        sha256Hash,
+      final descriptor = await _blossomCache.put(
         encryptedBlob.bytes,
         type: 'application/octet-stream',
       );
+      final sha256Hash = descriptor.sha256;
       await _blossomUploadQueue.upload(
         sha256: sha256Hash,
         servers: allBlossomServers.toSet().toList(),
@@ -371,11 +370,19 @@ class EmailSender {
     required bool isPublic,
   }) async {
     final mimeMessage = MimeMessage.parseFromText(mimeContent);
+    final extracted = await extractAttachments(
+      mime: mimeMessage,
+      cache: _blossomCache,
+    );
     final email = Email(
       id: rumor.id,
       senderPubkey: senderPubkey,
       recipientPubkey: senderPubkey,
-      rawContent: mimeContent,
+      lightMimeText: extracted.lightMimeText,
+      attachmentRefs: extracted.refs,
+      blossomHash: rumor.getFirstTag('x'),
+      decryptionKey: rumor.getFirstTag('decryption-key'),
+      decryptionNonce: rumor.getFirstTag('decryption-nonce'),
       createdAt: DateTime.fromMillisecondsSinceEpoch(rumor.createdAt * 1000),
       isPublic: isPublic,
       mimeMessage: mimeMessage,

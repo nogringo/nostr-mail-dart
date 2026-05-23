@@ -7,7 +7,7 @@ import 'package:sembast/sembast.dart';
 /// that cannot be read by the previous code path. On startup, if the on-disk
 /// version differs, every computed store is wiped and the client re-syncs
 /// from the relays and Blossom servers.
-const int kSchemaVersion = 1;
+const int kSchemaVersion = 2;
 
 /// Stores that hold data derived from the network. Wiped on schema bumps.
 /// Exposed for tests; not part of the supported public surface.

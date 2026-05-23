@@ -2,33 +2,64 @@ import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
 
 import '../utils/html_utils.dart';
+import 'attachment_ref.dart';
 
+/// A parsed email.
+///
+/// Attachment payloads are not held here; their bytes live in the local
+/// blob cache. This object only carries [attachmentRefs] (filename, size,
+/// sha256) and a light MIME envelope whose attachment parts have empty
+/// bodies, so constructing and using an [Email] never decodes megabytes.
+///
+/// To load attachment bytes on demand, use
+/// `NostrMailClient.getAttachmentBytes(email, ref)`.
 class Email {
   final String id;
   final String senderPubkey;
   final String recipientPubkey;
-  final String rawContent;
   final bool isPublic;
   final DateTime createdAt;
 
+  /// MIME with attachment bodies emptied. Parsable by
+  /// `MimeMessage.parseFromText`; typically a few KB.
+  final String lightMimeText;
+
+  /// One ref per attachment, in original MIME tree order.
+  final List<AttachmentRef> attachmentRefs;
+
+  /// sha256 of the encrypted Blossom blob (the source-of-truth full MIME).
+  /// `null` for inline emails (their full MIME is the rumor's `content`).
+  final String? blossomHash;
+
+  /// AES-GCM key for the blob. `null` for inline emails.
+  final String? decryptionKey;
+
+  /// AES-GCM nonce for the blob. `null` for inline emails.
+  final String? decryptionNonce;
+
   late final MimeMessage _mimeMessage;
 
-  /// Access the underlying [MimeMessage] for rich email data.
+  /// The parsed MIME message. Attachment parts are present in the tree
+  /// (with intact headers including filename, content-type, content-id)
+  /// but their bodies are empty. To get the bytes of an attachment, use
+  /// the matching [AttachmentRef] from [attachmentRefs] and call
+  /// `client.getAttachmentBytes(email, ref)`.
   MimeMessage get mime => _mimeMessage;
-
-  /// Get the raw RFC 2822 MIME string.
-  String get rawMime => rawContent;
 
   Email({
     required this.id,
     required this.senderPubkey,
     required this.recipientPubkey,
-    required this.rawContent,
+    required this.lightMimeText,
+    required this.attachmentRefs,
     required this.createdAt,
+    this.blossomHash,
+    this.decryptionKey,
+    this.decryptionNonce,
     this.isPublic = false,
     MimeMessage? mimeMessage,
   }) {
-    _mimeMessage = mimeMessage ?? MimeMessage.parseFromText(rawContent);
+    _mimeMessage = mimeMessage ?? MimeMessage.parseFromText(lightMimeText);
   }
 
   /// Get the email subject.
@@ -121,7 +152,11 @@ class Email {
       'createdAt': createdAt.toIso8601String(),
       'senderPubkey': senderPubkey,
       'recipientPubkey': recipientPubkey,
-      'rawContent': rawContent,
+      'lightMimeText': lightMimeText,
+      'attachmentRefs': attachmentRefs.map((r) => r.toJson()).toList(),
+      if (blossomHash != null) 'blossomHash': blossomHash,
+      if (decryptionKey != null) 'decryptionKey': decryptionKey,
+      if (decryptionNonce != null) 'decryptionNonce': decryptionNonce,
       'isPublic': isPublic,
     };
   }
@@ -130,7 +165,15 @@ class Email {
     id: json['id'] as String,
     senderPubkey: json['senderPubkey'] as String,
     recipientPubkey: json['recipientPubkey'] as String? ?? '',
-    rawContent: json['rawContent'] as String,
+    lightMimeText: json['lightMimeText'] as String,
+    attachmentRefs:
+        (json['attachmentRefs'] as List<dynamic>?)
+            ?.map((e) => AttachmentRef.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    blossomHash: json['blossomHash'] as String?,
+    decryptionKey: json['decryptionKey'] as String?,
+    decryptionNonce: json['decryptionNonce'] as String?,
     createdAt: DateTime.parse(
       json['createdAt'] as String? ?? json['date'] as String,
     ),

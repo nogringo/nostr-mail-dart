@@ -1,11 +1,8 @@
 import 'package:enough_mail_plus/enough_mail.dart';
 
-import '../exceptions.dart';
-import '../models/email.dart';
-
-/// Email parser for building and parsing RFC 2822 MIME messages.
+/// Email parser for building RFC 2822 MIME messages.
 ///
-/// For parsing Nostr events (kind 1301), use [parseEmailEvent] instead.
+/// For parsing Nostr events (kind 1301), use `parseEmailEvent` instead.
 class EmailParser {
   /// Build a RFC 2822 MIME email from fields.
   ///
@@ -32,29 +29,5 @@ class EmailParser {
 
     final message = builder.buildMimeMessage();
     return message.renderMessage();
-  }
-
-  /// Parse a MIME string into an [Email] object.
-  ///
-  /// Use this for parsing inline MIME content.
-  /// For parsing Nostr events (kind 1301), use [parseEmailEvent].
-  Future<Email> parseMime({
-    required String rawContent,
-    required String eventId,
-    required String senderPubkey,
-    required String recipientPubkey,
-    required DateTime createdAt,
-  }) async {
-    try {
-      return Email(
-        id: eventId,
-        senderPubkey: senderPubkey,
-        recipientPubkey: recipientPubkey,
-        rawContent: rawContent,
-        createdAt: createdAt,
-      );
-    } catch (e) {
-      throw EmailParseException(e.toString());
-    }
   }
 }

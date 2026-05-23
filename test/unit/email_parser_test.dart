@@ -2,6 +2,21 @@ import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
+Email _email({
+  required String rawContent,
+  String eventId = 'id',
+  String senderPubkey = 'pk',
+  String recipientPubkey = 'rpk',
+  DateTime? createdAt,
+}) => Email(
+  id: eventId,
+  senderPubkey: senderPubkey,
+  recipientPubkey: recipientPubkey,
+  lightMimeText: rawContent,
+  attachmentRefs: const [],
+  createdAt: createdAt ?? DateTime.now(),
+);
+
 void main() {
   group('EmailParser', () {
     late EmailParser parser;
@@ -10,7 +25,7 @@ void main() {
       parser = EmailParser();
     });
 
-    group('build/parse roundtrip', () {
+    group('build / Email construction roundtrip', () {
       test('build creates valid RFC 2822 email', () {
         final rawContent = parser.build(
           from: MailAddress(null, 'sender@nostr.com'),
@@ -25,7 +40,7 @@ void main() {
         expect(rawContent, contains('Hello, this is a test email.'));
       });
 
-      test('parse extracts email fields from RFC 2822', () async {
+      test('Email parses RFC 2822 fields out of lightMimeText', () {
         final createdAt = DateTime.utc(2024, 1, 15, 10, 30);
         final rawContent = parser.build(
           from: MailAddress(null, 'alice@nostr.com'),
@@ -34,7 +49,7 @@ void main() {
           body: 'This is the message body.',
         );
 
-        final email = await parser.parseMime(
+        final email = _email(
           rawContent: rawContent,
           eventId: 'event-123',
           senderPubkey: 'sender-pubkey-abc',
@@ -49,11 +64,11 @@ void main() {
         expect(email.body, contains('This is the message body.'));
         expect(email.senderPubkey, 'sender-pubkey-abc');
         expect(email.recipientPubkey, 'recipient-pubkey-xyz');
-        expect(email.rawContent, rawContent);
+        expect(email.lightMimeText, rawContent);
         expect(email.createdAt, createdAt);
       });
 
-      test('parse handles special characters in subject', () async {
+      test('Email handles special characters in subject', () {
         final rawContent = parser.build(
           from: MailAddress(null, 'test@test.com'),
           to: [MailAddress(null, 'dest@dest.com')],
@@ -61,25 +76,13 @@ void main() {
           body: 'Body text',
         );
 
-        final email = await parser.parseMime(
-          rawContent: rawContent,
-          eventId: 'id',
-          senderPubkey: 'pk',
-          recipientPubkey: 'rpk',
-          createdAt: DateTime.now(),
-        );
+        final email = _email(rawContent: rawContent);
 
         expect(email.mime.decodeSubject(), contains('Special'));
       });
 
-      test('parse handles minimal/empty content gracefully', () async {
-        final email = await parser.parseMime(
-          rawContent: 'not a valid email',
-          eventId: 'id',
-          senderPubkey: 'pk',
-          recipientPubkey: 'rpk',
-          createdAt: DateTime.now(),
-        );
+      test('Email handles minimal/empty content gracefully', () {
+        final email = _email(rawContent: 'not a valid email');
 
         expect(email.id, 'id');
         expect(email.senderPubkey, 'pk');
@@ -87,12 +90,11 @@ void main() {
         expect(email.mime.fromEmail, isNull);
       });
 
-      test('roundtrip build and parse preserves data', () async {
+      test('roundtrip build and parse preserves data', () {
         final from = MailAddress(null, 'roundtrip@sender.com');
         final to = [MailAddress(null, 'roundtrip@recipient.com')];
         const subject = 'Roundtrip Subject';
         const body = 'Roundtrip body content.';
-        final createdAt = DateTime.now();
 
         final rawContent = parser.build(
           from: from,
@@ -101,12 +103,11 @@ void main() {
           body: body,
         );
 
-        final email = await parser.parseMime(
+        final email = _email(
           rawContent: rawContent,
           eventId: 'rt-id',
           senderPubkey: 'rt-pk',
           recipientPubkey: 'rt-rpk',
-          createdAt: createdAt,
         );
 
         expect(email.mime.fromEmail, from.email);

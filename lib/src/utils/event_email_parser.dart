@@ -1,13 +1,13 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:blossom_cache/blossom_cache.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
 
-import '../constants.dart';
 import '../exceptions.dart';
 import '../models/email.dart';
+import 'attachment_extractor.dart';
+import 'blob_fetcher.dart';
 import 'decrypt_blob.dart';
 
 /// Parse a NIP-01 event (kind 1301) into a local [Email] object.
@@ -42,9 +42,9 @@ Future<Email> parseEmailEvent({
   required Nip01Event event,
   required Ndk ndk,
   required String recipientPubkey,
+  required BlossomCache blossomCache,
   bool isPublic = false,
   List<String>? defaultBlossomServers,
-  BlossomCache? blossomCache,
 }) async {
   // Extract Blossom tags (NIP-17 style)
   final blossomHash = event.getFirstTag('x');
@@ -58,19 +58,28 @@ Future<Email> parseEmailEvent({
     blossomHash: blossomHash,
     decryptionKey: decryptionKey,
     decryptionNonce: decryptionNonce,
-    recipientPubkey: recipientPubkey,
+    involvedPubkeys: [event.pubKey, recipientPubkey],
     defaultBlossomServers: defaultBlossomServers,
     blossomCache: blossomCache,
   );
 
-  // Parse RFC 2822 MIME
+  // Parse RFC 2822 MIME, extract attachments into the blob cache, and keep
+  // a light envelope (headers + bodies) for fast querying.
   final mimeMessage = MimeMessage.parseFromText(mimeString);
+  final extracted = await extractAttachments(
+    mime: mimeMessage,
+    cache: blossomCache,
+  );
 
   return Email(
     id: event.id,
     senderPubkey: event.pubKey,
     recipientPubkey: recipientPubkey,
-    rawContent: mimeString,
+    lightMimeText: extracted.lightMimeText,
+    attachmentRefs: extracted.refs,
+    blossomHash: blossomHash,
+    decryptionKey: decryptionKey,
+    decryptionNonce: decryptionNonce,
     createdAt: DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000),
     isPublic: isPublic,
     mimeMessage: mimeMessage,
@@ -83,12 +92,12 @@ Future<Email> parseEmailEvent({
 Future<String> _parseMime({
   required Ndk ndk,
   required String rawContent,
-  required String recipientPubkey,
+  required List<String> involvedPubkeys,
+  required BlossomCache blossomCache,
   String? blossomHash,
   String? decryptionKey,
   String? decryptionNonce,
   List<String>? defaultBlossomServers,
-  BlossomCache? blossomCache,
 }) async {
   if (rawContent.isEmpty && blossomHash != null) {
     if (decryptionKey == null || decryptionNonce == null) {
@@ -97,32 +106,19 @@ Future<String> _parseMime({
       );
     }
 
-    Uint8List? encryptedBytes = await blossomCache?.get(blossomHash);
+    final serverUrls = await resolveBlobServers(
+      ndk: ndk,
+      pubkeys: involvedPubkeys,
+      defaultBlossomServers: defaultBlossomServers,
+    );
 
-    if (encryptedBytes == null) {
-      // Get recipient's Blossom servers (BUD-03) or use default
-      final blossomServers = await ndk.blossomUserServerList.getUserServerList(
-        pubkeys: [recipientPubkey],
-      );
+    final encryptedBytes = await fetchOrLoadEncryptedBlob(
+      blossomHash: blossomHash,
+      serverUrls: serverUrls,
+      cache: blossomCache,
+      ndk: ndk,
+    );
 
-      // Download from recipient's servers or default
-      final downloadResult = await ndk.blossom.getBlob(
-        sha256: blossomHash,
-        serverUrls:
-            blossomServers ??
-            defaultBlossomServers ??
-            recommendedBlossomServers,
-      );
-      encryptedBytes = downloadResult.data;
-
-      await blossomCache?.put(
-        blossomHash,
-        encryptedBytes,
-        type: 'application/octet-stream',
-      );
-    }
-
-    // Decrypt with AES-GCM
     final decryptedBytes = await decryptBlob(
       encryptedBytes: encryptedBytes,
       key: decryptionKey,

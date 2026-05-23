@@ -7,6 +7,7 @@ library;
 
 export 'src/client.dart' show NostrMailClient;
 export 'src/constants.dart';
+export 'src/models/attachment_ref.dart';
 export 'src/models/email.dart' show Email;
 export 'src/models/encrypted_blob.dart';
 export 'src/models/mail_event.dart';

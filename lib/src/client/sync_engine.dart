@@ -27,7 +27,7 @@ class SyncEngine {
   final EventBus _bus;
   final RelayResolver _relays;
   final List<String> _defaultBlossomServers;
-  final BlossomCache? _blossomCache;
+  final BlossomCache _blossomCache;
 
   SyncEngine(
     this._ndk,
@@ -36,8 +36,8 @@ class SyncEngine {
     this._giftWraps,
     this._bus,
     this._relays, {
+    required BlossomCache blossomCache,
     List<String>? defaultBlossomServers,
-    BlossomCache? blossomCache,
   }) : _defaultBlossomServers =
            defaultBlossomServers ?? recommendedBlossomServers,
        _blossomCache = blossomCache;
