@@ -24,7 +24,7 @@ environment:
   sdk: ^3.10.8
 
 dependencies:
-  ndk: ^0.8.4-dev.0
+  ndk: ^0.8.4-dev.1
   enough_mail_plus: ^2.2.4
   sembast: ^3.8.6
   http: ^1.6.0
