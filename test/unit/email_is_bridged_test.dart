@@ -4,6 +4,20 @@ import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
+Email _email({
+  required String rawContent,
+  required String eventId,
+  required String senderPubkey,
+  required String recipientPubkey,
+}) => Email(
+  id: eventId,
+  senderPubkey: senderPubkey,
+  recipientPubkey: recipientPubkey,
+  lightMimeText: rawContent,
+  attachmentRefs: const [],
+  createdAt: DateTime.now(),
+);
+
 void main() {
   group('Email.isBridged', () {
     final parser = EmailParser();
@@ -21,12 +35,11 @@ void main() {
           body: 'Test body',
         );
 
-        final email = await parser.parseMime(
+        final email = _email(
           rawContent: rawContent,
           eventId: 'test-1',
           senderPubkey: pubkey,
           recipientPubkey: 'recipient-pubkey',
-          createdAt: DateTime.now(),
         );
 
         expect(email.isBridged, isFalse);
@@ -43,12 +56,11 @@ void main() {
           body: 'Test body',
         );
 
-        final email = await parser.parseMime(
+        final email = _email(
           rawContent: rawContent,
           eventId: 'test-2',
           senderPubkey: pubkey,
           recipientPubkey: 'recipient-pubkey',
-          createdAt: DateTime.now(),
         );
 
         expect(email.isBridged, isFalse);
@@ -66,12 +78,11 @@ void main() {
           body: 'Test body',
         );
 
-        final email = await parser.parseMime(
+        final email = _email(
           rawContent: rawContent,
           eventId: 'test-3',
           senderPubkey: pubkey,
           recipientPubkey: 'recipient-pubkey',
-          createdAt: DateTime.now(),
         );
 
         expect(email.isBridged, isFalse);
@@ -91,12 +102,11 @@ void main() {
           body: 'Test body',
         );
 
-        final email = await parser.parseMime(
+        final email = _email(
           rawContent: rawContent,
           eventId: 'test-4',
           senderPubkey: pubkey,
           recipientPubkey: 'recipient-pubkey',
-          createdAt: DateTime.now(),
         );
 
         expect(email.isBridged, isFalse);
@@ -119,12 +129,11 @@ void main() {
 
         final rawContent = builder.buildMimeMessage().renderMessage();
 
-        final email = await parser.parseMime(
+        final email = _email(
           rawContent: rawContent,
           eventId: 'test-5',
           senderPubkey: senderPubkey,
           recipientPubkey: recipientPubkey,
-          createdAt: DateTime.now(),
         );
 
         expect(email.isBridged, isFalse);
@@ -146,12 +155,11 @@ void main() {
           body: 'Test body',
         );
 
-        final email = await parser.parseMime(
+        final email = _email(
           rawContent: rawContent,
           eventId: 'test-5',
           senderPubkey: bridgePubkey,
           recipientPubkey: 'recipient-pubkey',
-          createdAt: DateTime.now(),
         );
 
         expect(email.isBridged, isTrue);
@@ -174,12 +182,11 @@ void main() {
             body: 'Test body',
           );
 
-          final email = await parser.parseMime(
+          final email = _email(
             rawContent: rawContent,
             eventId: 'test-6',
             senderPubkey: senderPubkey,
             recipientPubkey: 'recipient-pubkey',
-            createdAt: DateTime.now(),
           );
 
           expect(email.isBridged, isTrue);
@@ -189,12 +196,11 @@ void main() {
 
     group('edge cases', () {
       test('returns true when sender address is null', () async {
-        final email = await parser.parseMime(
+        final email = _email(
           rawContent: 'not a valid email',
           eventId: 'test-7',
           senderPubkey: 'some-pubkey',
           recipientPubkey: 'recipient-pubkey',
-          createdAt: DateTime.now(),
         );
 
         expect(email.isBridged, isTrue);
@@ -208,12 +214,11 @@ void main() {
           body: 'Test body',
         );
 
-        final email = await parser.parseMime(
+        final email = _email(
           rawContent: rawContent,
           eventId: 'test-8',
           senderPubkey: 'some-pubkey',
           recipientPubkey: 'recipient-pubkey',
-          createdAt: DateTime.now(),
         );
 
         expect(email.isBridged, isTrue);
@@ -227,12 +232,11 @@ void main() {
           body: 'Test body',
         );
 
-        final email = await parser.parseMime(
+        final email = _email(
           rawContent: rawContent,
           eventId: 'test-9',
           senderPubkey: 'some-pubkey',
           recipientPubkey: 'recipient-pubkey',
-          createdAt: DateTime.now(),
         );
 
         expect(email.isBridged, isTrue);
@@ -246,12 +250,11 @@ void main() {
           body: 'Test body',
         );
 
-        final email = await parser.parseMime(
+        final email = _email(
           rawContent: rawContent,
           eventId: 'test-10',
           senderPubkey: 'some-pubkey',
           recipientPubkey: 'recipient-pubkey',
-          createdAt: DateTime.now(),
         );
 
         expect(email.isBridged, isTrue);
@@ -265,12 +268,11 @@ void main() {
           body: 'Test body',
         );
 
-        final email = await parser.parseMime(
+        final email = _email(
           rawContent: rawContent,
           eventId: 'test-11',
           senderPubkey: 'some-pubkey',
           recipientPubkey: 'recipient-pubkey',
-          createdAt: DateTime.now(),
         );
 
         expect(email.isBridged, isTrue);

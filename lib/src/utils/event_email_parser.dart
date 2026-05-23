@@ -8,6 +8,7 @@ import 'package:ndk/ndk.dart';
 import '../constants.dart';
 import '../exceptions.dart';
 import '../models/email.dart';
+import 'attachment_extractor.dart';
 import 'decrypt_blob.dart';
 
 /// Parse a NIP-01 event (kind 1301) into a local [Email] object.
@@ -42,9 +43,9 @@ Future<Email> parseEmailEvent({
   required Nip01Event event,
   required Ndk ndk,
   required String recipientPubkey,
+  required BlossomCache blossomCache,
   bool isPublic = false,
   List<String>? defaultBlossomServers,
-  BlossomCache? blossomCache,
 }) async {
   // Extract Blossom tags (NIP-17 style)
   final blossomHash = event.getFirstTag('x');
@@ -63,14 +64,23 @@ Future<Email> parseEmailEvent({
     blossomCache: blossomCache,
   );
 
-  // Parse RFC 2822 MIME
+  // Parse RFC 2822 MIME, extract attachments into the blob cache, and keep
+  // a light envelope (headers + bodies) for fast querying.
   final mimeMessage = MimeMessage.parseFromText(mimeString);
+  final extracted = await extractAttachments(
+    mime: mimeMessage,
+    cache: blossomCache,
+  );
 
   return Email(
     id: event.id,
     senderPubkey: event.pubKey,
     recipientPubkey: recipientPubkey,
-    rawContent: mimeString,
+    lightMimeText: extracted.lightMimeText,
+    attachmentRefs: extracted.refs,
+    blossomHash: blossomHash,
+    decryptionKey: decryptionKey,
+    decryptionNonce: decryptionNonce,
     createdAt: DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000),
     isPublic: isPublic,
     mimeMessage: mimeMessage,
@@ -84,11 +94,11 @@ Future<String> _parseMime({
   required Ndk ndk,
   required String rawContent,
   required String recipientPubkey,
+  required BlossomCache blossomCache,
   String? blossomHash,
   String? decryptionKey,
   String? decryptionNonce,
   List<String>? defaultBlossomServers,
-  BlossomCache? blossomCache,
 }) async {
   if (rawContent.isEmpty && blossomHash != null) {
     if (decryptionKey == null || decryptionNonce == null) {
@@ -97,7 +107,9 @@ Future<String> _parseMime({
       );
     }
 
-    Uint8List? encryptedBytes = await blossomCache?.get(blossomHash);
+    // Source-of-truth blob is pinned: if it ever gets evicted we lose the
+    // ability to reconstruct attachments without going back to the relays.
+    Uint8List? encryptedBytes = await blossomCache.get(blossomHash);
 
     if (encryptedBytes == null) {
       // Get recipient's Blossom servers (BUD-03) or use default
@@ -115,10 +127,11 @@ Future<String> _parseMime({
       );
       encryptedBytes = downloadResult.data;
 
-      await blossomCache?.put(
+      await blossomCache.put(
         encryptedBytes,
         sha256: blossomHash,
         type: 'application/octet-stream',
+        pinned: true,
       );
     }
 

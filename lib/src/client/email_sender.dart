@@ -13,6 +13,7 @@ import '../exceptions.dart';
 import '../models/email.dart';
 import '../services/email_parser.dart';
 import '../storage/email_repository.dart';
+import '../utils/attachment_extractor.dart';
 import '../utils/email_record_builder.dart';
 import '../utils/encrypt_blob.dart';
 import '../utils/mime_message_cleaner.dart';
@@ -369,11 +370,19 @@ class EmailSender {
     required bool isPublic,
   }) async {
     final mimeMessage = MimeMessage.parseFromText(mimeContent);
+    final extracted = await extractAttachments(
+      mime: mimeMessage,
+      cache: _blossomCache,
+    );
     final email = Email(
       id: rumor.id,
       senderPubkey: senderPubkey,
       recipientPubkey: senderPubkey,
-      rawContent: mimeContent,
+      lightMimeText: extracted.lightMimeText,
+      attachmentRefs: extracted.refs,
+      blossomHash: rumor.getFirstTag('x'),
+      decryptionKey: rumor.getFirstTag('decryption-key'),
+      decryptionNonce: rumor.getFirstTag('decryption-nonce'),
       createdAt: DateTime.fromMillisecondsSinceEpoch(rumor.createdAt * 1000),
       isPublic: isPublic,
       mimeMessage: mimeMessage,

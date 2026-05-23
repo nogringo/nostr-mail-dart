@@ -1,6 +1,5 @@
 import '../models/email.dart';
 import '../storage/models/email_record.dart';
-import 'attachment_counter.dart';
 
 /// Build a denormalized [EmailRecord] from a public [Email] model.
 ///
@@ -12,7 +11,6 @@ EmailRecord buildEmailRecord({
   bool isRead = false,
   bool isStarred = false,
 }) {
-  final attachmentCount = countAttachments(email.mime);
   final from = email.sender?.email ?? email.mime.fromEmail ?? '';
   final subject = email.subject ?? '';
   final bodyPlain = email.textBody ?? email.body;
@@ -23,7 +21,6 @@ EmailRecord buildEmailRecord({
     email,
     folder: folder,
     searchText: searchText,
-    attachmentCount: attachmentCount,
     labels: labels,
     isRead: isRead,
     isStarred: isStarred,

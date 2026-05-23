@@ -1,15 +1,39 @@
+import '../../models/attachment_ref.dart';
 import '../../models/email.dart';
 
 /// Internal denormalized record for fast local queries.
 ///
 /// This is the shape stored in Sembast. It contains every field needed for
 /// filtering, sorting and searching without joins.
+///
+/// Heavy attachment payloads live in [BlossomCache], not here. This record
+/// only carries [attachmentRefs] (filename, size, sha256) and a light MIME
+/// envelope whose attachment parts have empty bodies, so list queries never
+/// pull megabytes off disk.
 class EmailRecord {
   final String id;
   final String senderPubkey;
   final String recipientPubkey;
-  final String rawContent;
   final bool isPublic;
+
+  /// MIME with attachment bodies emptied. Parsable by
+  /// `MimeMessage.parseFromText`. Typically a few KB even for emails that
+  /// originally carried large attachments.
+  final String lightMimeText;
+
+  /// One ref per attachment that was extracted, in original MIME tree order.
+  final List<AttachmentRef> attachmentRefs;
+
+  // ── Blossom routing (only for emails stored as encrypted Blossom blobs) ──
+
+  /// sha256 of the encrypted Blossom blob. `null` for inline emails.
+  final String? blossomHash;
+
+  /// AES-GCM key used to encrypt the blob. `null` for inline emails.
+  final String? decryptionKey;
+
+  /// AES-GCM nonce used to encrypt the blob. `null` for inline emails.
+  final String? decryptionNonce;
 
   /// Nostr event createdAt (epoch seconds).
   final int createdAt;
@@ -31,7 +55,9 @@ class EmailRecord {
   /// Lower-case concatenation of from + subject + body for text search.
   final String searchText;
 
-  /// Number of attachments extracted from MIME parts.
+  /// Number of attachments. Always equals `attachmentRefs.length`, kept as a
+  /// denormalized column so `hasAttachments` queries don't need to decode
+  /// the refs list.
   final int attachmentCount;
 
   // ── Denormalized labels (source of truth for fast queries) ──────────────
@@ -51,7 +77,8 @@ class EmailRecord {
     required this.id,
     required this.senderPubkey,
     required this.recipientPubkey,
-    required this.rawContent,
+    required this.lightMimeText,
+    required this.attachmentRefs,
     required this.isPublic,
     required this.createdAt,
     required this.date,
@@ -65,13 +92,20 @@ class EmailRecord {
     required this.isStarred,
     required this.labels,
     required this.isBridged,
+    this.blossomHash,
+    this.decryptionKey,
+    this.decryptionNonce,
   });
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'senderPubkey': senderPubkey,
     'recipientPubkey': recipientPubkey,
-    'rawContent': rawContent,
+    'lightMimeText': lightMimeText,
+    'attachmentRefs': attachmentRefs.map((r) => r.toJson()).toList(),
+    if (blossomHash != null) 'blossomHash': blossomHash,
+    if (decryptionKey != null) 'decryptionKey': decryptionKey,
+    if (decryptionNonce != null) 'decryptionNonce': decryptionNonce,
     'isPublic': isPublic,
     'createdAt': createdAt,
     'date': date,
@@ -91,7 +125,15 @@ class EmailRecord {
     id: json['id'] as String,
     senderPubkey: json['senderPubkey'] as String,
     recipientPubkey: json['recipientPubkey'] as String,
-    rawContent: json['rawContent'] as String,
+    lightMimeText: json['lightMimeText'] as String,
+    attachmentRefs:
+        (json['attachmentRefs'] as List<dynamic>?)
+            ?.map((e) => AttachmentRef.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        const [],
+    blossomHash: json['blossomHash'] as String?,
+    decryptionKey: json['decryptionKey'] as String?,
+    decryptionNonce: json['decryptionNonce'] as String?,
     isPublic: json['isPublic'] as bool? ?? false,
     createdAt: json['createdAt'] as int,
     date: json['date'] as int,
@@ -107,14 +149,14 @@ class EmailRecord {
     isBridged: json['isBridged'] as bool? ?? false,
   );
 
-  /// Build an [EmailRecord] from a public [Email] model.
+  /// Build an [EmailRecord] from a public [Email] model that has already
+  /// gone through attachment extraction.
   ///
   /// [folder] must be provided by the caller (inbox / sent).
   factory EmailRecord.fromEmail(
     Email email, {
     required String folder,
     required String searchText,
-    required int attachmentCount,
     List<String> labels = const [],
     bool isRead = false,
     bool isStarred = false,
@@ -123,7 +165,11 @@ class EmailRecord {
       id: email.id,
       senderPubkey: email.senderPubkey,
       recipientPubkey: email.recipientPubkey,
-      rawContent: email.rawContent,
+      lightMimeText: email.lightMimeText,
+      attachmentRefs: email.attachmentRefs,
+      blossomHash: email.blossomHash,
+      decryptionKey: email.decryptionKey,
+      decryptionNonce: email.decryptionNonce,
       isPublic: email.isPublic,
       createdAt: email.createdAt.millisecondsSinceEpoch ~/ 1000,
       date: email.date.millisecondsSinceEpoch ~/ 1000,
@@ -131,7 +177,7 @@ class EmailRecord {
       subject: email.subject ?? '',
       bodyPlain: email.textBody ?? email.body,
       searchText: searchText,
-      attachmentCount: attachmentCount,
+      attachmentCount: email.attachmentRefs.length,
       folder: folder,
       isRead: isRead,
       isStarred: isStarred,
@@ -144,7 +190,11 @@ class EmailRecord {
     id: id,
     senderPubkey: senderPubkey,
     recipientPubkey: recipientPubkey,
-    rawContent: rawContent,
+    lightMimeText: lightMimeText,
+    attachmentRefs: attachmentRefs,
+    blossomHash: blossomHash,
+    decryptionKey: decryptionKey,
+    decryptionNonce: decryptionNonce,
     createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt * 1000),
     isPublic: isPublic,
   );
@@ -154,13 +204,16 @@ class EmailRecord {
     bool? isRead,
     bool? isStarred,
     List<String>? labels,
-    int? attachmentCount,
   }) {
     return EmailRecord(
       id: id,
       senderPubkey: senderPubkey,
       recipientPubkey: recipientPubkey,
-      rawContent: rawContent,
+      lightMimeText: lightMimeText,
+      attachmentRefs: attachmentRefs,
+      blossomHash: blossomHash,
+      decryptionKey: decryptionKey,
+      decryptionNonce: decryptionNonce,
       isPublic: isPublic,
       createdAt: createdAt,
       date: date,
@@ -168,7 +221,7 @@ class EmailRecord {
       subject: subject,
       bodyPlain: bodyPlain,
       searchText: searchText,
-      attachmentCount: attachmentCount ?? this.attachmentCount,
+      attachmentCount: attachmentCount,
       folder: folder ?? this.folder,
       isRead: isRead ?? this.isRead,
       isStarred: isStarred ?? this.isStarred,

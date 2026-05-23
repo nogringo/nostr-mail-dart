@@ -8,7 +8,7 @@ void main() {
 
     test('toJson serializes correctly', () {
       final date = DateTime.utc(2024, 1, 15, 10, 30);
-      final rawContent = parser.build(
+      final lightMimeText = parser.build(
         from: MailAddress(null, 'sender@example.com'),
         to: [MailAddress(null, 'recipient@example.com')],
         subject: 'Test Subject',
@@ -19,7 +19,8 @@ void main() {
         id: 'test-id',
         senderPubkey: 'abc123pubkey',
         recipientPubkey: 'recipient123pubkey',
-        rawContent: rawContent,
+        lightMimeText: lightMimeText,
+        attachmentRefs: const [],
         createdAt: date,
       );
 
@@ -31,7 +32,8 @@ void main() {
       expect(json['body'].trim(), 'Test body content');
       expect(json['senderPubkey'], 'abc123pubkey');
       expect(json['recipientPubkey'], 'recipient123pubkey');
-      expect(json['rawContent'], rawContent);
+      expect(json['lightMimeText'], lightMimeText);
+      expect(json['attachmentRefs'], isEmpty);
     });
 
     test('fromJson deserializes correctly', () {
@@ -40,8 +42,9 @@ void main() {
         'id': 'test-id',
         'senderPubkey': 'abc123pubkey',
         'recipientPubkey': 'recipient123pubkey',
-        'rawContent':
+        'lightMimeText':
             'From: sender@example.com\r\nSubject: Test Subject\r\n\r\nTest body content',
+        'attachmentRefs': const [],
         'createdAt': date.toIso8601String(),
       };
 
@@ -54,7 +57,7 @@ void main() {
       expect(email.createdAt, date);
       expect(email.senderPubkey, 'abc123pubkey');
       expect(email.recipientPubkey, 'recipient123pubkey');
-      expect(email.rawContent, json['rawContent']);
+      expect(email.lightMimeText, json['lightMimeText']);
     });
 
     test('roundtrip serialization preserves data', () {
@@ -62,8 +65,9 @@ void main() {
         id: 'roundtrip-id',
         senderPubkey: 'pubkey123',
         recipientPubkey: 'recipient456',
-        rawContent:
+        lightMimeText:
             'From: test@test.com\r\nSubject: Roundtrip Test\r\n\r\nBody content',
+        attachmentRefs: const [],
         createdAt: DateTime.utc(2024, 6, 20, 14, 45, 30),
       );
 
@@ -72,7 +76,7 @@ void main() {
       expect(restored.id, original.id);
       expect(restored.senderPubkey, original.senderPubkey);
       expect(restored.recipientPubkey, original.recipientPubkey);
-      expect(restored.rawContent, original.rawContent);
+      expect(restored.lightMimeText, original.lightMimeText);
       expect(restored.createdAt, original.createdAt);
     });
 
@@ -81,7 +85,8 @@ void main() {
         id: 'same-id',
         senderPubkey: 'pk1',
         recipientPubkey: 'rpk1',
-        rawContent: 'raw1',
+        lightMimeText: 'raw1',
+        attachmentRefs: const [],
         createdAt: DateTime.now(),
       );
 
@@ -89,7 +94,8 @@ void main() {
         id: 'same-id',
         senderPubkey: 'pk2',
         recipientPubkey: 'rpk2',
-        rawContent: 'raw2',
+        lightMimeText: 'raw2',
+        attachmentRefs: const [],
         createdAt: DateTime.now(),
       );
 
@@ -97,7 +103,8 @@ void main() {
         id: 'different-id',
         senderPubkey: 'pk1',
         recipientPubkey: 'rpk1',
-        rawContent: 'raw1',
+        lightMimeText: 'raw1',
+        attachmentRefs: const [],
         createdAt: DateTime.now(),
       );
 
