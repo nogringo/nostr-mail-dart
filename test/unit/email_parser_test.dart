@@ -15,6 +15,7 @@ Email _email({
   lightMimeText: rawContent,
   attachmentRefs: const [],
   createdAt: createdAt ?? DateTime.now(),
+  isBridged: false,
 );
 
 void main() {

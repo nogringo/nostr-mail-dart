@@ -1,6 +1,8 @@
 ## 2.0.1
 
 - **Fix**: Marking an email as unread no longer reverts to read after a refresh. A NIP-09 deletion tombstone store records every deleted label event id and `onLabelAddition` skips any event that has been tombstoned, so a stale label event re-served by a relay that does not honor NIP-09 (or by NDK's in-memory cache, which never acts on deletions) is dropped instead of re-applied. Works the same way for star/unstar and folder restores.
+- **Breaking**: `Email.isBridged` is now a `final` field instead of a getter. The previous getter parsed the MIME `From:` header heuristically; per the nostr-mail-core spec, bridge detection must come from the `mail-from` tag on the rumor. The parser (`parseEmailEvent`) and `EmailSender._saveSelfCopy` now derive the value from `event.getFirstTag('mail-from') != null`, and `EmailRecord.toEmail()` round-trips it through storage. Callers that construct `Email` directly must now pass `isBridged:`.
+- **Fix**: Inbound nostr-native emails whose sender did not set a MIME `From:` header are no longer falsely classified as bridged. The old heuristic returned `true` whenever the From address was missing or unparseable; the spec-compliant tag check makes the classification deterministic.
 
 ## 2.0.0
 
