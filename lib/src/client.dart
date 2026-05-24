@@ -30,6 +30,7 @@ import 'storage/gift_wrap_repository.dart';
 import 'storage/label_repository.dart';
 import 'storage/schema_migrator.dart';
 import 'storage/settings_repository.dart';
+import 'storage/tombstone_repository.dart';
 import 'storage/models/email_query.dart';
 import 'utils/attachment_extractor.dart';
 import 'utils/blob_fetcher.dart';
@@ -45,6 +46,7 @@ class NostrMailClient {
   final LabelRepository _labelRepo;
   final GiftWrapRepository _giftWrapRepo;
   final SettingsRepository _settingsRepo;
+  final TombstoneRepository _tombstoneRepo;
   final EmailSender _sender;
   final LabelManager _labels;
   final SettingsManager _settings;
@@ -122,6 +124,7 @@ class NostrMailClient {
     final labelRepo = LabelRepository(db);
     final giftWrapRepo = GiftWrapRepository(db);
     final settingsRepo = SettingsRepository(db);
+    final tombstoneRepo = TombstoneRepository(db);
     final bus = EventBus();
 
     final relayResolver = RelayResolver(ndk, defaultDmRelays: defaultDmRelays);
@@ -162,6 +165,7 @@ class NostrMailClient {
       emailRepo,
       labelRepo,
       giftWrapRepo,
+      tombstoneRepo,
       bus,
       relayResolver,
       defaultBlossomServers: defaultBlossomServers,
@@ -174,6 +178,7 @@ class NostrMailClient {
       labelRepo: labelRepo,
       giftWrapRepo: giftWrapRepo,
       settingsRepo: settingsRepo,
+      tombstoneRepo: tombstoneRepo,
       blossomCache: blossomCache,
       defaultBlossomServers: defaultBlossomServers,
       sender: EmailSender(
@@ -187,7 +192,14 @@ class NostrMailClient {
         defaultBlossomServers: defaultBlossomServers,
         nip05Overrides: nip05Overrides,
       ),
-      labels: LabelManager(ndk, labelRepo, relayResolver, bus, queue),
+      labels: LabelManager(
+        ndk,
+        labelRepo,
+        tombstoneRepo,
+        relayResolver,
+        bus,
+        queue,
+      ),
       settings: settingsManager,
       sync: syncEngine,
       watch: WatchManager(ndk, syncEngine, bus, relayResolver),
@@ -206,6 +218,7 @@ class NostrMailClient {
     required LabelRepository labelRepo,
     required GiftWrapRepository giftWrapRepo,
     required SettingsRepository settingsRepo,
+    required TombstoneRepository tombstoneRepo,
     required BlossomCache blossomCache,
     required EmailSender sender,
     required LabelManager labels,
@@ -224,6 +237,7 @@ class NostrMailClient {
        _labelRepo = labelRepo,
        _giftWrapRepo = giftWrapRepo,
        _settingsRepo = settingsRepo,
+       _tombstoneRepo = tombstoneRepo,
        _blossomCache = blossomCache,
        _defaultBlossomServers = defaultBlossomServers,
        _sender = sender,
@@ -705,6 +719,7 @@ class NostrMailClient {
       _labelRepo.clearAll(),
       _giftWrapRepo.clearAll(),
       _settingsRepo.clear(),
+      _tombstoneRepo.clearAll(),
     ]);
     _settings.clearCache();
   }

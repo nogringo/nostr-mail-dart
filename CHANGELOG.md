@@ -1,3 +1,7 @@
+## 2.0.1
+
+- **Fix**: Marking an email as unread no longer reverts to read after a refresh. A NIP-09 deletion tombstone store records every deleted label event id and `onLabelAddition` skips any event that has been tombstoned, so a stale label event re-served by a relay that does not honor NIP-09 (or by NDK's in-memory cache, which never acts on deletions) is dropped instead of re-applied. Works the same way for star/unstar and folder restores.
+
 ## 2.0.0
 
 - **Breaking**: Attachments no longer live in Sembast. Each attachment is extracted at sync time and stored in `BlossomCache` keyed by its content sha256 (unpinned, LRU-evictable). The original encrypted Blossom blob remains pinned as the source of truth, so any evicted attachment can be regenerated locally without going back to the relays.
