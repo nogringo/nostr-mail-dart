@@ -9,6 +9,7 @@ import '../models/unwrapped_gift_wrap.dart';
 import '../storage/email_repository.dart';
 import '../storage/gift_wrap_repository.dart';
 import '../storage/label_repository.dart';
+import '../storage/tombstone_repository.dart';
 import '../utils/email_record_builder.dart';
 import 'relay_resolver.dart';
 import '../utils/event_email_parser.dart';
@@ -24,6 +25,7 @@ class SyncEngine {
   final EmailRepository _emails;
   final LabelRepository _labels;
   final GiftWrapRepository _giftWraps;
+  final TombstoneRepository _tombstones;
   final EventBus _bus;
   final RelayResolver _relays;
   final List<String> _defaultBlossomServers;
@@ -34,6 +36,7 @@ class SyncEngine {
     this._emails,
     this._labels,
     this._giftWraps,
+    this._tombstones,
     this._bus,
     this._relays, {
     required BlossomCache blossomCache,
@@ -296,6 +299,11 @@ class SyncEngine {
       if (tag.isNotEmpty && tag[0] == 'e') {
         final deletedEventId = tag[1];
 
+        // Record a tombstone unconditionally so the deleted event is not
+        // re-applied if a relay re-serves it (or if a stale NDK cache
+        // hands it back) before the relay has acted on this deletion.
+        await _tombstones.add(deletedEventId, recipientPubkey: pubkey);
+
         // Try as email first (gift wrap or public email)
         final email = await _emails.getById(
           deletedEventId,
@@ -348,6 +356,12 @@ class SyncEngine {
     // published by the account that owns them, so a label whose author
     // differs from the active pubkey belongs to someone else.
     if (event.pubKey != pubkey) return;
+
+    // Skip events the user has deleted: relays that don't honor NIP-09
+    // and NDK's in-memory cache can both re-serve these.
+    if (await _tombstones.contains(event.id, recipientPubkey: pubkey)) {
+      return;
+    }
 
     final namespaceTag = event.tags.firstWhere(
       (t) => t.isNotEmpty && t[0] == 'L' && t[1] == labelNamespace,

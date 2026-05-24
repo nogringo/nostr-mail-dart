@@ -33,6 +33,7 @@ class MockRelay {
   bool sendAuthChallenge;
   bool allwaysSendBadJson;
   bool sendMalformedEvents;
+  bool honorDeletions;
   String? customWelcomeMessage;
   int? maxEventsPerRequest;
 
@@ -58,6 +59,7 @@ class MockRelay {
     this.sendAuthChallenge = true,
     this.allwaysSendBadJson = false,
     this.sendMalformedEvents = false,
+    this.honorDeletions = true,
     this.customWelcomeMessage,
     this.maxEventsPerRequest,
     int? explicitPort,
@@ -177,23 +179,27 @@ class MockRelay {
                 } else if (newEvent.kind == Metadata.kKind) {
                   _metadatas[newEvent.pubKey] = newEvent;
                 } else if (newEvent.kind == Deletion.kKind) {
-                  final eventIdsToDelete = newEvent.getTags("e");
-                  for (final idToDelete in eventIdsToDelete) {
-                    _storedEvents.removeWhere((e) => idToDelete == e.id);
-                    // remove from textNotes map
-                    if (textNotes != null) {
-                      textNotes.removeWhere(
+                  if (honorDeletions) {
+                    final eventIdsToDelete = newEvent.getTags("e");
+                    for (final idToDelete in eventIdsToDelete) {
+                      _storedEvents.removeWhere((e) => idToDelete == e.id);
+                      // remove from textNotes map
+                      if (textNotes != null) {
+                        textNotes.removeWhere(
+                          (key, event) => event.id == idToDelete,
+                        );
+                      }
+                      //remove from contact lists and metadata
+                      _contactLists.removeWhere(
+                        (key, event) => event.id == idToDelete,
+                      );
+                      _metadatas.removeWhere(
                         (key, event) => event.id == idToDelete,
                       );
                     }
-                    //remove from contact lists and metadata
-                    _contactLists.removeWhere(
-                      (key, event) => event.id == idToDelete,
-                    );
-                    _metadatas.removeWhere(
-                      (key, event) => event.id == idToDelete,
-                    );
                   }
+                  // Store the deletion event itself so clients can re-fetch it.
+                  _storedEvents.add(newEvent);
                 } else if (_isEphemeralKind(newEvent.kind)) {
                   // Ephemeral events (kinds 20000-29999) are broadcast but NOT stored
                   _broadcastEventToSubscriptions(newEvent);

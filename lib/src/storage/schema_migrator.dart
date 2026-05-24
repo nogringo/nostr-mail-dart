@@ -16,6 +16,7 @@ const migratableAppStores = <String>[
   'labels',
   'gift_wraps',
   'private_settings',
+  'tombstones',
 ];
 
 /// Sembast key holding the on-disk schema version.

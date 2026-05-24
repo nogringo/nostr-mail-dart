@@ -5,6 +5,7 @@ import '../constants.dart';
 import '../exceptions.dart';
 import '../models/mail_event.dart';
 import '../storage/label_repository.dart';
+import '../storage/tombstone_repository.dart';
 import 'event_bus.dart';
 import 'relay_resolver.dart';
 
@@ -16,6 +17,7 @@ import 'relay_resolver.dart';
 class LabelManager {
   final Ndk _ndk;
   final LabelRepository _labels;
+  final TombstoneRepository _tombstones;
   final RelayResolver _relays;
   final EventBus _bus;
   final OfflineBroadcast _broadcastQueue;
@@ -23,6 +25,7 @@ class LabelManager {
   LabelManager(
     this._ndk,
     this._labels,
+    this._tombstones,
     this._relays,
     this._bus,
     this._broadcastQueue,
@@ -103,6 +106,10 @@ class LabelManager {
     );
     if (labelEventId == null) return;
 
+    // Tombstone the label event so it is not re-applied if re-served
+    // by a relay (or by NDK's in-memory cache) on a future sync.
+    await _tombstones.add(labelEventId, recipientPubkey: pubkey);
+
     // Remove locally FIRST
     await _labels.removeLabel(emailId, label, recipientPubkey: pubkey);
 
@@ -120,6 +127,13 @@ class LabelManager {
       content: '',
     );
 
+    // TODO: sign before mutating local state. If sign() throws (NIP-46
+    // signer offline, user rejection, ...), the local tombstone + label
+    // removal above have already happened but the deletion event is
+    // never broadcast, leaving an "orphan" removal that other devices
+    // never see. addLabel above and every other sign() site in the
+    // codebase already follow sign-then-mutate; this is the lone
+    // exception.
     _ndk.accounts.sign(deletionEvent).then((signed) {
       _relays.getWriteRelays(pubkey).then((relays) {
         _broadcastQueue.broadcast(signed, relays: relays);
