@@ -22,6 +22,7 @@ void main() {
         lightMimeText: lightMimeText,
         attachmentRefs: const [],
         createdAt: date,
+        isBridged: false,
       );
 
       final json = email.toJson();
@@ -69,6 +70,7 @@ void main() {
             'From: test@test.com\r\nSubject: Roundtrip Test\r\n\r\nBody content',
         attachmentRefs: const [],
         createdAt: DateTime.utc(2024, 6, 20, 14, 45, 30),
+        isBridged: true,
       );
 
       final restored = Email.fromJson(original.toJson());
@@ -78,6 +80,7 @@ void main() {
       expect(restored.recipientPubkey, original.recipientPubkey);
       expect(restored.lightMimeText, original.lightMimeText);
       expect(restored.createdAt, original.createdAt);
+      expect(restored.isBridged, original.isBridged);
     });
 
     test('equality is based on id', () {
@@ -88,6 +91,7 @@ void main() {
         lightMimeText: 'raw1',
         attachmentRefs: const [],
         createdAt: DateTime.now(),
+        isBridged: false,
       );
 
       final email2 = Email(
@@ -97,6 +101,7 @@ void main() {
         lightMimeText: 'raw2',
         attachmentRefs: const [],
         createdAt: DateTime.now(),
+        isBridged: false,
       );
 
       final email3 = Email(
@@ -106,6 +111,7 @@ void main() {
         lightMimeText: 'raw1',
         attachmentRefs: const [],
         createdAt: DateTime.now(),
+        isBridged: false,
       );
 
       expect(email1, equals(email2));

@@ -197,6 +197,7 @@ class EmailRecord {
     decryptionNonce: decryptionNonce,
     createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt * 1000),
     isPublic: isPublic,
+    isBridged: isBridged,
   );
 
   EmailRecord copyWith({

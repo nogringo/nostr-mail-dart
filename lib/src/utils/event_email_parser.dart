@@ -82,6 +82,8 @@ Future<Email> parseEmailEvent({
     decryptionNonce: decryptionNonce,
     createdAt: DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000),
     isPublic: isPublic,
+    // Per nostr-mail-core spec: bridged when the rumor carries mail-from.
+    isBridged: event.getFirstTag('mail-from') != null,
     mimeMessage: mimeMessage,
   );
 }

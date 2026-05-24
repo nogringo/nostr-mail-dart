@@ -1,5 +1,4 @@
 import 'package:enough_mail_plus/enough_mail.dart';
-import 'package:ndk/ndk.dart';
 
 import '../utils/html_utils.dart';
 import 'attachment_ref.dart';
@@ -37,6 +36,14 @@ class Email {
   /// AES-GCM nonce for the blob. `null` for inline emails.
   final String? decryptionNonce;
 
+  /// Whether this email was relayed through a SMTP bridge.
+  ///
+  /// Per nostr-mail-core spec: a kind 1301 rumor is bridged when it
+  /// carries a `mail-from` tag (set by the sender's client when sending
+  /// to a non-nostr recipient via a bridge, or by the bridge itself
+  /// when relaying an inbound SMTP email to a nostr user).
+  final bool isBridged;
+
   late final MimeMessage _mimeMessage;
 
   /// The parsed MIME message. Attachment parts are present in the tree
@@ -53,6 +60,7 @@ class Email {
     required this.lightMimeText,
     required this.attachmentRefs,
     required this.createdAt,
+    required this.isBridged,
     this.blossomHash,
     this.decryptionKey,
     this.decryptionNonce,
@@ -92,45 +100,6 @@ class Email {
           ? _mimeMessage.from!.first
           : null);
 
-  /// Check if this email was relayed through a bridge.
-  ///
-  /// Returns `true` if:
-  /// - The sender address cannot be parsed (legacy email)
-  /// - The pubkey extracted from the sender address differs from [senderPubkey]
-  ///
-  /// Returns `false` if the email was sent directly (e.g., @nostr address).
-  bool get isBridged {
-    // Try to get sender address from MIME headers
-    final senderAddress = sender?.email;
-    if (senderAddress == null || !senderAddress.contains('@')) {
-      // No sender address or invalid format - consider as bridged
-      return true;
-    }
-
-    // Extract pubkey from sender address (npub1...@domain or hex@domain)
-    final localPart = senderAddress.split('@').first;
-    String? contactPubkey;
-
-    if (localPart.startsWith('npub1')) {
-      try {
-        contactPubkey = Nip19.decode(localPart);
-      } catch (_) {
-        return true; // Invalid npub - consider as bridged
-      }
-    } else if (localPart.length == 64 &&
-        RegExp(r'^[a-fA-F0-9]+$').hasMatch(localPart)) {
-      contactPubkey = localPart.toLowerCase();
-    }
-
-    // If no pubkey could be extracted, it's a legacy email (bridged)
-    if (contactPubkey == null) {
-      return true;
-    }
-
-    // Compare extracted pubkey with actual sender pubkey
-    return contactPubkey != senderPubkey;
-  }
-
   Map<String, dynamic> toJson() {
     final fromAddresses = _mimeMessage.from;
     String? from;
@@ -158,6 +127,7 @@ class Email {
       if (decryptionKey != null) 'decryptionKey': decryptionKey,
       if (decryptionNonce != null) 'decryptionNonce': decryptionNonce,
       'isPublic': isPublic,
+      'isBridged': isBridged,
     };
   }
 
@@ -178,6 +148,7 @@ class Email {
       json['createdAt'] as String? ?? json['date'] as String,
     ),
     isPublic: json['isPublic'] as bool? ?? false,
+    isBridged: json['isBridged'] as bool? ?? false,
   );
 
   @override

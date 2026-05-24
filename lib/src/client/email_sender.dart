@@ -385,6 +385,8 @@ class EmailSender {
       decryptionNonce: rumor.getFirstTag('decryption-nonce'),
       createdAt: DateTime.fromMillisecondsSinceEpoch(rumor.createdAt * 1000),
       isPublic: isPublic,
+      // Per nostr-mail-core spec: bridged when the rumor carries mail-from.
+      isBridged: rumor.getFirstTag('mail-from') != null,
       mimeMessage: mimeMessage,
     );
     final record = buildEmailRecord(email: email, folder: 'sent');
