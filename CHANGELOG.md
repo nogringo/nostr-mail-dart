@@ -1,3 +1,7 @@
+## 2.0.2
+
+- **Fix**: `NostrMailClient.create()` now primes `cachedPrivateSettings` from local storage when a pubkey is configured. Previously the sync getter stayed `null` until a caller awaited `getCachedPrivateSettings()` or `getPrivateSettings()`, which made user-facing settings (signature, bridges, identities) appear reset after sign-out/sign-in: auth-state listeners fired before the new client was constructed, and nothing re-triggered the load once it was.
+
 ## 2.0.1
 
 - **Fix**: Marking an email as unread no longer reverts to read after a refresh. A NIP-09 deletion tombstone store records every deleted label event id and `onLabelAddition` skips any event that has been tombstoned, so a stale label event re-served by a relay that does not honor NIP-09 (or by NDK's in-memory cache, which never acts on deletions) is dropped instead of re-applied. Works the same way for star/unstar and folder restores.
