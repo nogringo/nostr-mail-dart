@@ -172,6 +172,15 @@ class NostrMailClient {
       blossomCache: blossomCache,
     );
 
+    // Prime the in-memory settings cache from local storage so the sync
+    // getter `cachedPrivateSettings` is ready right after `create()` returns.
+    // Without this, callers observe `null` until the first network fetch,
+    // which races with auth-state listeners that fire before this client
+    // is constructed.
+    if (ndk.accounts.isLoggedIn) {
+      await settingsManager.getCachedPrivateSettings();
+    }
+
     return NostrMailClient._internal(
       ndk: ndk,
       emailRepo: emailRepo,

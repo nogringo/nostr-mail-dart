@@ -1,3 +1,4 @@
+import 'package:blossom_cache/blossom_cache.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
@@ -76,12 +77,14 @@ void main() {
     late Ndk ndk;
     late NostrMailClient client;
     late MockRelay relay;
+    late Database db;
+    late BlossomCache blossomCache;
 
     setUp(() async {
       relay = MockRelay(name: 'relay', explicitPort: 19012);
       await relay.startServer();
 
-      final db = await databaseFactoryMemory.openDatabase(
+      db = await databaseFactoryMemory.openDatabase(
         'test_private_settings_${DateTime.now().microsecondsSinceEpoch}',
       );
       ndk = Ndk(
@@ -98,10 +101,11 @@ void main() {
         privkey: keyPair.privateKey!,
       );
 
+      blossomCache = await openTestBlossomCache('private_settings_c');
       client = await NostrMailClient.create(
         ndk: ndk,
         db: db,
-        blossomCache: await openTestBlossomCache('private_settings_c'),
+        blossomCache: blossomCache,
         defaultDmRelays: [relay.url],
       );
     });
@@ -114,6 +118,30 @@ void main() {
     test('cachedPrivateSettings is null before first fetch', () {
       expect(client.cachedPrivateSettings, isNull);
     });
+
+    test(
+      'NostrMailClient.create primes cachedPrivateSettings from local DB',
+      () async {
+        await client.updatePrivateSettings(signature: 'primed signature');
+        expect(client.cachedPrivateSettings!.signature, 'primed signature');
+
+        // Reopen a fresh client backed by the SAME database. The signature is
+        // persisted in the SettingsRepository, so the new client must expose
+        // it through the sync getter immediately after create() returns,
+        // without anyone calling getCachedPrivateSettings() or
+        // getPrivateSettings() first. This mirrors the post-login flow where
+        // the app reads the cached signature right after initClient().
+        final reopened = await NostrMailClient.create(
+          ndk: ndk,
+          db: db,
+          blossomCache: blossomCache,
+          defaultDmRelays: [relay.url],
+        );
+
+        expect(reopened.cachedPrivateSettings, isNotNull);
+        expect(reopened.cachedPrivateSettings!.signature, 'primed signature');
+      },
+    );
 
     test('setPrivateSettings throws without signing capability', () async {
       final readOnlyKeys = Bip340.generatePrivateKey();
