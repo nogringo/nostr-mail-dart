@@ -44,7 +44,7 @@ class SettingsManager {
   }
 
   /// Async read from local decrypted cache (no signer needed).
-  Future<PrivateSettings?> getCachedPrivateSettings() async {
+  Future<PrivateSettings?> getPrivateSettings() async {
     final pubkey = _pubkey;
     if (pubkey == null) return null;
 
@@ -60,7 +60,7 @@ class SettingsManager {
   }
 
   /// Fetch from relays, decrypt, and cache locally.
-  Future<PrivateSettings?> getPrivateSettings() async {
+  Future<PrivateSettings?> fetchPrivateSettings() async {
     _assertPubkey();
     _assertSigner();
 
@@ -135,7 +135,7 @@ class SettingsManager {
     await _broadcastQueue.broadcast(signed, relays: writeRelays);
   }
 
-  /// Update a single field in private settings.
+  /// Update a single field in private settings and enqueue relay sync.
   Future<void> updatePrivateSettings({
     String? signature,
     List<String>? bridges,

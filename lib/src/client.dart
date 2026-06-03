@@ -174,11 +174,11 @@ class NostrMailClient {
 
     // Prime the in-memory settings cache from local storage so the sync
     // getter `cachedPrivateSettings` is ready right after `create()` returns.
-    // Without this, callers observe `null` until the first network fetch,
+    // Without this, callers observe `null` until the first async local read,
     // which races with auth-state listeners that fire before this client
     // is constructed.
     if (ndk.accounts.isLoggedIn) {
-      await settingsManager.getCachedPrivateSettings();
+      await settingsManager.getPrivateSettings();
     }
 
     return NostrMailClient._internal(
@@ -695,11 +695,11 @@ class NostrMailClient {
 
   PrivateSettings? get cachedPrivateSettings => _settings.cachedPrivateSettings;
 
-  Future<PrivateSettings?> getCachedPrivateSettings() =>
-      _settings.getCachedPrivateSettings();
-
   Future<PrivateSettings?> getPrivateSettings() =>
       _settings.getPrivateSettings();
+
+  Future<PrivateSettings?> fetchPrivateSettings() =>
+      _settings.fetchPrivateSettings();
 
   Future<void> setPrivateSettings(PrivateSettings settings) =>
       _settings.setPrivateSettings(settings);

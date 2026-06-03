@@ -1,6 +1,10 @@
-## 2.0.2
+## 2.1.0
 
-- **Fix**: `NostrMailClient.create()` now primes `cachedPrivateSettings` from local storage when a pubkey is configured. Previously the sync getter stayed `null` until a caller awaited `getCachedPrivateSettings()` or `getPrivateSettings()`, which made user-facing settings (signature, bridges, identities) appear reset after sign-out/sign-in: auth-state listeners fired before the new client was constructed, and nothing re-triggered the load once it was.
+- **Breaking**: `getPrivateSettings()` is now local-first. It reads the decrypted local settings cache without fetching from relays or requiring a signer.
+- **Breaking**: Removed `getCachedPrivateSettings()`. Use `getPrivateSettings()` for the async local read or `cachedPrivateSettings` for the synchronous in-memory getter.
+- **New**: `fetchPrivateSettings()` fetches NIP-78 settings from relays, decrypts them, and refreshes the local cache.
+- **Change**: `updatePrivateSettings()` now reads existing settings through the local-first `getPrivateSettings()` path, then reuses `setPrivateSettings()` to encrypt and enqueue relay sync.
+- **Fix**: `NostrMailClient.create()` now primes `cachedPrivateSettings` from local storage when a pubkey is configured. Previously the sync getter stayed `null` until a caller awaited a settings read, which made user-facing settings (signature, bridges, identities) appear reset after sign-out/sign-in: auth-state listeners fired before the new client was constructed, and nothing re-triggered the load once it was.
 
 ## 2.0.1
 

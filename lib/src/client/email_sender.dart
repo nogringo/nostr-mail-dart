@@ -77,7 +77,7 @@ class EmailSender {
     } else {
       final cached =
           _settings.cachedPrivateSettings ??
-          await _settings.getCachedPrivateSettings();
+          await _settings.getPrivateSettings();
       if (cached?.identities != null && cached!.identities!.isNotEmpty) {
         finalFrom = cached.identities!.first;
       } else {
