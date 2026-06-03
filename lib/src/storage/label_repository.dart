@@ -140,22 +140,52 @@ class LabelRepository {
     return records.map((r) => r.value['emailId'] as String).toList();
   }
 
+  /// Get label event IDs attached to any email in [emailIds].
+  Future<List<String>> getLabelEventIdsForEmails(
+    Iterable<String> emailIds, {
+    required String recipientPubkey,
+  }) async {
+    final uniqueIds = emailIds.toSet().toList();
+    if (uniqueIds.isEmpty) return [];
+
+    final finder = Finder(
+      filter: Filter.and([
+        Filter.inList('emailId', uniqueIds),
+        Filter.equals('recipientPubkey', recipientPubkey),
+      ]),
+    );
+    final records = await _labelsStore.find(_db, finder: finder);
+    return records
+        .map((r) => r.value['labelEventId'] as String?)
+        .nonNulls
+        .toSet()
+        .toList();
+  }
+
   /// Delete all labels for an email belonging to [recipientPubkey].
   /// Used when an email is permanently deleted.
   Future<void> deleteLabelsForEmail(
     String emailId, {
     required String recipientPubkey,
   }) async {
+    await deleteLabelsForEmails([emailId], recipientPubkey: recipientPubkey);
+  }
+
+  /// Delete all labels for emails in [emailIds] belonging to [recipientPubkey].
+  Future<void> deleteLabelsForEmails(
+    Iterable<String> emailIds, {
+    required String recipientPubkey,
+  }) async {
+    final uniqueIds = emailIds.toSet().toList();
+    if (uniqueIds.isEmpty) return;
+
     final finder = Finder(
       filter: Filter.and([
-        Filter.equals('emailId', emailId),
+        Filter.inList('emailId', uniqueIds),
         Filter.equals('recipientPubkey', recipientPubkey),
       ]),
     );
-    final keys = await _labelsStore.findKeys(_db, finder: finder);
-    for (final key in keys) {
-      await _labelsStore.record(key).delete(_db);
-    }
+    await _labelsStore.delete(_db, finder: finder);
   }
 
   /// Get all label records for [recipientPubkey] (used by sync to find

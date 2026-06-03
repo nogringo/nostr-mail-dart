@@ -55,6 +55,19 @@ class GiftWrapRepository {
     await _store.record(eventId).delete(_db);
   }
 
+  /// Remove gift wrap records by their decrypted rumor ids.
+  Future<void> removeByRumorIds(Iterable<String> rumorIds) async {
+    final uniqueIds = rumorIds.toSet().toList();
+    if (uniqueIds.isEmpty) return;
+
+    final finder = Finder(filter: Filter.inList('rumorId', uniqueIds));
+    final keys = await _store.findKeys(_db, finder: finder);
+    final recordsToDelete = {...keys, ...uniqueIds};
+    for (final key in recordsToDelete) {
+      await _store.record(key).delete(_db);
+    }
+  }
+
   /// Get a single unprocessed gift wrap event by ID.
   Future<Nip01Event?> getUnprocessed(String eventId) async {
     final record = await _store.record(eventId).get(_db);

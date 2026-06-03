@@ -287,6 +287,49 @@ void main() {
         expect(await repo.getById('to-delete', recipientPubkey: rpk), isNull);
       });
 
+      test('deleteByIds removes only matching account records', () async {
+        await repo.save(makeRecord('e1'));
+        await repo.save(makeRecord('e2'));
+        await repo.save(makeRecord('e3'));
+        await repo.save(
+          EmailRecord(
+            id: 'other-account',
+            senderPubkey: 'pk-other',
+            recipientPubkey: 'other-rpk',
+            lightMimeText: 'From: a@b.com\r\nSubject: sub\r\n\r\nbody',
+            attachmentRefs: const [],
+            isPublic: false,
+            createdAt: 1000,
+            date: 1000,
+            from: 'a@b.com',
+            subject: 'sub',
+            bodyPlain: 'body',
+            searchText: 'a@b.com sub body',
+            attachmentCount: 0,
+            folder: 'inbox',
+            isRead: false,
+            isStarred: false,
+            labels: const [],
+            isBridged: false,
+          ),
+        );
+
+        await repo.deleteByIds([
+          'e1',
+          'e2',
+          'e2',
+          'other-account',
+        ], recipientPubkey: rpk);
+
+        expect(await repo.getById('e1', recipientPubkey: rpk), isNull);
+        expect(await repo.getById('e2', recipientPubkey: rpk), isNull);
+        expect(await repo.getById('e3', recipientPubkey: rpk), isNotNull);
+        expect(
+          await repo.getById('other-account', recipientPubkey: 'other-rpk'),
+          isNotNull,
+        );
+      });
+
       test('clearAll removes every record', () async {
         await repo.save(makeRecord('e1'));
         await repo.save(makeRecord('e2'));

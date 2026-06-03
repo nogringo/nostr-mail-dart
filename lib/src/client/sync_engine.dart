@@ -228,6 +228,14 @@ class SyncEngine {
 
       final isPublicRef = rumor.getFirstTag('public-ref') != null;
 
+      // Skip emails the user already deleted locally. Gift wraps can be
+      // re-served by relays that ignore NIP-09, while the tombstone is keyed
+      // by the user-facing email id (the rumor id).
+      if (await _tombstones.contains(rumor.id, recipientPubkey: myPubkey)) {
+        await _giftWraps.remove(event.id);
+        return false;
+      }
+
       // The recipient for storage purposes is always the active account —
       // gift wraps are addressed to us, so we own this row. Using the
       // rumor's first 'p' tag is wrong for cc/bcc, where it points at the
@@ -269,6 +277,12 @@ class SyncEngine {
 
     final recipientPubkey = _pubkey;
     if (recipientPubkey == null) return;
+    if (await _tombstones.contains(
+      event.id,
+      recipientPubkey: recipientPubkey,
+    )) {
+      return;
+    }
 
     try {
       final email = await parseEmailEvent(
@@ -315,7 +329,7 @@ class SyncEngine {
             deletedEventId,
             recipientPubkey: pubkey,
           );
-          await _giftWraps.remove(deletedEventId);
+          await _giftWraps.removeByRumorIds([deletedEventId]);
           _bus.emit(EmailDeleted(emailId: deletedEventId));
           continue;
         }

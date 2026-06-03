@@ -100,6 +100,6 @@ final email = await client.getEmail('event-id');
 // Search emails (globally across all folders)
 final results = await client.search('meeting', limit: 10);
 
-// Delete an email
-await client.delete('event-id');
+// Delete emails with one NIP-09 request
+await client.delete(['event-id-1', 'event-id-2']);
 ```

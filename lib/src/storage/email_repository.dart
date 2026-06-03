@@ -154,6 +154,25 @@ class EmailRepository {
     await _store.record(id).delete(_db);
   }
 
+  /// Delete emails whose ids are in [ids], scoped to [recipientPubkey].
+  Future<void> deleteByIds(
+    Iterable<String> ids, {
+    required String recipientPubkey,
+  }) async {
+    final uniqueIds = ids.toSet().toList();
+    if (uniqueIds.isEmpty) return;
+
+    await _store.delete(
+      _db,
+      finder: Finder(
+        filter: Filter.and([
+          Filter.equals('recipientPubkey', recipientPubkey),
+          Filter.inList('id', uniqueIds),
+        ]),
+      ),
+    );
+  }
+
   /// Delete every email belonging to [recipientPubkey].
   /// Pass `null` to wipe the entire store across all accounts.
   Future<void> clearAll({String? recipientPubkey}) async {

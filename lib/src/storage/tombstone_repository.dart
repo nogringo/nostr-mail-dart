@@ -19,6 +19,25 @@ class TombstoneRepository {
     });
   }
 
+  /// Record every id in [eventIds] as deleted for [recipientPubkey].
+  Future<void> addMany(
+    Iterable<String> eventIds, {
+    required String recipientPubkey,
+  }) async {
+    final uniqueIds = eventIds.toSet().toList();
+    if (uniqueIds.isEmpty) return;
+
+    final createdAt = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    await _db.transaction((txn) async {
+      for (final eventId in uniqueIds) {
+        await _store.record(eventId).put(txn, {
+          'recipientPubkey': recipientPubkey,
+          'createdAt': createdAt,
+        });
+      }
+    });
+  }
+
   /// True if [eventId] has been tombstoned for [recipientPubkey].
   Future<bool> contains(
     String eventId, {

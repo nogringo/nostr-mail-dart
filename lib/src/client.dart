@@ -47,6 +47,7 @@ class NostrMailClient {
   final GiftWrapRepository _giftWrapRepo;
   final SettingsRepository _settingsRepo;
   final TombstoneRepository _tombstoneRepo;
+  final EventBus _bus;
   final EmailSender _sender;
   final LabelManager _labels;
   final SettingsManager _settings;
@@ -188,6 +189,7 @@ class NostrMailClient {
       giftWrapRepo: giftWrapRepo,
       settingsRepo: settingsRepo,
       tombstoneRepo: tombstoneRepo,
+      bus: bus,
       blossomCache: blossomCache,
       defaultBlossomServers: defaultBlossomServers,
       sender: EmailSender(
@@ -228,6 +230,7 @@ class NostrMailClient {
     required GiftWrapRepository giftWrapRepo,
     required SettingsRepository settingsRepo,
     required TombstoneRepository tombstoneRepo,
+    required EventBus bus,
     required BlossomCache blossomCache,
     required EmailSender sender,
     required LabelManager labels,
@@ -247,6 +250,7 @@ class NostrMailClient {
        _giftWrapRepo = giftWrapRepo,
        _settingsRepo = settingsRepo,
        _tombstoneRepo = tombstoneRepo,
+       _bus = bus,
        _blossomCache = blossomCache,
        _defaultBlossomServers = defaultBlossomServers,
        _sender = sender,
@@ -524,23 +528,51 @@ class NostrMailClient {
 
   // ── Deletion ────────────────────────────────────────────────────────────
 
-  Future<void> delete(String id) async {
+  /// Delete emails locally and publish one batched NIP-09 request.
+  ///
+  /// All [ids] must exist for the active account. The deletion request is
+  /// signed before local state is mutated; after signing, local emails,
+  /// labels, gift-wrap cache entries and tombstones are updated in batch.
+  Future<void> delete(Iterable<String> ids) async {
     final pubkey = _ndk.accounts.getPublicKey();
     if (pubkey == null) {
       throw NostrMailException('No account configured in ndk');
     }
 
-    final email = await _emailRepo.getById(id, recipientPubkey: pubkey);
-    if (email == null) {
-      throw NostrMailException('Email not found');
+    final uniqueIds = ids.toSet().toList();
+    if (uniqueIds.isEmpty) return;
+
+    final emails = await _emailRepo.getByIds(
+      uniqueIds,
+      recipientPubkey: pubkey,
+    );
+    if (emails.length != uniqueIds.length) {
+      final foundIds = emails.map((e) => e.id).toSet();
+      final missingIds = uniqueIds.where((id) => !foundIds.contains(id));
+      if (uniqueIds.length == 1) {
+        throw NostrMailException('Email not found');
+      }
+      throw NostrMailException('Emails not found: ${missingIds.join(', ')}');
     }
 
+    final labelEventIds = await _labelRepo.getLabelEventIdsForEmails(
+      uniqueIds,
+      recipientPubkey: pubkey,
+    );
+
+    final deletionIds = [...uniqueIds, ...labelEventIds];
+    final targetKinds = emails
+        .map((email) => email.isPublic ? emailKind : giftWrapKind)
+        .toSet();
+    if (labelEventIds.isNotEmpty) {
+      targetKinds.add(labelKind);
+    }
     final deletionEvent = Nip01Event(
       pubKey: pubkey,
       kind: deletionRequestKind,
       tags: [
-        ['e', email.id],
-        ['k', giftWrapKind.toString()],
+        ...deletionIds.map((id) => ['e', id]),
+        ...targetKinds.map((kind) => ['k', kind.toString()]),
       ],
       content: '',
     );
@@ -549,13 +581,28 @@ class NostrMailClient {
 
     // Local-first: remove from local storage immediately, then enqueue the
     // deletion request for durable broadcast. The queue persists the event
-    // before any network attempt and retries until every DM relay has acked.
-    await _emailRepo.delete(id, recipientPubkey: pubkey);
-    await _labelRepo.deleteLabelsForEmail(id, recipientPubkey: pubkey);
-    await _giftWrapRepo.remove(id);
+    // before any network attempt and retries until every targeted relay has
+    // acked.
+    await Future.wait([
+      _tombstoneRepo.addMany(deletionIds, recipientPubkey: pubkey),
+      _emailRepo.deleteByIds(uniqueIds, recipientPubkey: pubkey),
+      _labelRepo.deleteLabelsForEmails(uniqueIds, recipientPubkey: pubkey),
+      _giftWrapRepo.removeByRumorIds(uniqueIds),
+    ]);
 
-    final dmRelays = await _relayResolver.getDmRelays(pubkey);
-    await broadcastQueue.broadcast(signed, relays: dmRelays);
+    for (final id in uniqueIds) {
+      _bus.emit(EmailDeleted(emailId: id));
+    }
+
+    final relayLookups = <Future<List<String>>>[
+      if (emails.any((email) => !email.isPublic))
+        _relayResolver.getDmRelays(pubkey),
+      if (emails.any((email) => email.isPublic) || labelEventIds.isNotEmpty)
+        _relayResolver.getWriteRelays(pubkey),
+    ];
+    final relayLists = await Future.wait(relayLookups);
+    final relays = relayLists.expand((relays) => relays).toSet().toList();
+    await broadcastQueue.broadcast(signed, relays: relays);
   }
 
   // ── Repost ──────────────────────────────────────────────────────────────

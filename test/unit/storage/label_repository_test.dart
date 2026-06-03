@@ -213,6 +213,48 @@ void main() {
         );
       });
 
+      test(
+        'getLabelEventIdsForEmails returns label events for requested emails',
+        () async {
+          await save('email-1', 'folder:trash', eventId: 'label-1');
+          await save('email-1', 'state:read', eventId: 'label-2');
+          await save('email-2', 'folder:trash', eventId: 'label-3');
+
+          final ids = await labels.getLabelEventIdsForEmails([
+            'email-1',
+          ], recipientPubkey: rpk);
+
+          expect(ids.toSet(), {'label-1', 'label-2'});
+        },
+      );
+
+      test(
+        'deleteLabelsForEmails removes labels for all requested emails',
+        () async {
+          await save('email-1', 'folder:trash');
+          await save('email-2', 'state:read');
+          await save('email-3', 'folder:trash');
+
+          await labels.deleteLabelsForEmails([
+            'email-1',
+            'email-2',
+          ], recipientPubkey: rpk);
+
+          expect(
+            await labels.getLabelsForEmail('email-1', recipientPubkey: rpk),
+            isEmpty,
+          );
+          expect(
+            await labels.getLabelsForEmail('email-2', recipientPubkey: rpk),
+            isEmpty,
+          );
+          expect(
+            await labels.getLabelsForEmail('email-3', recipientPubkey: rpk),
+            ['folder:trash'],
+          );
+        },
+      );
+
       test('clearAll removes every label', () async {
         await save('email-1', 'folder:trash');
         await save('email-2', 'state:read');

@@ -116,6 +116,33 @@ void main() {
       expect(stored.sig, 'signature-123');
     });
 
+    test('removeByRumorIds removes processed gift wraps by email id', () async {
+      await repo.save(makeEvent('wrap-1'));
+      await repo.save(makeEvent('wrap-2'));
+      await repo.save(makeEvent('wrap-3'));
+      await repo.updateDecrypted(
+        giftWrapId: 'wrap-1',
+        seal: makeEvent('seal-1', kind: 13),
+        rumor: makeEvent('email-1', kind: 1301),
+      );
+      await repo.updateDecrypted(
+        giftWrapId: 'wrap-2',
+        seal: makeEvent('seal-2', kind: 13),
+        rumor: makeEvent('email-2', kind: 1301),
+      );
+      await repo.updateDecrypted(
+        giftWrapId: 'wrap-3',
+        seal: makeEvent('seal-3', kind: 13),
+        rumor: makeEvent('email-3', kind: 1301),
+      );
+
+      await repo.removeByRumorIds(['email-1', 'email-2']);
+
+      expect(await repo.getByRumorId('email-1'), isNull);
+      expect(await repo.getByRumorId('email-2'), isNull);
+      expect(await repo.getByRumorId('email-3'), isNotNull);
+    });
+
     test('clearAll removes all gift wraps', () async {
       await repo.save(makeEvent('event-1'));
       await repo.save(makeEvent('event-2'));
