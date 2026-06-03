@@ -3,6 +3,7 @@
 - **Breaking**: `NostrMailClient.delete(...)` now accepts `Iterable<String>` and publishes one batched NIP-09 deletion request with multiple `e` tags, including any NIP-32 label events attached to those emails.
 - **Fix**: Local email deletions now create tombstones immediately, so stale relays that ignore NIP-09 cannot re-serve deleted emails into the local cache on the next sync.
 - **Fix**: Deleting an email now removes the associated gift-wrap cache entry by decrypted rumor id instead of assuming the gift-wrap event id equals the email id.
+- **Fix**: Restoring a trashed sent email now returns it to Sent instead of Inbox by deriving the restored mailbox from the sender/owner pubkeys.
 
 ## 2.1.0
 

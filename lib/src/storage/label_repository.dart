@@ -256,10 +256,8 @@ class LabelRepository {
     await _emailsStore.record(emailId).put(txn, updated.toJson());
   }
 
-  /// Heuristic to revert folder when a folder label is removed.
+  /// Restore folder labels to the email's natural mailbox.
   String _defaultFolder(EmailRecord email) {
-    // If we had more metadata we could distinguish inbox/sent.
-    // For now, default back to inbox (the most common case when restoring).
-    return 'inbox';
+    return email.senderPubkey == email.recipientPubkey ? 'sent' : 'inbox';
   }
 }
