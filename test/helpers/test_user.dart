@@ -32,6 +32,7 @@ class TestUser {
         eventVerifier: Bip340EventVerifier(),
         cache: MemCacheManager(),
         bootstrapRelays: defaultDmRelays ?? [],
+        fetchedRangesEnabled: true,
       ),
     );
 

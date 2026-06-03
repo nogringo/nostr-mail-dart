@@ -25,6 +25,7 @@ void main() {
           bootstrapRelays: [relay.url],
           eventVerifier: Bip340EventVerifier(),
           cache: MemCacheManager(),
+          fetchedRangesEnabled: true,
         ),
       );
 

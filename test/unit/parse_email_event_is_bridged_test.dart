@@ -22,6 +22,7 @@ void main() {
           eventVerifier: Bip340EventVerifier(),
           cache: MemCacheManager(),
           bootstrapRelays: const [],
+          fetchedRangesEnabled: true,
         ),
       );
     });

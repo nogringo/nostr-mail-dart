@@ -43,6 +43,7 @@ class MockBridge {
         eventVerifier: Bip340EventVerifier(),
         cache: MemCacheManager(),
         bootstrapRelays: defaultDmRelays ?? [],
+        fetchedRangesEnabled: true,
       ),
     );
 

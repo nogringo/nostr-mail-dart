@@ -16,6 +16,7 @@ void main() async {
       bootstrapRelays: ['wss://relay.damus.io', 'wss://nos.lol'],
       eventVerifier: Bip340EventVerifier(),
       cache: MemCacheManager(),
+      fetchedRangesEnabled: true,
     ),
   );
 

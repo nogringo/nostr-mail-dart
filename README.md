@@ -41,6 +41,7 @@ import 'package:sembast/sembast_io.dart';
 final ndk = Ndk(NdkConfig(
   cache: MemCacheManager(),
   eventVerifier: Bip340EventVerifier(),
+  fetchedRangesEnabled: true,
 ));
 final keyPair = Bip340.generatePrivateKey();
 ndk.accounts.loginPrivateKey(

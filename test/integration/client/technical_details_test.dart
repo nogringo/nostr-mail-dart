@@ -25,6 +25,7 @@ void main() {
         cache: MemCacheManager(),
         bootstrapRelays: [relay.url],
         logLevel: LogLevel.off,
+        fetchedRangesEnabled: true,
       ),
     );
     addTearDown(() async => await ndk.destroy());

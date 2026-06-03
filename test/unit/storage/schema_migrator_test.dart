@@ -9,6 +9,7 @@ Ndk _newNdk() => Ndk(
     eventVerifier: Bip340EventVerifier(),
     cache: MemCacheManager(),
     bootstrapRelays: const [],
+    fetchedRangesEnabled: true,
   ),
 );
 

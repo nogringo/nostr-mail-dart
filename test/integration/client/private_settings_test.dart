@@ -23,6 +23,7 @@ void main() {
             eventVerifier: Bip340EventVerifier(),
             cache: MemCacheManager(),
             bootstrapRelays: [relay.url],
+            fetchedRangesEnabled: true,
           ),
         );
         addTearDown(() async => await ndk.destroy());
@@ -94,6 +95,7 @@ void main() {
           bootstrapRelays: [relay.url],
           eventVerifier: Bip340EventVerifier(),
           cache: MemCacheManager(),
+          fetchedRangesEnabled: true,
         ),
       );
 
