@@ -1,17 +1,22 @@
-import 'dart:convert';
-
-import 'package:http/http.dart' as http;
+import 'package:ndk/entities.dart' as ndk_entities;
+import 'package:ndk/ndk.dart';
 
 import '../exceptions.dart';
 
-// TODO rename to NIP05Resolver
+typedef NdkNip05Resolver =
+    Future<ndk_entities.Nip05ResolveResult> Function(String identifier);
 
 class BridgeResolver {
-  final http.Client _client;
+  final NdkNip05Resolver _resolveNip05;
   final Map<String, String>? nip05Overrides;
 
-  BridgeResolver({http.Client? client, this.nip05Overrides})
-    : _client = client ?? http.Client();
+  BridgeResolver({required Ndk ndk, this.nip05Overrides})
+    : _resolveNip05 = ndk.nip05.resolve;
+
+  BridgeResolver.withNip05Resolver({
+    required NdkNip05Resolver resolveNip05,
+    this.nip05Overrides,
+  }) : _resolveNip05 = resolveNip05;
 
   /// Resolve bridge pubkey via NIP-05 lookup for _smtp@domain
   Future<String> resolveBridgePubkey(String domain) async {
@@ -20,51 +25,21 @@ class BridgeResolver {
       return nip05Overrides![nip05]!;
     }
 
-    final url = Uri.https(domain, '/.well-known/nostr.json', {'name': '_smtp'});
-
-    final http.Response response;
-    try {
-      response = await _client.get(url);
-    } catch (e) {
-      throw NetworkRequiredException('bridge', 'failed to reach $domain: $e');
-    }
-
-    if (response.statusCode != 200) {
-      throw BridgeResolutionException(domain);
-    }
-
-    try {
-      final json = jsonDecode(response.body) as Map<String, dynamic>;
-      final names = json['names'] as Map<String, dynamic>?;
-
-      if (names == null || !names.containsKey('_smtp')) {
-        throw BridgeResolutionException(domain);
-      }
-
-      return names['_smtp'] as String;
-    } on BridgeResolutionException {
-      rethrow;
-    } catch (_) {
-      throw BridgeResolutionException(domain);
-    }
+    final result = await _resolveNip05(nip05);
+    return switch (result) {
+      ndk_entities.Nip05Found(:final data) => data.pubKey,
+      ndk_entities.Nip05ResolveNetworkError() ||
+      ndk_entities.Nip05NotFound() ||
+      ndk_entities.Nip05ResolveInvalidResponse() =>
+        throw BridgeResolutionException(domain),
+    };
   }
 
   /// Resolve any NIP-05 identifier (user@domain) to pubkey.
   ///
-  /// Returns null when the server replied but the name is not registered.
-  /// Throws [NetworkRequiredException] when the server could not be reached
-  /// (DNS, socket, timeout) so callers can distinguish "no entry" from
-  /// "offline" and surface a reconnect prompt instead of falling through
-  /// to a bridge lookup that would fail for the same reason.
-  ///
-  // TODO: switch to `_ndk.nip05.resolve()` once NDK distinguishes transport
-  // failures from "name not found". Today NDK's Nip05Usecase._performFetch
-  // swallows every exception into null, so adopting it would cost us this
-  // method's offline detection. The win we'd unlock is NDK's built-in
-  // NIP-05 cache + in-flight dedup (and `Nip05.relays`), so this swap is
-  // worth doing as soon as upstream surfaces the distinction (custom
-  // Nip05Repository injection is not enough — the swallow lives one layer
-  // above, in the use-case).
+  /// Returns null when the name is not registered or cannot be resolved by
+  /// NDK, for example because the server cannot be reached or is blocked by
+  /// browser transport policy such as CORS.
   Future<String?> resolveNip05(String identifier) async {
     if (nip05Overrides != null && nip05Overrides!.containsKey(identifier)) {
       return nip05Overrides![identifier]!;
@@ -73,28 +48,12 @@ class BridgeResolver {
     final parts = identifier.split('@');
     if (parts.length != 2) return null;
 
-    final name = parts[0];
-    final domain = parts[1];
-    final url = Uri.https(domain, '/.well-known/nostr.json', {'name': name});
-
-    final http.Response response;
-    try {
-      response = await _client.get(url);
-    } catch (e) {
-      throw NetworkRequiredException('nip05', 'failed to reach $domain: $e');
-    }
-
-    if (response.statusCode != 200) return null;
-
-    try {
-      final json = jsonDecode(response.body) as Map<String, dynamic>;
-      final names = json['names'] as Map<String, dynamic>?;
-
-      if (names == null || !names.containsKey(name)) return null;
-
-      return names[name] as String;
-    } catch (_) {
-      return null;
-    }
+    final result = await _resolveNip05(identifier);
+    return switch (result) {
+      ndk_entities.Nip05Found(:final data) => data.pubKey,
+      ndk_entities.Nip05ResolveNetworkError() ||
+      ndk_entities.Nip05NotFound() ||
+      ndk_entities.Nip05ResolveInvalidResponse() => null,
+    };
   }
 }

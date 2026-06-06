@@ -26,7 +26,7 @@ class RelayException extends NostrMailException {
 }
 
 /// Thrown when an operation cannot proceed because a required network call
-/// failed for connectivity reasons (DNS, socket, timeout, transport error).
+/// failed for connectivity reasons (DNS, socket, timeout, offline transport).
 ///
 /// The UI should treat this as "ask the user to reconnect, then retry."
 /// It is intentionally distinct from [BridgeResolutionException] and

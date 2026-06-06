@@ -136,6 +136,7 @@ class EmailSender {
     final resolutionFutures = recipients.map((addr) async {
       final pubkey = await resolveRecipient(
         to: addr.encode(),
+        ndk: _ndk,
         from: fromAddress,
         nip05Overrides: nip05Overrides,
       );

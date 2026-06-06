@@ -1,7 +1,4 @@
-import 'dart:convert';
-
-import 'package:http/http.dart' as http;
-import 'package:mocktail/mocktail.dart';
+import 'package:ndk/entities.dart' as ndk_entities;
 import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:nostr_mail/nostr_mail.dart';
@@ -9,47 +6,50 @@ import 'package:nostr_mail/src/services/bridge_resolver.dart';
 import 'package:nostr_mail/src/utils/recipient_resolver.dart';
 import 'package:test/test.dart';
 
-class _MockHttpClient extends Mock implements http.Client {}
+Ndk _newNdk() => Ndk(
+  NdkConfig(
+    eventVerifier: Bip340EventVerifier(),
+    cache: MemCacheManager(),
+    bootstrapRelays: [],
+  ),
+);
+
+ndk_entities.Nip05Found _nip05Found(String pubkey, String nip05) {
+  return ndk_entities.Nip05Found(
+    ndk_entities.Nip05(pubKey: pubkey, nip05: nip05),
+  );
+}
 
 void main() {
-  setUpAll(() {
-    registerFallbackValue(Uri.parse('https://example.com'));
-  });
-
   group('BridgeResolver', () {
-    late _MockHttpClient mockClient;
-    late BridgeResolver resolver;
+    late List<String> resolvedIdentifiers;
+
+    BridgeResolver resolverReturning(ndk_entities.Nip05ResolveResult result) {
+      return BridgeResolver.withNip05Resolver(
+        resolveNip05: (identifier) async {
+          resolvedIdentifiers.add(identifier);
+          return result;
+        },
+      );
+    }
 
     setUp(() {
-      mockClient = _MockHttpClient();
-      resolver = BridgeResolver(client: mockClient);
+      resolvedIdentifiers = [];
     });
 
     test('resolveBridgePubkey returns pubkey for valid response', () async {
-      final responseBody = jsonEncode({
-        'names': {'_smtp': 'bridge-pubkey-123'},
-      });
-
-      when(
-        () => mockClient.get(any()),
-      ).thenAnswer((_) async => http.Response(responseBody, 200));
+      final resolver = resolverReturning(
+        _nip05Found('bridge-pubkey-123', '_smtp@example.com'),
+      );
 
       final pubkey = await resolver.resolveBridgePubkey('example.com');
 
       expect(pubkey, 'bridge-pubkey-123');
-      verify(
-        () => mockClient.get(
-          Uri.https('example.com', '/.well-known/nostr.json', {
-            'name': '_smtp',
-          }),
-        ),
-      ).called(1);
+      expect(resolvedIdentifiers, ['_smtp@example.com']);
     });
 
-    test('resolveBridgePubkey throws for non-200 response', () async {
-      when(
-        () => mockClient.get(any()),
-      ).thenAnswer((_) async => http.Response('Not found', 404));
+    test('resolveBridgePubkey throws when bridge is not found', () async {
+      final resolver = resolverReturning(const ndk_entities.Nip05NotFound());
 
       expect(
         () => resolver.resolveBridgePubkey('example.com'),
@@ -58,31 +58,23 @@ void main() {
     });
 
     test(
-      'resolveBridgePubkey throws NetworkRequiredException on transport error',
+      'resolveBridgePubkey throws BridgeResolutionException on fetch error',
       () async {
-        when(() => mockClient.get(any())).thenThrow(Exception('socket closed'));
+        final resolver = resolverReturning(
+          ndk_entities.Nip05ResolveNetworkError(Exception('socket closed')),
+        );
 
         await expectLater(
           () => resolver.resolveBridgePubkey('example.com'),
-          throwsA(
-            isA<NetworkRequiredException>().having(
-              (e) => e.operation,
-              'operation',
-              'bridge',
-            ),
-          ),
+          throwsA(isA<BridgeResolutionException>()),
         );
       },
     );
 
-    test('resolveBridgePubkey throws when _smtp not in response', () async {
-      final responseBody = jsonEncode({
-        'names': {'other': 'some-pubkey'},
-      });
-
-      when(
-        () => mockClient.get(any()),
-      ).thenAnswer((_) async => http.Response(responseBody, 200));
+    test('resolveBridgePubkey throws for invalid NIP-05 response', () async {
+      final resolver = resolverReturning(
+        ndk_entities.Nip05ResolveInvalidResponse(Exception('bad json')),
+      );
 
       expect(
         () => resolver.resolveBridgePubkey('example.com'),
@@ -91,74 +83,54 @@ void main() {
     });
 
     test('resolveNip05 returns pubkey for valid identifier', () async {
-      final responseBody = jsonEncode({
-        'names': {'alice': 'alice-pubkey-456'},
-      });
-
-      when(
-        () => mockClient.get(any()),
-      ).thenAnswer((_) async => http.Response(responseBody, 200));
+      final resolver = resolverReturning(
+        _nip05Found('alice-pubkey-456', 'alice@example.com'),
+      );
 
       final pubkey = await resolver.resolveNip05('alice@example.com');
 
       expect(pubkey, 'alice-pubkey-456');
-      verify(
-        () => mockClient.get(
-          Uri.https('example.com', '/.well-known/nostr.json', {
-            'name': 'alice',
-          }),
-        ),
-      ).called(1);
+      expect(resolvedIdentifiers, ['alice@example.com']);
     });
 
     test('resolveNip05 returns null for invalid identifier format', () async {
+      final resolver = resolverReturning(
+        _nip05Found('unused-pubkey', 'unused@example.com'),
+      );
+
       final result = await resolver.resolveNip05('invalid-no-at-sign');
 
       expect(result, isNull);
-      verifyNever(() => mockClient.get(any()));
+      expect(resolvedIdentifiers, isEmpty);
     });
 
-    test('resolveNip05 returns null for non-200 response', () async {
-      when(
-        () => mockClient.get(any()),
-      ).thenAnswer((_) async => http.Response('Error', 500));
+    test('resolveNip05 returns null when identifier is not found', () async {
+      final resolver = resolverReturning(const ndk_entities.Nip05NotFound());
 
       final result = await resolver.resolveNip05('user@example.com');
 
       expect(result, isNull);
     });
 
-    test('resolveNip05 returns null when name not found', () async {
-      final responseBody = jsonEncode({
-        'names': {'other': 'other-pubkey'},
-      });
-
-      when(
-        () => mockClient.get(any()),
-      ).thenAnswer((_) async => http.Response(responseBody, 200));
+    test('resolveNip05 returns null for invalid NIP-05 response', () async {
+      final resolver = resolverReturning(
+        ndk_entities.Nip05ResolveInvalidResponse(Exception('bad json')),
+      );
 
       final result = await resolver.resolveNip05('missing@example.com');
 
       expect(result, isNull);
     });
 
-    test(
-      'resolveNip05 throws NetworkRequiredException on transport error',
-      () async {
-        when(() => mockClient.get(any())).thenThrow(Exception('Network error'));
+    test('resolveNip05 returns null on fetch error', () async {
+      final resolver = resolverReturning(
+        ndk_entities.Nip05ResolveNetworkError(Exception('CORS blocked')),
+      );
 
-        await expectLater(
-          () => resolver.resolveNip05('user@example.com'),
-          throwsA(
-            isA<NetworkRequiredException>().having(
-              (e) => e.operation,
-              'operation',
-              'nip05',
-            ),
-          ),
-        );
-      },
-    );
+      final result = await resolver.resolveNip05('user@example.com');
+
+      expect(result, isNull);
+    });
 
     test(
       'nip05Overrides short-circuit network calls for bridges and users',
@@ -170,7 +142,11 @@ void main() {
         final exampleBridgePubkey =
             '3333333333333333333333333333333333333333333333333333333333333333';
 
-        final overrideResolver = BridgeResolver(
+        final resolver = BridgeResolver.withNip05Resolver(
+          resolveNip05: (identifier) async {
+            resolvedIdentifiers.add(identifier);
+            throw StateError('override should not call NDK resolver');
+          },
           nip05Overrides: {
             '_smtp@gmail.com': gmailBridgePubkey,
             'bob@primal.net': primalUserPubkey,
@@ -179,17 +155,15 @@ void main() {
         );
 
         expect(
-          await overrideResolver.resolveNip05('_smtp@gmail.com'),
+          await resolver.resolveNip05('_smtp@gmail.com'),
           gmailBridgePubkey,
         );
+        expect(await resolver.resolveNip05('bob@primal.net'), primalUserPubkey);
         expect(
-          await overrideResolver.resolveNip05('bob@primal.net'),
-          primalUserPubkey,
-        );
-        expect(
-          await overrideResolver.resolveNip05('_smtp@example.com'),
+          await resolver.resolveNip05('_smtp@example.com'),
           exampleBridgePubkey,
         );
+        expect(resolvedIdentifiers, isEmpty);
       },
     );
   });
@@ -197,54 +171,73 @@ void main() {
   group('resolveRecipient', () {
     final keyPair = Bip340.generatePrivateKey();
     final npub = Nip19.encodePubKey(keyPair.publicKey);
+    final nip05Pubkey =
+        'b22b06b051fd5232966a9344a634d956c3dc33a7f5ecdcad9ed11ddc4120a7f2';
+    late Ndk ndk;
+
+    setUp(() {
+      ndk = _newNdk();
+      addTearDown(ndk.destroy);
+    });
 
     group('raw address', () {
       test('npub@domain', () async {
-        final result = await resolveRecipient(to: '$npub@example.com');
+        final result = await resolveRecipient(
+          to: '$npub@example.com',
+          ndk: ndk,
+        );
         expect(result, keyPair.publicKey);
       });
 
       test('npub@nostr', () async {
-        final result = await resolveRecipient(to: '$npub@nostr');
+        final result = await resolveRecipient(to: '$npub@nostr', ndk: ndk);
         expect(result, keyPair.publicKey);
       });
 
       test('npub', () async {
-        final result = await resolveRecipient(to: npub);
+        final result = await resolveRecipient(to: npub, ndk: ndk);
         expect(result, keyPair.publicKey);
       });
 
       test('pubkey', () async {
-        final result = await resolveRecipient(to: keyPair.publicKey);
+        final result = await resolveRecipient(to: keyPair.publicKey, ndk: ndk);
         expect(result, keyPair.publicKey);
       });
 
       test('nip05', () async {
-        final result = await resolveRecipient(to: 'russell@uid.ovh');
-        expect(
-          result,
-          'b22b06b051fd5232966a9344a634d956c3dc33a7f5ecdcad9ed11ddc4120a7f2',
+        final result = await resolveRecipient(
+          to: 'russell@uid.ovh',
+          ndk: ndk,
+          nip05Overrides: {'russell@uid.ovh': nip05Pubkey},
         );
+        expect(result, nip05Pubkey);
       });
     });
 
     group('address with name', () {
       test('npub@domain', () async {
-        final result = await resolveRecipient(to: 'Bob <$npub@example.com>');
+        final result = await resolveRecipient(
+          to: 'Bob <$npub@example.com>',
+          ndk: ndk,
+        );
         expect(result, keyPair.publicKey);
       });
 
       test('npub@nostr', () async {
-        final result = await resolveRecipient(to: 'Bob <$npub@nostr>');
+        final result = await resolveRecipient(
+          to: 'Bob <$npub@nostr>',
+          ndk: ndk,
+        );
         expect(result, keyPair.publicKey);
       });
 
       test('nip05', () async {
-        final result = await resolveRecipient(to: 'Bob <russell@uid.ovh>');
-        expect(
-          result,
-          'b22b06b051fd5232966a9344a634d956c3dc33a7f5ecdcad9ed11ddc4120a7f2',
+        final result = await resolveRecipient(
+          to: 'Bob <russell@uid.ovh>',
+          ndk: ndk,
+          nip05Overrides: {'russell@uid.ovh': nip05Pubkey},
         );
+        expect(result, nip05Pubkey);
       });
     });
   });

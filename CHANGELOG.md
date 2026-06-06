@@ -1,3 +1,7 @@
+## 2.2.1
+
+- **Fix**: NIP-05 recipient resolution now uses `ndk.nip05.resolve()` from NDK `0.8.4-dev.2`, reusing NDK's cache and in-flight request deduplication.
+
 ## 2.2.0
 
 - **Breaking**: `NostrMailClient.delete(...)` now accepts `Iterable<String>` and publishes one batched NIP-09 deletion request with multiple `e` tags, including any NIP-32 label events attached to those emails.

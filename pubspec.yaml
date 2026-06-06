@@ -1,6 +1,6 @@
 name: nostr_mail
 description: A Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59 gift-wrapped messages.
-version: 2.2.0
+version: 2.2.1
 repository: https://github.com/nogringo/nostr-mail-dart
 homepage: https://github.com/nogringo/nostr-mail-dart
 issue_tracker: https://github.com/nogringo/nostr-mail-dart/issues
@@ -24,7 +24,7 @@ environment:
   sdk: ^3.10.8
 
 dependencies:
-  ndk: ^0.8.4-dev.1
+  ndk: ^0.8.4-dev.2
   enough_mail_plus: ^2.2.4
   sembast: ^3.8.6
   http: ^1.6.0
@@ -39,7 +39,6 @@ dev_dependencies:
   bip340: ^0.3.1
   idb_shim: ^2.9.2
   lints: ^6.1.0
-  mocktail: ^1.0.4
   shelf: ^1.4.2
   shelf_router: ^1.1.4
   test: ^1.31.0
