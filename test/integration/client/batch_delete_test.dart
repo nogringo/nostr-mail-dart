@@ -16,7 +16,7 @@ void main() {
     late LabelRepository labels;
 
     setUp(() async {
-      relay = MockRelay(name: 'relay');
+      relay = MockRelay(name: 'relay', explicitPort: 19019);
       await relay.startServer();
 
       user = await TestUser(

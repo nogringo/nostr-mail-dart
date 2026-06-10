@@ -11,7 +11,7 @@ void main() {
     test(
       'Nostr → SMTP forwards through the bridge to the legacy address',
       () async {
-        final relay = MockRelay(name: 'relay');
+        final relay = MockRelay(name: 'relay', explicitPort: 19017);
         await relay.startServer();
         addTearDown(() async => await relay.stopServer());
 
@@ -48,7 +48,7 @@ void main() {
     );
 
     test('SMTP → Nostr delivers a legacy email through the bridge', () async {
-      final relay = MockRelay(name: 'relay');
+      final relay = MockRelay(name: 'relay', explicitPort: 19018);
       await relay.startServer();
       addTearDown(() async => await relay.stopServer());
 

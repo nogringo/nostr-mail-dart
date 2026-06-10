@@ -9,7 +9,7 @@ import '../../mocks/mock_relay.dart';
 void main() {
   group('Public emails', () {
     test('are publishable as kind 1301 events fetchable by anyone', () async {
-      final relay = MockRelay(name: 'public-email');
+      final relay = MockRelay(name: 'public-email', explicitPort: 19022);
       await relay.startServer();
       addTearDown(() async => await relay.stopServer());
 

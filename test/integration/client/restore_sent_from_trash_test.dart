@@ -6,7 +6,10 @@ import '../../mocks/mock_relay.dart';
 
 void main() {
   test('restoring a trashed sent email returns it to sent', () async {
-    final relay = MockRelay(name: 'restore-sent-from-trash');
+    final relay = MockRelay(
+      name: 'restore-sent-from-trash',
+      explicitPort: 19021,
+    );
     await relay.startServer();
     addTearDown(() async => await relay.stopServer());
 
