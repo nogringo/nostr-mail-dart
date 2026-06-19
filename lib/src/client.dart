@@ -5,6 +5,7 @@ import 'package:blossom_upload_queue_shim_for_ndk/blossom_upload_queue_shim_for_
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
 import 'package:enough_mail_plus/enough_mail.dart' hide MailEvent;
 import 'package:ndk/ndk.dart';
+import 'package:nostr_event_scheduler/nostr_event_scheduler.dart' as scheduler;
 import 'package:rxdart/rxdart.dart';
 import 'package:sembast/sembast.dart';
 
@@ -24,6 +25,7 @@ import 'models/attachment_ref.dart';
 import 'models/email.dart';
 import 'models/mail_event.dart';
 import 'models/private_settings.dart';
+import 'models/scheduled_email.dart';
 
 import 'storage/email_repository.dart';
 import 'storage/gift_wrap_repository.dart';
@@ -53,6 +55,7 @@ class NostrMailClient {
   final SettingsManager _settings;
   final SyncEngine _sync;
   final WatchManager _watch;
+  final scheduler.EventScheduler _scheduler;
 
   /// Direct access to the offline broadcast queue. Use this to surface
   /// pending broadcasts in the UI (`watchPending()`), inspect history
@@ -117,6 +120,7 @@ class NostrMailClient {
     List<String>? defaultDmRelays,
     List<String>? defaultBlossomServers,
     Map<String, String>? nip05Overrides,
+    SchedulerDvmConfig? schedulerDvm,
     OfflineBroadcast? broadcastQueue,
     OfflineBlossomUpload? blossomUploadQueue,
   }) async {
@@ -161,6 +165,11 @@ class NostrMailClient {
       relayResolver,
       queue,
     );
+    final eventScheduler = scheduler.EventScheduler(
+      ndk: ndk,
+      broadcast: queue,
+      db: db,
+    );
     final syncEngine = SyncEngine(
       ndk,
       emailRepo,
@@ -200,6 +209,8 @@ class NostrMailClient {
         blossomQueue,
         blossomCache,
         emailRepo,
+        scheduler: eventScheduler,
+        schedulerDvm: schedulerDvm,
         defaultBlossomServers: defaultBlossomServers,
         nip05Overrides: nip05Overrides,
       ),
@@ -214,6 +225,7 @@ class NostrMailClient {
       settings: settingsManager,
       sync: syncEngine,
       watch: WatchManager(ndk, syncEngine, bus, relayResolver),
+      scheduler: eventScheduler,
       broadcastQueue: queue,
       ownsBroadcastQueue: ownsQueue,
       blossomUploadQueue: blossomQueue,
@@ -237,6 +249,7 @@ class NostrMailClient {
     required SettingsManager settings,
     required SyncEngine sync,
     required WatchManager watch,
+    required scheduler.EventScheduler scheduler,
     required this.broadcastQueue,
     required bool ownsBroadcastQueue,
     required this.blossomUploadQueue,
@@ -258,6 +271,7 @@ class NostrMailClient {
        _settings = settings,
        _sync = sync,
        _watch = watch,
+       _scheduler = scheduler,
        _ownsBroadcastQueue = ownsBroadcastQueue,
        _ownsBlossomUploadQueue = ownsBlossomUploadQueue,
        _relayResolver = relayResolver;
@@ -711,6 +725,7 @@ class NostrMailClient {
     bool keepCopy = true,
     bool signRumor = false,
     bool isPublic = false,
+    DateTime? scheduledAt,
   }) => _sender.send(
     to: to,
     cc: cc,
@@ -722,6 +737,7 @@ class NostrMailClient {
     keepCopy: keepCopy,
     signRumor: signRumor,
     isPublic: isPublic,
+    scheduledAt: scheduledAt,
   );
 
   Future<void> sendMime(
@@ -730,13 +746,43 @@ class NostrMailClient {
     bool signRumor = false,
     bool isPublic = false,
     String? mailFrom,
+    DateTime? scheduledAt,
   }) => _sender.sendMime(
     message,
     keepCopy: keepCopy,
     signRumor: signRumor,
     isPublic: isPublic,
     mailFrom: mailFrom,
+    scheduledAt: scheduledAt,
   );
+
+  // ── Scheduled Sending ──────────────────────────────────────────────────
+
+  Stream<List<ScheduledEmail>> watchScheduledEmails() async* {
+    await _scheduler.startListening();
+    yield* _scheduler.schedulesStream.map(
+      (items) => items
+          .map(ScheduledEmail.tryFromScheduledItem)
+          .whereType<ScheduledEmail>()
+          .toList(),
+    );
+  }
+
+  Future<void> stopWatchingScheduledEmails() => _scheduler.stopListening();
+
+  Future<List<ScheduledEmail>> listScheduledEmails() async {
+    final items = await _scheduler.listSchedules();
+    return items
+        .map(ScheduledEmail.tryFromScheduledItem)
+        .whereType<ScheduledEmail>()
+        .toList();
+  }
+
+  Future<void> cancelScheduledEmail(String packageId) =>
+      _scheduler.cancelPackage(packageId);
+
+  Stream<ScheduledEmailStatusUpdate> get scheduledEmailStatusUpdates =>
+      _scheduler.statusUpdates.map(ScheduledEmailStatusUpdate.fromScheduler);
 
   // ── Private Settings ────────────────────────────────────────────────────
 
@@ -790,6 +836,7 @@ class NostrMailClient {
   /// owned by the client.
   Future<void> dispose() async {
     stopWatching();
+    await _scheduler.dispose();
     if (_ownsBroadcastQueue) {
       await broadcastQueue.dispose();
     }

@@ -6,6 +6,7 @@ A Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59
 
 - Send emails to Nostr users (via npub, hex pubkey, or NIP-05 identifier)
 - Send emails to legacy email addresses via SMTP bridges
+- Schedule emails for future delivery via Scheduler DVMs
 - Receive and decrypt gift-wrapped email messages
 - Local email storage with sembast
 - RFC 2822 email format support
@@ -75,6 +76,36 @@ await client.send(
   subject: 'Hello!',
   body: 'This email will be delivered via SMTP bridge.',
 );
+```
+
+### Schedule an email
+
+Configure a Scheduler DVM when creating the client, then pass `scheduledAt` to
+the same `send()` API. The SDK sets the Nostr `created_at` and MIME `Date:`
+header to the scheduled delivery time.
+
+```dart
+final client = await NostrMailClient.create(
+  ndk: ndk,
+  db: db,
+  blossomCache: blossomCache,
+  schedulerDvm: SchedulerDvmConfig(
+    pubkey: schedulerDvmPubkey,
+    readRelays: ['wss://scheduler.example'],
+  ),
+);
+
+final nextMondayAt8 = DateTime(2026, 6, 15, 8);
+
+await client.send(
+  to: [MailAddress(null, 'npub1xyz...@nostr')],
+  subject: 'Monday plan',
+  body: 'This will be published Monday at 8.',
+  scheduledAt: nextMondayAt8,
+);
+
+final scheduled = await client.listScheduledEmails();
+await client.cancelScheduledEmail(scheduled.first.id);
 ```
 
 ### Receive emails

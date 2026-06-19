@@ -1,7 +1,7 @@
 # nostr_mail — Agent Guide
 
 > Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59 gift-wrapped messages.
-> Version: 1.14.0 | Dart SDK: ^3.10.8 | Platforms: Android, iOS, Linux, macOS, Web, Windows
+> Version: 2.3.0 | Dart SDK: ^3.12.0 | Platforms: Android, iOS, Linux, macOS, Web, Windows
 
 ---
 
@@ -16,6 +16,7 @@
 - Metadata labels (trash, archive, read, starred) via **NIP-32** (kind 1985)
 - Cross-device private settings sync via **NIP-78** (kind 30078, NIP-44 encrypted)
 - Public email posts (signed kind 1301, optionally with BCC gift wraps)
+- Future delivery via Scheduler DVM jobs (`nostr_event_scheduler`, kinds 5905/31234/7000)
 - Real-time inbox watching via unified `MailEvent` stream
 
 ### Key NIPs Implemented
@@ -49,7 +50,7 @@ dart analyze
 dart test
 
 # Run a specific test file
-dart test test/nostr_mail_test.dart
+dart test test/unit/email_parser_test.dart
 
 # Verbose test output
 dart test --reporter=expanded
@@ -57,10 +58,8 @@ dart test --reporter=expanded
 
 ### Known Test Behaviours
 
-- **146 of 147 tests pass**.
-- **`test/blossom_integration_test.dart`** uses `MockBlossomServer` + `MockRelay` — fully offline and deterministic. Takes ~40s because `enough_mail_plus` `buildMimeMessage()` is pathologically slow with 100KB bodies (see `test/enough_mail_large_body_perf_test.dart`).
-- **`test/enough_mail_large_body_perf_test.dart`** documents the upstream `enough_mail_plus` performance bug.
-- **`test/cc_bcc_test.dart`** still **fails** — it hard-codes `ws://localhost:7777` without starting a `MockRelay`. This is a known pre-existing issue.
+- **`test/integration/send_receive/blossom_test.dart`** uses `MockBlossomServer` + `MockRelay` — fully offline and deterministic. It can be slower because large MIME bodies are expensive to build with `enough_mail_plus`.
+- **`test/integration/send_receive/cc_bcc_test.dart`** is the known legacy CC/BCC integration test path.
 - Most integration tests spin up local `MockRelay` WebSocket servers and `MockBlossomServer` HTTP servers, so they are self-contained.
 - Tests use **isolated in-memory Sembast database names** (`test_db_${DateTime.now().millisecondsSinceEpoch}` or a `dbCounter`) to avoid state bleeding between tests.
 
@@ -79,6 +78,7 @@ lib/
     │   ├── email.dart           # Email model wrapping MimeMessage
     │   ├── mail_event.dart      # Sealed class: EmailReceived, LabelAdded, etc.
     │   ├── private_settings.dart# Cross-device settings (signature, bridges, identities)
+    │   ├── scheduled_email.dart # Scheduler DVM config + scheduled email view models
     │   ├── encrypted_blob.dart  # AES-GCM blob metadata
     │   └── unwrapped_gift_wrap.dart # Seal + Rumor pair
     ├── client/
@@ -127,6 +127,7 @@ test/
 - **`filters.dart`** is the single source of truth for all Nostr query filters used by the SDK (7 filter categories). Both `SyncEngine` and `WatchManager` import from it, so filters can never diverge.
 - **Denormalized storage**: `EmailRecord` has flat fields (`folder`, `isRead`, `isStarred`, `attachmentCount`, `searchText`) so queries never need joins.
 - **`LabelRepository`** updates denormalized `EmailRecord` fields atomically inside Sembast transactions.
+- Scheduled sending is handled by `nostr_event_scheduler`. `EmailSender` builds the future-dated target events and schedules them as a package; the package content stores a private `kind:1301` mail event that `ScheduledEmail` can parse for display.
 
 ---
 
@@ -147,6 +148,7 @@ NostrMailClient({
   List<String>? defaultDmRelays,
   List<String>? defaultBlossomServers,
   Map<String, String>? nip05Overrides, // For testing / local resolution
+  SchedulerDvmConfig? schedulerDvm, // Default DVM for send(..., scheduledAt: ...)
 })
 ```
 
@@ -161,6 +163,8 @@ NostrMailClient({
 **Sending:**
 - `send({List<MailAddress> to, cc, bcc, required subject, required body, ...})`
 - `sendMime(MimeMessage, ...)` — lower-level, resolves all recipients automatically
+- `scheduledAt` on `send()` / `sendMime()` schedules future delivery via the configured Scheduler DVM
+- `listScheduledEmails()`, `watchScheduledEmails()`, `stopWatchingScheduledEmails()`, `cancelScheduledEmail(id)`, `scheduledEmailStatusUpdates`
 - `repost(Nip01Event)` — NIP-18 generic repost
 
 **Reading:**
@@ -191,12 +195,15 @@ NostrMailClient({
 3. **State isolation** — always use unique DB names per test. Never reuse `'test_db'` strings.
 4. **Tear-down pattern** for mock relays:
    ```dart
-   final relay = MockRelay(name: 'relay');
+   final relay = MockRelay(name: 'relay', explicitPort: 19130);
    await relay.startServer();
    addTearDown(() async => relay.stopServer());
    ```
+   Always pass `explicitPort` in tests so parallel/nearby relay tests cannot
+   accidentally reuse a port.
 5. **TestUser helper** encapsulates key generation, NDK init, DB creation, and `NostrMailClient` instantiation.
 6. **MockBlossomServer dynamic ports** — use `MockBlossomServer()` without a port argument to let the OS assign a free port (`server.port` is available after `start()`).
+7. **Scheduler DVM tests** — `nostr_scheduler_dvm` is available in `dev_dependencies` for end-to-end scheduling tests.
 
 ### Running Tests Reliably
 
@@ -204,15 +211,15 @@ The full suite is now hermetic (no live network required):
 
 ```bash
 # Fast, offline-only tests
-dart test test/nostr_mail_test.dart
-dart test test/bridges_test.dart
-dart test test/folder_label_exclusion_test.dart
+dart test test/unit
+dart test test/integration/send_receive/bridges_test.dart
+dart test test/integration/send_receive/scheduled_send_test.dart
 
 # Slow tests (mock-based but heavy)
-dart test test/blossom_integration_test.dart   # ~40s (blocked by enough_mail_plus perf)
+dart test test/integration/send_receive/blossom_test.dart
 
 # Known broken
-dart test test/cc_bcc_test.dart                # hard-codes ws://localhost:7777, no mock relay
+dart test test/integration/send_receive/cc_bcc_test.dart
 ```
 
 ---
@@ -236,6 +243,7 @@ dart test test/cc_bcc_test.dart                # hard-codes ws://localhost:7777,
 - **Large emails**: Content > 32 KB is uploaded to Blossom as an AES-256-GCM encrypted blob. The event then contains only the SHA-256 hash, key, and nonce.
 - **Private settings**: Stored as NIP-78 replaceable events encrypted to self with NIP-44. Decrypted JSON is cached locally so the app can read settings without waking the bunker.
 - **Public emails**: Must be signed (`signRumor = true`). BCC recipients of public emails receive a **shared signed rumor** gift-wrapped individually, with a `public-ref` tag pointing to the public event.
+- **Scheduled emails**: `scheduledAt` must be in the future and `schedulerDvm` must be configured. The SDK sets both the target Nostr event `created_at` and MIME `Date:` header to `scheduledAt`; no Sent copy is written until the scheduled self gift wrap is published and synced.
 
 ---
 

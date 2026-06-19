@@ -4,6 +4,7 @@ import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:ndk/shared/nips/nip01/key_pair.dart';
 import 'package:nostr_mail/src/client.dart';
+import 'package:nostr_mail/src/models/scheduled_email.dart';
 import 'package:sembast/sembast_memory.dart';
 
 class TestUser {
@@ -11,6 +12,7 @@ class TestUser {
   List<String>? defaultDmRelays;
   List<String>? defaultBlossomServers;
   Map<String, String>? nip05Overrides;
+  SchedulerDvmConfig? schedulerDvm;
 
   late KeyPair keyPair;
   late Ndk ndk;
@@ -23,6 +25,7 @@ class TestUser {
     this.defaultDmRelays,
     this.defaultBlossomServers,
     this.nip05Overrides,
+    this.schedulerDvm,
   });
 
   Future<TestUser> create() async {
@@ -54,6 +57,7 @@ class TestUser {
       defaultDmRelays: defaultDmRelays,
       defaultBlossomServers: defaultBlossomServers,
       nip05Overrides: nip05Overrides,
+      schedulerDvm: schedulerDvm,
     );
 
     return this;

@@ -12,6 +12,8 @@ export 'src/models/email.dart' show Email;
 export 'src/models/encrypted_blob.dart';
 export 'src/models/mail_event.dart';
 export 'src/models/private_settings.dart' show PrivateSettings;
+export 'src/models/scheduled_email.dart'
+    show ScheduledEmail, ScheduledEmailStatusUpdate, SchedulerDvmConfig;
 export 'src/services/email_parser.dart' show EmailParser;
 export 'src/storage/schema_migrator.dart'
     show kSchemaVersion, migrateSchemaIfNeeded;

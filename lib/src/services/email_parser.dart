@@ -15,6 +15,7 @@ class EmailParser {
     required String subject,
     required String body,
     String? htmlBody,
+    DateTime? date,
   }) {
     final builder = MessageBuilder.prepareMultipartAlternativeMessage();
     builder.from = [from];
@@ -22,6 +23,7 @@ class EmailParser {
     if (cc != null) builder.cc = cc;
     if (bcc != null) builder.bcc = bcc;
     builder.subject = subject;
+    if (date != null) builder.date = date;
     builder.addTextPlain(body);
     if (htmlBody != null) {
       builder.addTextHtml(htmlBody, transferEncoding: TransferEncoding.base64);

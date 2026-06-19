@@ -1,3 +1,9 @@
+## 2.3.0
+
+- **New**: Delayed sending via Scheduler DVMs. `send()` and `sendMime()` now accept `scheduledAt`; when provided, nostr_mail builds timestamped email events, wraps them in Scheduler DVM jobs, and tracks them as scheduled emails.
+- **New**: `SchedulerDvmConfig`, `ScheduledEmail`, `ScheduledEmailStatusUpdate`, `listScheduledEmails()`, `watchScheduledEmails()`, `stopWatchingScheduledEmails()`, `cancelScheduledEmail()`, and `scheduledEmailStatusUpdates`.
+- **Change**: Scheduled emails set both the Nostr event `created_at` and MIME `Date:` header to the scheduled delivery time, so recipients see the email as sent when the DVM publishes it.
+
 ## 2.2.1
 
 - **Fix**: NIP-05 recipient resolution now uses `ndk.nip05.resolve()` from NDK `0.8.4-dev.2`, reusing NDK's cache and in-flight request deduplication.
