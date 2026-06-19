@@ -1,3 +1,12 @@
+## Unreleased
+
+- **Breaking**: Raised the minimum Dart SDK version from 3.10.8 to 3.12.0.
+- **Dependencies**: Upgraded `ndk` from `0.8.4-dev.2` to `0.8.4-dev.5` for improved broadcast authentication and live subscription handling.
+- **Refactor**: Simplified internal `NostrMailClient`, `SyncEngine`, and `BridgeResolver` constructors using Dart 3.12 private named initializing formals.
+- **Tests**: Updated `MockRelay` to broadcast matching events to live subscriptions and apply NIP-01 replacement rules to replaceable and addressable events.
+- **Tests**: Added remote-signer hooks for validating signer-modified event timestamps and content, with safer dynamic tag parsing.
+- **Tests**: Removed the obsolete `mark_unread_persists` integration test after the mock relay began honoring deletion requests, which meant the test no longer exercised stale label re-delivery.
+
 ## 2.2.1
 
 - **Fix**: NIP-05 recipient resolution now uses `ndk.nip05.resolve()` from NDK `0.8.4-dev.2`, reusing NDK's cache and in-flight request deduplication.

@@ -21,10 +21,10 @@ platforms:
   windows:
 
 environment:
-  sdk: ^3.10.8
+  sdk: ^3.12.0
 
 dependencies:
-  ndk: ^0.8.4-dev.2
+  ndk: ^0.8.4-dev.5
   enough_mail_plus: ^2.2.4
   sembast: ^3.8.6
   http: ^1.6.0

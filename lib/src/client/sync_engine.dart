@@ -39,11 +39,10 @@ class SyncEngine {
     this._tombstones,
     this._bus,
     this._relays, {
-    required BlossomCache blossomCache,
+    required this._blossomCache,
     List<String>? defaultBlossomServers,
   }) : _defaultBlossomServers =
-           defaultBlossomServers ?? recommendedBlossomServers,
-       _blossomCache = blossomCache;
+           defaultBlossomServers ?? recommendedBlossomServers;
 
   String? get _pubkey => _ndk.accounts.getPublicKey();
 

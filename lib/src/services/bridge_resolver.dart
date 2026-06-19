@@ -14,9 +14,9 @@ class BridgeResolver {
     : _resolveNip05 = ndk.nip05.resolve;
 
   BridgeResolver.withNip05Resolver({
-    required NdkNip05Resolver resolveNip05,
+    required this._resolveNip05,
     this.nip05Overrides,
-  }) : _resolveNip05 = resolveNip05;
+  });
 
   /// Resolve bridge pubkey via NIP-05 lookup for _smtp@domain
   Future<String> resolveBridgePubkey(String domain) async {
