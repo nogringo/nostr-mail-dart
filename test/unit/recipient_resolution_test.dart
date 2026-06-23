@@ -186,22 +186,22 @@ void main() {
           to: '$npub@example.com',
           ndk: ndk,
         );
-        expect(result, keyPair.publicKey);
+        expect(result.pubkey, keyPair.publicKey);
       });
 
       test('npub@nostr', () async {
         final result = await resolveRecipient(to: '$npub@nostr', ndk: ndk);
-        expect(result, keyPair.publicKey);
+        expect(result.pubkey, keyPair.publicKey);
       });
 
       test('npub', () async {
         final result = await resolveRecipient(to: npub, ndk: ndk);
-        expect(result, keyPair.publicKey);
+        expect(result.pubkey, keyPair.publicKey);
       });
 
       test('pubkey', () async {
         final result = await resolveRecipient(to: keyPair.publicKey, ndk: ndk);
-        expect(result, keyPair.publicKey);
+        expect(result.pubkey, keyPair.publicKey);
       });
 
       test('nip05', () async {
@@ -210,7 +210,7 @@ void main() {
           ndk: ndk,
           nip05Overrides: {'russell@uid.ovh': nip05Pubkey},
         );
-        expect(result, nip05Pubkey);
+        expect(result.pubkey, nip05Pubkey);
       });
     });
 
@@ -220,7 +220,7 @@ void main() {
           to: 'Bob <$npub@example.com>',
           ndk: ndk,
         );
-        expect(result, keyPair.publicKey);
+        expect(result.pubkey, keyPair.publicKey);
       });
 
       test('npub@nostr', () async {
@@ -228,7 +228,7 @@ void main() {
           to: 'Bob <$npub@nostr>',
           ndk: ndk,
         );
-        expect(result, keyPair.publicKey);
+        expect(result.pubkey, keyPair.publicKey);
       });
 
       test('nip05', () async {
@@ -237,7 +237,7 @@ void main() {
           ndk: ndk,
           nip05Overrides: {'russell@uid.ovh': nip05Pubkey},
         );
-        expect(result, nip05Pubkey);
+        expect(result.pubkey, nip05Pubkey);
       });
     });
   });
