@@ -11,6 +11,7 @@ import 'package:ndk/ndk.dart';
 import '../constants.dart';
 import '../exceptions.dart';
 import '../models/email.dart';
+import '../models/resolved_recipient.dart';
 import '../services/email_parser.dart';
 import '../storage/email_repository.dart';
 import '../utils/attachment_extractor.dart';
@@ -134,19 +135,34 @@ class EmailSender {
     final fromAddress = message.fromEmail;
 
     final resolutionFutures = recipients.map((addr) async {
-      final pubkey = await resolveRecipient(
+      final resolved = await resolveRecipient(
         to: addr.encode(),
         ndk: _ndk,
         from: fromAddress,
         nip05Overrides: nip05Overrides,
       );
-      return MapEntry(addr, pubkey);
+      return MapEntry(addr, resolved);
     });
     final resolutionResults = await Future.wait(resolutionFutures);
-    final addressToPubkey = Map<MailAddress, String>.fromEntries(
+    final addressToResolved = Map<MailAddress, ResolvedRecipient>.fromEntries(
       resolutionResults,
     );
+    final addressToPubkey = addressToResolved.map(
+      (addr, resolved) => MapEntry(addr, resolved.pubkey),
+    );
     final recipientPubkeys = addressToPubkey.values.toSet();
+
+    // A legacy recipient resolves to its bridge's pubkey. Collect each legacy
+    // address per bridge for the `rcpt-to` envelope (BCC is stripped from the
+    // rendered MIME, so the bridge can only learn of it from this tag).
+    final rcptToByBridge = <String, List<String>>{};
+    for (final resolved in addressToResolved.values) {
+      if (resolved.legacyAddress != null) {
+        rcptToByBridge
+            .putIfAbsent(resolved.pubkey, () => [])
+            .add(resolved.legacyAddress!);
+      }
+    }
 
     final publicRecipientPubkeys = <String>{};
     if (message.to != null) {
@@ -339,6 +355,19 @@ class EmailSender {
 
         final tags = List<List<String>>.from(baseTags)
           ..insert(0, ['p', pubkey]);
+
+        // Bridge-bound rumor: attach the SMTP envelope. `mailFrom` is only
+        // passed inbound (a bridge relaying into nostr), so synthesise it here
+        // from the sender's address when absent.
+        final rcptTos = rcptToByBridge[pubkey];
+        if (rcptTos != null) {
+          if (mailFrom == null && fromAddress != null) {
+            tags.add(['mail-from', fromAddress]);
+          }
+          for (final rcptTo in rcptTos) {
+            tags.add(['rcpt-to', rcptTo]);
+          }
+        }
 
         final emailEvent = Nip01Event(
           pubKey: senderPubkey,
