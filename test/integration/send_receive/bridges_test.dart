@@ -1,6 +1,7 @@
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:ndk/shared/nips/nip19/nip19.dart';
+import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_user.dart';
@@ -37,7 +38,7 @@ void main() {
             null,
             '${Nip19.encodePubKey(user.keyPair.publicKey)}@bridge.com',
           ),
-          to: [MailAddress(null, 'alice@gmail.com')],
+          to: [SmtpRecipient('alice@gmail.com')],
           subject: 'subject',
           body: 'body',
         );
@@ -77,8 +78,8 @@ void main() {
 
         await user.client.send(
           from: MailAddress(null, fromAddress),
-          to: [MailAddress(null, 'alice@gmail.com')],
-          bcc: [MailAddress(null, 'bob@gmail.com')],
+          to: [SmtpRecipient('alice@gmail.com')],
+          bcc: [SmtpRecipient('bob@gmail.com')],
           subject: 'subject',
           body: 'body',
         );
@@ -133,13 +134,8 @@ void main() {
 
         await user.client.send(
           from: MailAddress(null, fromAddress),
-          to: [
-            MailAddress(
-              null,
-              '${Nip19.encodePubKey(publicRecipient.publicKey)}@nostr',
-            ),
-          ],
-          bcc: [MailAddress(null, 'alice@gmail.com')],
+          to: [NostrRecipient.fromPubkey(publicRecipient.publicKey)],
+          bcc: [SmtpRecipient('alice@gmail.com')],
           subject: 'public with legacy bcc',
           body: 'body',
           isPublic: true,

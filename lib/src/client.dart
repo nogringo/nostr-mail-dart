@@ -24,6 +24,7 @@ import 'models/attachment_ref.dart';
 import 'models/email.dart';
 import 'models/mail_event.dart';
 import 'models/private_settings.dart';
+import 'models/recipient.dart';
 
 import 'storage/email_repository.dart';
 import 'storage/gift_wrap_repository.dart';
@@ -685,9 +686,9 @@ class NostrMailClient {
   // ── Sending ─────────────────────────────────────────────────────────────
 
   Future<void> send({
-    required List<MailAddress> to,
-    List<MailAddress>? cc,
-    List<MailAddress>? bcc,
+    required List<Recipient> to,
+    List<Recipient> cc = const [],
+    List<Recipient> bcc = const [],
     required String subject,
     required String body,
     MailAddress? from,
@@ -710,12 +711,18 @@ class NostrMailClient {
 
   Future<void> sendMime(
     MimeMessage message, {
+    required List<Recipient> to,
+    List<Recipient> cc = const [],
+    List<Recipient> bcc = const [],
     bool keepCopy = true,
     bool signRumor = false,
     bool isPublic = false,
     String? mailFrom,
   }) => _sender.sendMime(
     message,
+    to: to,
+    cc: cc,
+    bcc: bcc,
     keepCopy: keepCopy,
     signRumor: signRumor,
     isPublic: isPublic,

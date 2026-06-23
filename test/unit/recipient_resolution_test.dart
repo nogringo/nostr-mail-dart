@@ -3,7 +3,6 @@ import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:nostr_mail/src/services/bridge_resolver.dart';
-import 'package:nostr_mail/src/utils/recipient_resolver.dart';
 import 'package:test/test.dart';
 
 Ndk _newNdk() => Ndk(
@@ -186,22 +185,22 @@ void main() {
           to: '$npub@example.com',
           ndk: ndk,
         );
-        expect(result.pubkey, keyPair.publicKey);
+        expect((result as NostrRecipient).pubkey, keyPair.publicKey);
       });
 
       test('npub@nostr', () async {
         final result = await resolveRecipient(to: '$npub@nostr', ndk: ndk);
-        expect(result.pubkey, keyPair.publicKey);
+        expect((result as NostrRecipient).pubkey, keyPair.publicKey);
       });
 
       test('npub', () async {
         final result = await resolveRecipient(to: npub, ndk: ndk);
-        expect(result.pubkey, keyPair.publicKey);
+        expect((result as NostrRecipient).pubkey, keyPair.publicKey);
       });
 
       test('pubkey', () async {
         final result = await resolveRecipient(to: keyPair.publicKey, ndk: ndk);
-        expect(result.pubkey, keyPair.publicKey);
+        expect((result as NostrRecipient).pubkey, keyPair.publicKey);
       });
 
       test('nip05', () async {
@@ -210,7 +209,7 @@ void main() {
           ndk: ndk,
           nip05Overrides: {'russell@uid.ovh': nip05Pubkey},
         );
-        expect(result.pubkey, nip05Pubkey);
+        expect((result as NostrRecipient).pubkey, nip05Pubkey);
       });
     });
 
@@ -220,7 +219,7 @@ void main() {
           to: 'Bob <$npub@example.com>',
           ndk: ndk,
         );
-        expect(result.pubkey, keyPair.publicKey);
+        expect((result as NostrRecipient).pubkey, keyPair.publicKey);
       });
 
       test('npub@nostr', () async {
@@ -228,7 +227,7 @@ void main() {
           to: 'Bob <$npub@nostr>',
           ndk: ndk,
         );
-        expect(result.pubkey, keyPair.publicKey);
+        expect((result as NostrRecipient).pubkey, keyPair.publicKey);
       });
 
       test('nip05', () async {
@@ -237,7 +236,42 @@ void main() {
           ndk: ndk,
           nip05Overrides: {'russell@uid.ovh': nip05Pubkey},
         );
-        expect(result.pubkey, nip05Pubkey);
+        expect((result as NostrRecipient).pubkey, nip05Pubkey);
+      });
+    });
+
+    group('legacy classification', () {
+      test('NIP-05 found resolves to a NostrRecipient', () async {
+        final result = await resolveRecipient(
+          to: 'alice@example.com',
+          ndk: ndk,
+          nip05Resolver: (_) async =>
+              _nip05Found(nip05Pubkey, 'alice@example.com'),
+        );
+        expect(result, isA<NostrRecipient>());
+        expect((result as NostrRecipient).pubkey, nip05Pubkey);
+      });
+
+      test('NIP-05 not found resolves to an SmtpRecipient', () async {
+        final result = await resolveRecipient(
+          to: 'bob@example.com',
+          ndk: ndk,
+          nip05Resolver: (_) async => const ndk_entities.Nip05NotFound(),
+        );
+        expect(result, isA<SmtpRecipient>());
+        expect((result as SmtpRecipient).email, 'bob@example.com');
+      });
+
+      test('NIP-05 network error throws instead of routing to a bridge', () {
+        expect(
+          resolveRecipient(
+            to: 'bob@example.com',
+            ndk: ndk,
+            nip05Resolver: (_) async =>
+                ndk_entities.Nip05ResolveNetworkError(Exception('offline')),
+          ),
+          throwsA(isA<NostrMailException>()),
+        );
       });
     });
   });

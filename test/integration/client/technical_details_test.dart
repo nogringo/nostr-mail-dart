@@ -1,4 +1,3 @@
-import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:nostr_mail/nostr_mail.dart';
@@ -43,12 +42,7 @@ void main() {
     );
 
     await client.send(
-      to: [
-        MailAddress(
-          null,
-          '${Nip19.encodePubKey(recipientKeyPair.publicKey)}@nostr',
-        ),
-      ],
+      to: [NostrRecipient.fromPubkey(recipientKeyPair.publicKey)],
       subject: 'Test Email',
       body: 'This is a test email sent via Nostr Mail.',
     );

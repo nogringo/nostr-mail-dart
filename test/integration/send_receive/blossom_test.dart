@@ -1,5 +1,4 @@
-import 'package:enough_mail_plus/enough_mail.dart';
-import 'package:ndk/shared/nips/nip19/nip19.dart';
+import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_user.dart';
@@ -42,12 +41,7 @@ void main() {
           'Large Email Test - ${DateTime.now().toIso8601String()}';
 
       await sender.client.send(
-        to: [
-          MailAddress(
-            null,
-            '${Nip19.encodePubKey(recipient.keyPair.publicKey)}@nostr',
-          ),
-        ],
+        to: [NostrRecipient.fromPubkey(recipient.keyPair.publicKey)],
         subject: testSubject,
         body: largeBody,
       );

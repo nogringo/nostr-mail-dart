@@ -11,14 +11,14 @@ import 'package:ndk/ndk.dart';
 import '../constants.dart';
 import '../exceptions.dart';
 import '../models/email.dart';
-import '../models/resolved_recipient.dart';
+import '../models/recipient.dart';
+import '../services/bridge_resolver.dart';
 import '../services/email_parser.dart';
 import '../storage/email_repository.dart';
 import '../utils/attachment_extractor.dart';
 import '../utils/email_record_builder.dart';
 import '../utils/encrypt_blob.dart';
 import '../utils/mime_message_cleaner.dart';
-import '../utils/recipient_resolver.dart';
 import 'settings_manager.dart';
 
 /// Handles building, encrypting and sending emails via Nostr GiftWraps.
@@ -56,11 +56,15 @@ class EmailSender {
     }
   }
 
-  /// Send email — auto-detects if recipient is Nostr or legacy email.
+  /// Build and send an email to already-resolved [Recipient]s.
+  ///
+  /// Each recipient is an explicit [NostrRecipient] or [SmtpRecipient], so there
+  /// is no in-send NIP-05 guessing. Use [resolveRecipient] to turn a raw address
+  /// into a [Recipient].
   Future<void> send({
-    required List<MailAddress> to,
-    List<MailAddress>? cc,
-    List<MailAddress>? bcc,
+    required List<Recipient> to,
+    List<Recipient> cc = const [],
+    List<Recipient> bcc = const [],
     required String subject,
     required String body,
     MailAddress? from,
@@ -87,11 +91,14 @@ class EmailSender {
       }
     }
 
+    List<MailAddress>? addresses(List<Recipient> rs) =>
+        rs.isEmpty ? null : rs.map((r) => r.mailAddress).toList();
+
     final rawContent = _parser.build(
       from: finalFrom,
-      to: to,
-      cc: cc,
-      bcc: bcc,
+      to: to.map((r) => r.mailAddress).toList(),
+      cc: addresses(cc),
+      bcc: addresses(bcc),
       subject: subject,
       body: body,
       htmlBody: htmlBody,
@@ -100,15 +107,25 @@ class EmailSender {
     final message = MimeMessage.parseFromText(rawContent);
     return sendMime(
       message,
+      to: to,
+      cc: cc,
+      bcc: bcc,
       keepCopy: keepCopy,
       signRumor: signRumor,
       isPublic: isPublic,
     );
   }
 
-  /// Send a pre-constructed [MimeMessage].
+  /// Send a pre-constructed [MimeMessage] to already-resolved [Recipient]s.
+  ///
+  /// [to]/[cc]/[bcc] drive routing; the MIME headers drive only display and the
+  /// relayed content. The grouping matters: a public email's To/Cc go in the
+  /// public event while Bcc is gift-wrapped privately.
   Future<void> sendMime(
     MimeMessage message, {
+    required List<Recipient> to,
+    List<Recipient> cc = const [],
+    List<Recipient> bcc = const [],
     bool keepCopy = true,
     bool signRumor = false,
     bool isPublic = false,
@@ -123,76 +140,55 @@ class EmailSender {
       );
     }
 
-    final recipients = <MailAddress>{};
-    if (message.to != null) recipients.addAll(message.to!);
-    if (message.cc != null) recipients.addAll(message.cc!);
-    if (message.bcc != null) recipients.addAll(message.bcc!);
-
-    if (recipients.isEmpty) {
-      throw NostrMailException('No recipients found in MimeMessage');
+    if (to.isEmpty && cc.isEmpty && bcc.isEmpty) {
+      throw NostrMailException('No recipients provided');
     }
 
     final fromAddress = message.fromEmail;
 
-    final resolutionFutures = recipients.map((addr) async {
-      final resolved = await resolveRecipient(
-        to: addr.encode(),
-        ndk: _ndk,
-        from: fromAddress,
-        nip05Overrides: nip05Overrides,
-      );
-      return MapEntry(addr, resolved);
-    });
-    final resolutionResults = await Future.wait(resolutionFutures);
-    final addressToResolved = Map<MailAddress, ResolvedRecipient>.fromEntries(
-      resolutionResults,
-    );
-    final addressToPubkey = addressToResolved.map(
-      (addr, resolved) => MapEntry(addr, resolved.pubkey),
-    );
-    final recipientPubkeys = addressToPubkey.values.toSet();
+    Set<String> nostrPubkeys(List<Recipient> rs) =>
+        rs.whereType<NostrRecipient>().map((r) => r.pubkey).toSet();
+    final toNostr = nostrPubkeys(to);
+    final ccNostr = nostrPubkeys(cc);
+    final bccNostr = nostrPubkeys(bcc);
 
-    // A legacy recipient resolves to its bridge's pubkey. Collect each legacy
-    // address per bridge for the `rcpt-to` envelope. Bridge delivery is
-    // orthogonal to public/private (_publishToBridges below), so bridge pubkeys
-    // are excluded from the nostr recipient sets.
+    // Every legacy recipient is relayed through the sender's own bridge
+    // (_smtp@<sender-domain>), resolved once here. Deterministic, not a guess:
+    // the caller already told us which recipients are SMTP.
+    final smtpEmails = [...to, ...cc, ...bcc]
+        .whereType<SmtpRecipient>()
+        .map((r) => r.email)
+        .toList();
     final rcptToByBridge = <String, List<String>>{};
-    for (final resolved in addressToResolved.values) {
-      if (resolved.legacyAddress != null) {
-        rcptToByBridge
-            .putIfAbsent(resolved.pubkey, () => [])
-            .add(resolved.legacyAddress!);
+    if (smtpEmails.isNotEmpty) {
+      if (fromAddress == null || !fromAddress.contains('@')) {
+        throw NostrMailException(
+          'A from address with a domain is required to relay to legacy '
+          'recipients',
+        );
       }
-    }
-    final bridgePubkeys = rcptToByBridge.keys.toSet();
-
-    final publicRecipientPubkeys = <String>{};
-    if (message.to != null) {
-      publicRecipientPubkeys.addAll(
-        message.to!.map((a) => addressToPubkey[a]).whereType<String>(),
-      );
-    }
-    if (message.cc != null) {
-      publicRecipientPubkeys.addAll(
-        message.cc!.map((a) => addressToPubkey[a]).whereType<String>(),
-      );
+      final bridgePubkey = await BridgeResolver(
+        ndk: _ndk,
+        nip05Overrides: nip05Overrides,
+      ).resolveBridgePubkey(fromAddress.split('@').last);
+      rcptToByBridge[bridgePubkey] = smtpEmails;
     }
 
-    final bccRecipientPubkeys = <String>{};
-    if (message.bcc != null) {
-      bccRecipientPubkeys.addAll(
-        message.bcc!.map((a) => addressToPubkey[a]).whereType<String>(),
-      );
-    }
-
-    publicRecipientPubkeys.removeAll(bridgePubkeys);
-    bccRecipientPubkeys.removeAll(bridgePubkeys);
+    // Nostr recipients drive the public event / direct gift wraps; bridges are
+    // served separately by _publishToBridges, so they never enter these sets.
+    final recipientPubkeys = {
+      ...toNostr,
+      ...ccNostr,
+      ...bccNostr,
+      ...rcptToByBridge.keys,
+    };
+    final publicRecipientPubkeys = {...toNostr, ...ccNostr};
+    final bccRecipientPubkeys = {...bccNostr};
 
     final rawContent = message.renderMessage();
     final rawContentBytes = utf8.encode(rawContent);
 
-    final targetPubkeys = <String>{...recipientPubkeys}
-      ..removeAll(bridgePubkeys);
+    final targetPubkeys = {...toNostr, ...ccNostr, ...bccNostr};
     if (keepCopy) targetPubkeys.add(senderPubkey);
 
     final baseTags = <List<String>>[];

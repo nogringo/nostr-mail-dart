@@ -5,6 +5,8 @@ import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:ndk/shared/nips/nip01/key_pair.dart';
 import 'package:nostr_mail/src/client.dart';
 import 'package:nostr_mail/src/models/email.dart';
+import 'package:nostr_mail/src/models/recipient.dart';
+import 'package:nostr_mail/src/utils/recipient_resolver.dart';
 
 import 'package:sembast/sembast_memory.dart';
 
@@ -101,6 +103,21 @@ class MockBridge {
     MailAddress mailFrom,
     MimeMessage mime,
   ) async {
-    await client.sendMime(mime, keepCopy: false, mailFrom: mailFrom.email);
+    Future<List<Recipient>> resolve(List<MailAddress>? addrs) async => [
+      for (final a in addrs ?? const <MailAddress>[])
+        await resolveRecipient(
+          to: a.encode(),
+          ndk: ndk,
+          nip05Overrides: nip05Overrides,
+        ),
+    ];
+    await client.sendMime(
+      mime,
+      to: await resolve(mime.to),
+      cc: await resolve(mime.cc),
+      bcc: await resolve(mime.bcc),
+      keepCopy: false,
+      mailFrom: mailFrom.email,
+    );
   }
 }

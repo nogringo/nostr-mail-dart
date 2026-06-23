@@ -1,5 +1,7 @@
-## Unreleased
+## 2.2.2
 
+- **Breaking**: `send()`/`sendMime()` take typed `Recipient` lists (`NostrRecipient`/`SmtpRecipient`) per `to`/`cc`/`bcc` instead of `MailAddress`; the caller picks each recipient's transport. `resolveRecipient()` returns a `Recipient` (not a pubkey), drops its `from` arg, and throws on a NIP-05 network/malformed result instead of misrouting a Nostr recipient to the bridge. `Recipient` types and `resolveRecipient()` are now exported.
+- **New**: Emails to legacy recipients carry the SMTP envelope on the bridge rumor (`mail-from` + one `rcpt-to` per `to`/`cc`/`bcc`), fixing BCC-to-legacy delivery; bridge delivery now applies to public emails too.
 - **Breaking**: Raised the minimum Dart SDK version from 3.10.8 to 3.12.0.
 - **Dependencies**: Upgraded `ndk` from `0.8.4-dev.2` to `0.8.4-dev.5` for improved broadcast authentication and live subscription handling.
 - **Refactor**: Simplified internal `NostrMailClient`, `SyncEngine`, and `BridgeResolver` constructors using Dart 3.12 private named initializing formals.

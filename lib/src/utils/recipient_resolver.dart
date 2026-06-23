@@ -1,87 +1,82 @@
 import 'package:enough_mail_plus/enough_mail.dart';
+import 'package:ndk/entities.dart' as ndk_entities;
 import 'package:ndk/ndk.dart';
 
 import '../exceptions.dart';
-import '../models/resolved_recipient.dart';
-import '../services/bridge_resolver.dart';
+import '../models/recipient.dart';
 
-/// Resolve recipient address to a Nostr pubkey (and, for legacy recipients,
-/// the bridge route).
+/// Resolves a NIP-05 identifier to a typed result. Injectable for tests.
+typedef NdkNip05Resolver =
+    Future<ndk_entities.Nip05ResolveResult> Function(String identifier);
+
+/// Classify a recipient address into an explicit [Recipient].
 ///
-/// Handles:
-/// - npub (with or without @domain)
-/// - hex pubkey (64 chars)
-/// - NIP-05 (user@domain.com)
-/// - Legacy email via bridge
-/// - Formatted addresses: "Name" <address>
+/// Convenience for callers that only have a raw address; the send path itself
+/// takes already-resolved [Recipient]s.
 ///
-/// [to] The recipient address (npub, hex, or email)
-/// [from] The sender's address (required for legacy email routing)
-Future<ResolvedRecipient> resolveRecipient({
+/// - npub / hex / `npub@domain` -> [NostrRecipient] (no network)
+/// - `user@domain`:
+///   - NIP-05 found -> [NostrRecipient]
+///   - NIP-05 not found (server reachable, name absent) -> [SmtpRecipient]
+///   - network error or malformed response -> throws, rather than guessing a
+///     transport. A transient NIP-05 failure must never silently route a Nostr
+///     recipient to the SMTP bridge.
+Future<Recipient> resolveRecipient({
   required String to,
   required Ndk ndk,
-  String? from,
   Map<String, String>? nip05Overrides,
+  NdkNip05Resolver? nip05Resolver,
 }) async {
-  final bridgeResolver = BridgeResolver(
-    ndk: ndk,
-    nip05Overrides: nip05Overrides,
-  );
-
-  // Try to parse formatted address (e.g., "Name" <address>)
-  // If it fails, use the raw address
+  // Accept formatted addresses ("Name" <address>); fall back to the raw value.
   String toAddress = to;
   try {
-    final parsedTo = MailAddress.parse(to);
-    toAddress = parsedTo.email;
+    toAddress = MailAddress.parse(to).email;
   } catch (_) {
-    // Not a valid mail address format, use raw to
+    // Not a formatted address; use the raw value.
   }
 
-  // Extract bech32 part (before @ if present)
+  final mailAddress = MailAddress(null, toAddress);
   final bech32Part = toAddress.split('@').first;
 
-  // Check if it's an npub
   if (toAddress.startsWith('npub1')) {
     try {
-      return ResolvedRecipient(pubkey: Nip19.decode(bech32Part));
-    } catch (e) {
+      return NostrRecipient(
+        pubkey: Nip19.decode(bech32Part),
+        mailAddress: mailAddress,
+      );
+    } catch (_) {
       throw RecipientResolutionException(to);
     }
   }
 
-  // Check if it's a 64-char hex pubkey
   if (RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(toAddress)) {
-    return ResolvedRecipient(pubkey: toAddress.toLowerCase());
+    return NostrRecipient(
+      pubkey: toAddress.toLowerCase(),
+      mailAddress: mailAddress,
+    );
   }
 
-  // It's an email format - try NIP-05 first
   if (toAddress.contains('@')) {
-    final nip05Pubkey = await bridgeResolver.resolveNip05(toAddress);
-    if (nip05Pubkey != null) {
-      return ResolvedRecipient(pubkey: nip05Pubkey);
-    }
-
-    // NIP-05 failed, route via bridge at sender's domain
-    if (from == null) {
-      throw NostrMailException(
-        'from address is required when sending to legacy email addresses',
+    if (nip05Overrides != null && nip05Overrides.containsKey(toAddress)) {
+      return NostrRecipient(
+        pubkey: nip05Overrides[toAddress]!,
+        mailAddress: mailAddress,
       );
     }
 
-    // Extract email address from formatted address (e.g., "Name" <email@domain>)
-    final parsedFrom = MailAddress.parse(from);
-    final fromEmail = parsedFrom.email;
-
-    if (!fromEmail.contains('@')) {
-      throw NostrMailException(
-        'from address is required when sending to legacy email addresses',
-      );
-    }
-
-    final domain = fromEmail.split('@').last;
-    final bridgePubkey = await bridgeResolver.resolveBridgePubkey(domain);
-    return ResolvedRecipient(pubkey: bridgePubkey, legacyAddress: toAddress);
+    final result = await (nip05Resolver ?? ndk.nip05.resolve)(toAddress);
+    return switch (result) {
+      ndk_entities.Nip05Found(:final data) => NostrRecipient(
+        pubkey: data.pubKey,
+        mailAddress: mailAddress,
+      ),
+      ndk_entities.Nip05NotFound() => SmtpRecipient.fromMailAddress(mailAddress),
+      ndk_entities.Nip05ResolveNetworkError() ||
+      ndk_entities.Nip05ResolveInvalidResponse() => throw NostrMailException(
+        'Cannot classify "$toAddress": its NIP-05 lookup failed. Pass an '
+        'explicit NostrRecipient or SmtpRecipient instead of a raw address.',
+      ),
+    };
   }
 
   throw RecipientResolutionException(to);

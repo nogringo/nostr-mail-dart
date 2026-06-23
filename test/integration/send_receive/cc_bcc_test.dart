@@ -1,5 +1,6 @@
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
+import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_user.dart';
@@ -45,11 +46,11 @@ void main() {
       String npub(String pubkey) => Nip19.encodePubKey(pubkey);
 
       await fromUser.client.send(
-        to: [MailAddress(null, '${npub(toUser.keyPair.publicKey)}@nostr')],
-        cc: [MailAddress(null, '${npub(ccUser.keyPair.publicKey)}@nostr')],
+        to: [NostrRecipient.fromPubkey(toUser.keyPair.publicKey)],
+        cc: [NostrRecipient.fromPubkey(ccUser.keyPair.publicKey)],
         bcc: [
-          MailAddress(null, '${npub(bcc1User.keyPair.publicKey)}@nostr'),
-          MailAddress(null, '${npub(bcc2User.keyPair.publicKey)}@nostr'),
+          NostrRecipient.fromPubkey(bcc1User.keyPair.publicKey),
+          NostrRecipient.fromPubkey(bcc2User.keyPair.publicKey),
         ],
         subject: 'subject',
         body: 'body',

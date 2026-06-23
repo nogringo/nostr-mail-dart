@@ -76,23 +76,27 @@ void main() async {
     print('Trash event: $event');
   });
 
-  // Send to a Nostr user (npub)
+  // Send to a Nostr user you already have the pubkey for.
   await client.send(
-    to: [MailAddress(null, 'npub1abc123...')],
+    to: [NostrRecipient.fromPubkey('<recipient-hex-pubkey>')],
     subject: 'Hello from Nostr!',
     body: 'This is a test email sent via Nostr.',
   );
 
-  // Send to a NIP-05 identifier
+  // Resolve a raw address (npub / NIP-05) into a Recipient, then send. This
+  // throws if a NIP-05 lookup fails, so a Nostr user is never misrouted to a
+  // bridge.
+  final alice = await resolveRecipient(to: 'alice@nostr.directory', ndk: ndk);
   await client.send(
-    to: [MailAddress(null, 'alice@nostr.directory')],
+    to: [alice],
     subject: 'Hello Alice!',
     body: 'Sending via your NIP-05 address.',
   );
 
-  // Send to a legacy email (routed via bridge)
+  // Send to a legacy email, relayed through your own SMTP bridge.
   await client.send(
-    to: [MailAddress(null, 'bob@gmail.com')],
+    from: MailAddress(null, '${Nip19.encodePubKey(keyPair.publicKey)}@bridge.example'),
+    to: [SmtpRecipient('bob@gmail.com')],
     subject: 'Hello from Nostr!',
     body: 'This email was sent via the Nostr bridge.',
   );

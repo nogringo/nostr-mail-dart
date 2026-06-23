@@ -1,6 +1,5 @@
-import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
-import 'package:nostr_mail/src/constants.dart';
+import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_user.dart';
@@ -21,13 +20,15 @@ void main() {
 
       await sender.client.send(
         to: [
-          MailAddress(
-            null,
-            'npub1gvs8c59ndm3xyq2jz7hpww2z5xd4y9ppuvr42wwvramn38qrmkaqdqhdag@nostr',
+          NostrRecipient.fromPubkey(
+            Nip19.decode(
+              'npub1gvs8c59ndm3xyq2jz7hpww2z5xd4y9ppuvr42wwvramn38qrmkaqdqhdag',
+            ),
           ),
-          MailAddress(
-            null,
-            'npub10xqd0n0mmm0wma2qq6ycq2y5dn7dxqj6awhfa60mesm9qccw2rfszasxh5@nostr',
+          NostrRecipient.fromPubkey(
+            Nip19.decode(
+              'npub10xqd0n0mmm0wma2qq6ycq2y5dn7dxqj6awhfa60mesm9qccw2rfszasxh5',
+            ),
           ),
         ],
         subject: 'subject',
@@ -75,18 +76,14 @@ void main() {
 
         const publicRecipientNpub =
             'npub1gvs8c59ndm3xyq2jz7hpww2z5xd4y9ppuvr42wwvramn38qrmkaqdqhdag';
-        const publicRecipient = '$publicRecipientNpub@nostr';
 
         final bccUser = TestUser('bcc', defaultDmRelays: [relay.url]);
         await bccUser.create();
         addTearDown(() async => await bccUser.destroy());
 
-        final bccRecipient =
-            '${Nip19.encodePubKey(bccUser.keyPair.publicKey)}@nostr';
-
         await sender.client.send(
-          to: [MailAddress(null, publicRecipient)],
-          bcc: [MailAddress(null, bccRecipient)],
+          to: [NostrRecipient.fromPubkey(Nip19.decode(publicRecipientNpub))],
+          bcc: [NostrRecipient.fromPubkey(bccUser.keyPair.publicKey)],
           subject: 'Public with BCC',
           body: 'Hello everyone (and secret Bob)',
           isPublic: true,
