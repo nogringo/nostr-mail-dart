@@ -70,7 +70,9 @@ Future<Recipient> resolveRecipient({
         pubkey: data.pubKey,
         mailAddress: mailAddress,
       ),
-      ndk_entities.Nip05NotFound() => SmtpRecipient.fromMailAddress(mailAddress),
+      ndk_entities.Nip05NotFound() => SmtpRecipient.fromMailAddress(
+        mailAddress,
+      ),
       ndk_entities.Nip05ResolveNetworkError() ||
       ndk_entities.Nip05ResolveInvalidResponse() => throw NostrMailException(
         'Cannot classify "$toAddress": its NIP-05 lookup failed. Pass an '

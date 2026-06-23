@@ -95,7 +95,10 @@ void main() async {
 
   // Send to a legacy email, relayed through your own SMTP bridge.
   await client.send(
-    from: MailAddress(null, '${Nip19.encodePubKey(keyPair.publicKey)}@bridge.example'),
+    from: MailAddress(
+      null,
+      '${Nip19.encodePubKey(keyPair.publicKey)}@bridge.example',
+    ),
     to: [SmtpRecipient('bob@gmail.com')],
     subject: 'Hello from Nostr!',
     body: 'This email was sent via the Nostr bridge.',

@@ -155,10 +155,11 @@ class EmailSender {
     // Every legacy recipient is relayed through the sender's own bridge
     // (_smtp@<sender-domain>), resolved once here. Deterministic, not a guess:
     // the caller already told us which recipients are SMTP.
-    final smtpEmails = [...to, ...cc, ...bcc]
-        .whereType<SmtpRecipient>()
-        .map((r) => r.email)
-        .toList();
+    final smtpEmails = [
+      ...to,
+      ...cc,
+      ...bcc,
+    ].whereType<SmtpRecipient>().map((r) => r.email).toList();
     final rcptToByBridge = <String, List<String>>{};
     if (smtpEmails.isNotEmpty) {
       if (fromAddress == null || !fromAddress.contains('@')) {
