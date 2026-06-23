@@ -153,8 +153,9 @@ class EmailSender {
     final recipientPubkeys = addressToPubkey.values.toSet();
 
     // A legacy recipient resolves to its bridge's pubkey. Collect each legacy
-    // address per bridge for the `rcpt-to` envelope (BCC is stripped from the
-    // rendered MIME, so the bridge can only learn of it from this tag).
+    // address per bridge for the `rcpt-to` envelope. Bridge delivery is
+    // orthogonal to public/private (_publishToBridges below), so bridge pubkeys
+    // are excluded from the nostr recipient sets.
     final rcptToByBridge = <String, List<String>>{};
     for (final resolved in addressToResolved.values) {
       if (resolved.legacyAddress != null) {
@@ -163,6 +164,7 @@ class EmailSender {
             .add(resolved.legacyAddress!);
       }
     }
+    final bridgePubkeys = rcptToByBridge.keys.toSet();
 
     final publicRecipientPubkeys = <String>{};
     if (message.to != null) {
@@ -183,10 +185,14 @@ class EmailSender {
       );
     }
 
+    publicRecipientPubkeys.removeAll(bridgePubkeys);
+    bccRecipientPubkeys.removeAll(bridgePubkeys);
+
     final rawContent = message.renderMessage();
     final rawContentBytes = utf8.encode(rawContent);
 
-    final targetPubkeys = <String>{...recipientPubkeys};
+    final targetPubkeys = <String>{...recipientPubkeys}
+      ..removeAll(bridgePubkeys);
     if (keepCopy) targetPubkeys.add(senderPubkey);
 
     final baseTags = <List<String>>[];
@@ -356,19 +362,6 @@ class EmailSender {
         final tags = List<List<String>>.from(baseTags)
           ..insert(0, ['p', pubkey]);
 
-        // Bridge-bound rumor: attach the SMTP envelope. `mailFrom` is only
-        // passed inbound (a bridge relaying into nostr), so synthesise it here
-        // from the sender's address when absent.
-        final rcptTos = rcptToByBridge[pubkey];
-        if (rcptTos != null) {
-          if (mailFrom == null && fromAddress != null) {
-            tags.add(['mail-from', fromAddress]);
-          }
-          for (final rcptTo in rcptTos) {
-            tags.add(['rcpt-to', rcptTo]);
-          }
-        }
-
         final emailEvent = Nip01Event(
           pubKey: senderPubkey,
           kind: emailKind,
@@ -385,6 +378,63 @@ class EmailSender {
 
       await Future.wait(sendFutures);
     }
+
+    // A legacy recipient is always reached the same way, public or not: a gift
+    // wrap to its bridge carrying the SMTP envelope.
+    await _publishToBridges(
+      senderPubkey: senderPubkey,
+      rcptToByBridge: rcptToByBridge,
+      fromAddress: fromAddress,
+      explicitMailFrom: mailFrom,
+      baseTags: baseTags,
+      rawContent: rawContent,
+      largeEmailContent: content,
+      signRumor: signRumor,
+    );
+  }
+
+  /// Send each SMTP bridge a gift-wrapped rumor with the envelope it relays on:
+  /// `mail-from` (the sender) and one `rcpt-to` per legacy recipient. Runs for
+  /// public and private emails alike - a bridge is always reached by gift wrap.
+  Future<void> _publishToBridges({
+    required String senderPubkey,
+    required Map<String, List<String>> rcptToByBridge,
+    required String? fromAddress,
+    required String? explicitMailFrom,
+    required List<List<String>> baseTags,
+    required String rawContent,
+    required String largeEmailContent,
+    required bool signRumor,
+  }) async {
+    if (rcptToByBridge.isEmpty) return;
+
+    final bridgeMime = removeBccHeaders(rawContent);
+    final bridgeContent = utf8.encode(bridgeMime).length < maxInlineSize
+        ? bridgeMime
+        : largeEmailContent;
+
+    final futures = rcptToByBridge.entries.map((entry) async {
+      final bridgePubkey = entry.key;
+      final tags = List<List<String>>.from(baseTags)
+        ..insert(0, ['p', bridgePubkey]);
+      // `explicitMailFrom` is the inbound relay's sender; outbound we synthesise
+      // mail-from from the sender's own address.
+      if (explicitMailFrom == null && fromAddress != null) {
+        tags.add(['mail-from', fromAddress]);
+      }
+      for (final rcptTo in entry.value) {
+        tags.add(['rcpt-to', rcptTo]);
+      }
+      final event = Nip01Event(
+        pubKey: senderPubkey,
+        kind: emailKind,
+        tags: tags,
+        content: bridgeContent,
+      );
+      final rumor = signRumor ? await _ndk.accounts.sign(event) : event;
+      await _publishGiftWrapped(rumor, bridgePubkey);
+    });
+    await Future.wait(futures);
   }
 
   /// Optimistic local write of the sender's own copy.
