@@ -26,6 +26,7 @@ environment:
 dependencies:
   ndk: ^0.8.4-dev.5
   enough_mail_plus: ^2.2.4
+  nostr_event_scheduler: ^0.2.3
   sembast: ^3.8.6
   http: ^1.6.0
   html: ^0.15.6
