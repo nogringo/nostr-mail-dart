@@ -29,13 +29,60 @@ class ScheduleManager {
     this.dvmReadRelays,
   });
 
-  /// Start listening for DVM feedback and multi-device sync. Requires a
-  /// logged-in account.
-  Future<void> startListening() => _scheduler.startListening();
+  bool _listening = false;
 
-  Future<void> stopListening() => _scheduler.stopListening();
+  /// Start listening for DVM feedback and multi-device sync. Requires a
+  /// logged-in account. Idempotent.
+  Future<void> startListening() async {
+    if (_listening) return;
+    _listening = true;
+    await _scheduler.startListening();
+  }
+
+  Future<void> stopListening() async {
+    if (!_listening) return;
+    _listening = false;
+    await _scheduler.stopListening();
+  }
 
   Future<void> dispose() => _scheduler.dispose();
+
+  /// Compose an email from parts and schedule it at [at]. See [scheduleMime].
+  Future<ScheduledEmail> scheduleEmail({
+    required List<Recipient> to,
+    List<Recipient> cc = const [],
+    List<Recipient> bcc = const [],
+    required String subject,
+    required String body,
+    MailAddress? from,
+    String? htmlBody,
+    bool keepCopy = true,
+    bool signRumor = false,
+    bool isPublic = false,
+    required DateTime at,
+    String? dvmPubkey,
+  }) async {
+    final message = await _sender.composeMime(
+      to: to,
+      cc: cc,
+      bcc: bcc,
+      subject: subject,
+      body: body,
+      from: from,
+      htmlBody: htmlBody,
+    );
+    return scheduleMime(
+      message,
+      to: to,
+      cc: cc,
+      bcc: bcc,
+      keepCopy: keepCopy,
+      signRumor: signRumor,
+      isPublic: isPublic,
+      at: at,
+      dvmPubkey: dvmPubkey,
+    );
+  }
 
   /// Schedule a pre-built [message] to be sent at [at].
   ///
