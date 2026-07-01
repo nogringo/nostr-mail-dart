@@ -102,6 +102,20 @@ void main() {
       expect(rumor.kind, emailKind);
       expect(rumor.createdAt, atEpoch);
 
+      // What the recipient's client shows is Email.date, which reads the MIME
+      // Date header. It must be the schedule time, not when the email was
+      // composed.
+      final received = Email(
+        id: rumor.id,
+        senderPubkey: rumor.pubKey,
+        recipientPubkey: sender.keyPair.publicKey,
+        lightMimeText: rumor.content,
+        attachmentRefs: const [],
+        createdAt: DateTime.fromMillisecondsSinceEpoch(rumor.createdAt * 1000),
+        isBridged: false,
+      );
+      expect(received.date.millisecondsSinceEpoch ~/ 1000, atEpoch);
+
       // Cancelling removes it from the client and from the store.
       await sender.client.cancelScheduledEmail(scheduled.packageId);
       expect(await sender.client.getScheduledEmails(), isEmpty);
