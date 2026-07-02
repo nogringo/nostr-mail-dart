@@ -1,3 +1,11 @@
+## 2.3.0
+
+- **New**: Email scheduling through a Scheduler DVM. `scheduleEmail()`/`scheduleMime()` queue an email for future delivery at a given time (one DVM job per outgoing gift wrap or public event); `getScheduledEmails()`/`watchScheduledEmails()` list and observe them; `cancelScheduledEmail()` deletes the package so the DVM never sends; `getScheduledMime()` reconstructs the full editable MIME to re-open a scheduled email in a composer; `resyncScheduledEmails()` forces a one-shot resync; `startScheduling()`/`stopScheduling()` toggle live DVM feedback and multi-device sync. Configure the DVM via `schedulerDvm`/`schedulerDvmReadRelays` on `create()`.
+- **New**: Exported `ScheduledEmail` and `ScheduledEmailStatus`.
+- **New**: A scheduled email dates its rumors and MIME `Date` header at the schedule time, so the recipient sees the send date; the visible gift-wrap envelope stays randomized in the 2 days before it, never revealing that the email was pre-built.
+- **Refactor**: Split event building from broadcasting in `EmailSender` behind a `Delivery` abstraction, so immediate and scheduled sends share one build path.
+- **Dependencies**: Added `nostr_event_scheduler ^0.2.3`. Upgraded `ndk` from `0.8.4-dev.5` to `0.8.4-dev.7`.
+
 ## 2.2.2
 
 - **Breaking**: `send()`/`sendMime()` take typed `Recipient` lists (`NostrRecipient`/`SmtpRecipient`) per `to`/`cc`/`bcc` instead of `MailAddress`; the caller picks each recipient's transport. `resolveRecipient()` returns a `Recipient` (not a pubkey), drops its `from` arg, and throws on a NIP-05 network/malformed result instead of misrouting a Nostr recipient to the bridge. `Recipient` types and `resolveRecipient()` are now exported.
