@@ -819,6 +819,11 @@ class NostrMailClient {
   Future<void> cancelScheduledEmail(String packageId) =>
       _schedule.cancel(packageId);
 
+  /// Force a one-shot network resync of scheduled emails, cancellations and
+  /// DVM status feedback. Updates the local store; [watchScheduledEmails]
+  /// re-emits with the result.
+  Future<void> resyncScheduledEmails() => _schedule.resync();
+
   /// Start listening for DVM feedback and multi-device schedule sync. Requires
   /// a logged-in account. Scheduling, listing and cancelling work without it
   /// (local-first); this only adds live status updates. Idempotent.

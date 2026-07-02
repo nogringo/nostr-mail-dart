@@ -174,6 +174,10 @@ class ScheduleManager {
   /// DVM jobs (NIP-09), so the DVM never publishes.
   Future<void> cancel(String packageId) => _scheduler.cancelPackage(packageId);
 
+  /// Force a one-shot network resync of schedule requests, cancellations and
+  /// DVM feedback. [watch] re-emits with the refreshed state.
+  Future<void> resync() => _scheduler.resync();
+
   // ── Mapping ────────────────────────────────────────────────────────────────
 
   List<ScheduledEmail> _sortNewest(Iterable<ScheduledEmail?> emails) {
