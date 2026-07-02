@@ -87,8 +87,10 @@ class ScheduleManager {
   /// Schedule a pre-built [message] to be sent at [at].
   ///
   /// Mirrors `EmailSender.sendMime` routing: [to]/[cc]/[bcc] drive delivery and
-  /// [at] dates the rumors. The DVM that runs the jobs is [dvmPubkey] or the
-  /// configured default; throws when neither is set.
+  /// [at] dates the rumors. [at] also overwrites the [message] Date header, so
+  /// the recipient sees the send date, not when it was composed. The DVM that
+  /// runs the jobs is [dvmPubkey] or the configured default; throws when
+  /// neither is set.
   Future<ScheduledEmail> scheduleMime(
     MimeMessage message, {
     required List<Recipient> to,
@@ -105,6 +107,10 @@ class ScheduleManager {
     if (dvm == null) {
       throw NostrMailException('No scheduler DVM configured');
     }
+
+    // The DVM sends at [at], so that is the send date the recipient must see:
+    // stamp the MIME Date header regardless of when the message was composed.
+    message.setHeader('date', DateCodec.encodeDate(at));
 
     final outgoing = await _sender.buildOutgoing(
       message,
