@@ -5,6 +5,7 @@ import 'package:blossom_upload_queue_shim_for_ndk/blossom_upload_queue_shim_for_
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
 import 'package:enough_mail_plus/enough_mail.dart' hide MailEvent;
 import 'package:ndk/ndk.dart';
+import 'package:nostr_event_scheduler/nostr_event_scheduler.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:sembast/sembast.dart';
 
@@ -18,6 +19,7 @@ import 'client/settings_manager.dart';
 import 'client/sync_engine.dart';
 import 'client/watch_manager.dart';
 import 'client/relay_resolver.dart';
+import 'client/schedule_manager.dart';
 import 'constants.dart';
 import 'exceptions.dart';
 import 'models/attachment_ref.dart';
@@ -25,6 +27,7 @@ import 'models/email.dart';
 import 'models/mail_event.dart';
 import 'models/private_settings.dart';
 import 'models/recipient.dart';
+import 'models/scheduled_email.dart';
 
 import 'storage/email_repository.dart';
 import 'storage/gift_wrap_repository.dart';
@@ -54,6 +57,7 @@ class NostrMailClient {
   final SettingsManager _settings;
   final SyncEngine _sync;
   final WatchManager _watch;
+  final ScheduleManager _schedule;
 
   /// Direct access to the offline broadcast queue. Use this to surface
   /// pending broadcasts in the UI (`watchPending()`), inspect history
@@ -120,6 +124,8 @@ class NostrMailClient {
     Map<String, String>? nip05Overrides,
     OfflineBroadcast? broadcastQueue,
     OfflineBlossomUpload? blossomUploadQueue,
+    String? schedulerDvm,
+    List<String>? schedulerDvmReadRelays,
   }) async {
     await migrateSchemaIfNeeded(db: db, ndk: ndk);
     final emailRepo = EmailRepository(db);
@@ -183,6 +189,25 @@ class NostrMailClient {
       await settingsManager.getPrivateSettings();
     }
 
+    final emailSender = EmailSender(
+      ndk,
+      settingsManager,
+      relayResolver,
+      queue,
+      blossomQueue,
+      blossomCache,
+      emailRepo,
+      defaultBlossomServers: defaultBlossomServers,
+      nip05Overrides: nip05Overrides,
+    );
+
+    final scheduleManager = ScheduleManager(
+      EventScheduler(ndk: ndk, broadcast: queue, db: db),
+      emailSender,
+      defaultDvm: schedulerDvm,
+      dvmReadRelays: schedulerDvmReadRelays,
+    );
+
     return NostrMailClient._internal(
       ndk: ndk,
       emailRepo: emailRepo,
@@ -193,17 +218,8 @@ class NostrMailClient {
       bus: bus,
       blossomCache: blossomCache,
       defaultBlossomServers: defaultBlossomServers,
-      sender: EmailSender(
-        ndk,
-        settingsManager,
-        relayResolver,
-        queue,
-        blossomQueue,
-        blossomCache,
-        emailRepo,
-        defaultBlossomServers: defaultBlossomServers,
-        nip05Overrides: nip05Overrides,
-      ),
+      sender: emailSender,
+      schedule: scheduleManager,
       labels: LabelManager(
         ndk,
         labelRepo,
@@ -238,6 +254,7 @@ class NostrMailClient {
     required this._settings,
     required this._sync,
     required this._watch,
+    required this._schedule,
     required this.broadcastQueue,
     required this._ownsBroadcastQueue,
     required this.blossomUploadQueue,
@@ -511,6 +528,37 @@ class NostrMailClient {
     return content.isEmpty ? null : content;
   }
 
+  /// Reconstruct the full MIME text carried by a scheduled email's self-copy
+  /// [rumor]: inline in its `content`, or an encrypted Blossom blob referenced
+  /// by its `x`/`decryption-*` tags. Mirrors [_reconstructFullMimeText] for a
+  /// rumor that never became a stored [Email].
+  Future<String?> _reconstructRumorMimeText(Nip01Event rumor) async {
+    final hash = rumor.getFirstTag('x');
+    if (hash != null) {
+      final key = rumor.getFirstTag('decryption-key');
+      final nonce = rumor.getFirstTag('decryption-nonce');
+      if (key == null || nonce == null) return null;
+      final serverUrls = await resolveBlobServers(
+        ndk: _ndk,
+        pubkeys: [rumor.pubKey],
+        defaultBlossomServers: _defaultBlossomServers,
+      );
+      final encrypted = await fetchOrLoadEncryptedBlob(
+        blossomHash: hash,
+        serverUrls: serverUrls,
+        cache: _blossomCache,
+        ndk: _ndk,
+      );
+      final decrypted = await decryptBlob(
+        encryptedBytes: encrypted,
+        key: key,
+        nonce: nonce,
+      );
+      return utf8.decode(decrypted);
+    }
+    return rumor.content.isEmpty ? null : rumor.content;
+  }
+
   // ── Deletion ────────────────────────────────────────────────────────────
 
   /// Delete emails locally and publish one batched NIP-09 request.
@@ -729,6 +777,105 @@ class NostrMailClient {
     mailFrom: mailFrom,
   );
 
+  // ── Scheduling ──────────────────────────────────────────────────────────
+
+  /// Schedule an email to be sent at [at] by a Scheduler DVM. Returns the
+  /// created [ScheduledEmail]; cancel it with [cancelScheduledEmail].
+  ///
+  /// The DVM is [dvmPubkey] or the `schedulerDvm` configured in [create], and
+  /// throws when neither is set. The email is not saved to Sent now: it lands
+  /// there through the normal sync once the DVM publishes at [at].
+  Future<ScheduledEmail> scheduleEmail({
+    required List<Recipient> to,
+    List<Recipient> cc = const [],
+    List<Recipient> bcc = const [],
+    required String subject,
+    required String body,
+    MailAddress? from,
+    String? htmlBody,
+    bool keepCopy = true,
+    bool signRumor = false,
+    bool isPublic = false,
+    required DateTime at,
+    String? dvmPubkey,
+  }) => _schedule.scheduleEmail(
+    to: to,
+    cc: cc,
+    bcc: bcc,
+    subject: subject,
+    body: body,
+    from: from,
+    htmlBody: htmlBody,
+    keepCopy: keepCopy,
+    signRumor: signRumor,
+    isPublic: isPublic,
+    at: at,
+    dvmPubkey: dvmPubkey,
+  );
+
+  /// Schedule a pre-built [message]. See [scheduleEmail].
+  Future<ScheduledEmail> scheduleMime(
+    MimeMessage message, {
+    required List<Recipient> to,
+    List<Recipient> cc = const [],
+    List<Recipient> bcc = const [],
+    bool keepCopy = true,
+    bool signRumor = false,
+    bool isPublic = false,
+    String? mailFrom,
+    required DateTime at,
+    String? dvmPubkey,
+  }) => _schedule.scheduleMime(
+    message,
+    to: to,
+    cc: cc,
+    bcc: bcc,
+    keepCopy: keepCopy,
+    signRumor: signRumor,
+    isPublic: isPublic,
+    mailFrom: mailFrom,
+    at: at,
+    dvmPubkey: dvmPubkey,
+  );
+
+  /// All scheduled (not-yet-sent) emails, newest first.
+  Future<List<ScheduledEmail>> getScheduledEmails() => _schedule.list();
+
+  /// Reactive [getScheduledEmails]: re-emits on schedule, cancel, or DVM
+  /// feedback. Call [startScheduling] to receive live DVM feedback and
+  /// multi-device updates.
+  Stream<List<ScheduledEmail>> watchScheduledEmails() => _schedule.watch();
+
+  /// Cancel a scheduled email by its package id so the DVM never sends it.
+  Future<void> cancelScheduledEmail(String packageId) =>
+      _schedule.cancel(packageId);
+
+  /// Reconstruct the full editable MIME of a scheduled email so it can be
+  /// re-opened in a composer. Unlike [ScheduledEmail], this restores the
+  /// complete body and every attachment. Returns null if the package is gone
+  /// or its source content is unavailable locally (Blossom blob evicted
+  /// without re-download).
+  Future<MimeMessage?> getScheduledMime(String packageId) async {
+    final rumor = await _schedule.getPackageRumor(packageId);
+    if (rumor == null) return null;
+    final text = await _reconstructRumorMimeText(rumor);
+    if (text == null) return null;
+    return MimeMessage.parseFromText(text);
+  }
+
+  /// Force a one-shot network resync of scheduled emails, cancellations and
+  /// DVM status feedback. Updates the local store; [watchScheduledEmails]
+  /// re-emits with the result.
+  Future<void> resyncScheduledEmails() => _schedule.resync();
+
+  /// Start listening for DVM feedback and multi-device schedule sync. Requires
+  /// a logged-in account. Scheduling, listing and cancelling work without it
+  /// (local-first); this only adds live status updates. Idempotent.
+  Future<void> startScheduling() => _schedule.startListening();
+
+  /// Stop the [startScheduling] subscriptions. Local scheduling still works.
+  Future<void> stopScheduling() => _schedule.stopListening();
+
   // ── Private Settings ────────────────────────────────────────────────────
 
   PrivateSettings? get cachedPrivateSettings => _settings.cachedPrivateSettings;
@@ -781,6 +928,7 @@ class NostrMailClient {
   /// owned by the client.
   Future<void> dispose() async {
     stopWatching();
+    await _schedule.dispose();
     if (_ownsBroadcastQueue) {
       await broadcastQueue.dispose();
     }

@@ -11,6 +11,8 @@ class TestUser {
   List<String>? defaultDmRelays;
   List<String>? defaultBlossomServers;
   Map<String, String>? nip05Overrides;
+  String? schedulerDvm;
+  List<String>? schedulerDvmReadRelays;
 
   late KeyPair keyPair;
   late Ndk ndk;
@@ -23,6 +25,8 @@ class TestUser {
     this.defaultDmRelays,
     this.defaultBlossomServers,
     this.nip05Overrides,
+    this.schedulerDvm,
+    this.schedulerDvmReadRelays,
   });
 
   Future<TestUser> create() async {
@@ -54,6 +58,8 @@ class TestUser {
       defaultDmRelays: defaultDmRelays,
       defaultBlossomServers: defaultBlossomServers,
       nip05Overrides: nip05Overrides,
+      schedulerDvm: schedulerDvm,
+      schedulerDvmReadRelays: schedulerDvmReadRelays,
     );
 
     return this;
