@@ -171,7 +171,11 @@ class EmailSender {
   /// DVM publishes them later. No local Sent copy is written; the sender's own
   /// gift wrap is among the returned events and lands in Sent via the normal
   /// sync once published.
-  Future<List<OutgoingEvent>> buildOutgoing(
+  ///
+  /// Also returns the sender's self-copy rumor: the full email as a kind:1301
+  /// event, dated at the schedule time. The scheduler stores it as the package's
+  /// display context, so a scheduled email is read back like any other email.
+  Future<({List<OutgoingEvent> events, Nip01Event selfRumor})> buildOutgoing(
     MimeMessage message, {
     required List<Recipient> to,
     List<Recipient> cc = const [],
@@ -183,7 +187,7 @@ class EmailSender {
     required int rumorCreatedAt,
   }) async {
     final delivery = ScheduleDelivery(rumorCreatedAt, _buildGiftWrap);
-    await _dispatch(
+    final selfRumor = await _dispatch(
       message,
       to: to,
       cc: cc,
@@ -194,10 +198,10 @@ class EmailSender {
       mailFrom: mailFrom,
       delivery: delivery,
     );
-    return delivery.items;
+    return (events: delivery.items, selfRumor: selfRumor);
   }
 
-  Future<void> _dispatch(
+  Future<Nip01Event> _dispatch(
     MimeMessage message, {
     required List<Recipient> to,
     List<Recipient> cc = const [],
@@ -268,6 +272,10 @@ class EmailSender {
 
     final targetPubkeys = {...toNostr, ...ccNostr, ...bccNostr};
     if (keepCopy) targetPubkeys.add(senderPubkey);
+
+    // The self-copy rumor is always built (it is the scheduler's display
+    // context and the future Sent copy); only its delivery is gated on keepCopy.
+    late final Nip01Event senderRumor;
 
     final baseTags = <List<String>>[];
     if (mailFrom != null) baseTags.add(['mail-from', mailFrom]);
@@ -341,31 +349,26 @@ class EmailSender {
       // From here on every step is either a local write or a durable
       // enqueue, so a crash between save and broadcast cannot leave the
       // user without a Sent entry.
-      Nip01Event? signedSenderRumor;
-      if (keepCopy) {
-        final senderTags = List<List<String>>.from(baseTags)
-          ..add(['p', senderPubkey]);
+      final senderTags = List<List<String>>.from(baseTags)
+        ..add(['p', senderPubkey]);
+      final senderEmailEvent = Nip01Event(
+        pubKey: senderPubkey,
+        kind: emailKind,
+        tags: senderTags,
+        content: rawContent,
+        createdAt: delivery.rumorCreatedAt,
+      );
+      senderRumor = signRumor
+          ? await _ndk.accounts.sign(senderEmailEvent)
+          : senderEmailEvent;
 
-        final senderEmailEvent = Nip01Event(
-          pubKey: senderPubkey,
-          kind: emailKind,
-          tags: senderTags,
-          content: rawContent,
-          createdAt: delivery.rumorCreatedAt,
+      if (keepCopy && delivery.saveSelfCopy) {
+        await _saveSelfCopy(
+          rumor: senderRumor,
+          mimeContent: rawContent,
+          senderPubkey: senderPubkey,
+          isPublic: true,
         );
-
-        signedSenderRumor = signRumor
-            ? await _ndk.accounts.sign(senderEmailEvent)
-            : senderEmailEvent;
-
-        if (delivery.saveSelfCopy) {
-          await _saveSelfCopy(
-            rumor: signedSenderRumor,
-            mimeContent: rawContent,
-            senderPubkey: senderPubkey,
-            isPublic: true,
-          );
-        }
       }
 
       await delivery.deliverEvent(signedPublicEvent, writeRelays);
@@ -387,8 +390,8 @@ class EmailSender {
         await delivery.deliverGiftWrap(signedBccRumor, pubkey);
       });
 
-      if (signedSenderRumor != null) {
-        await delivery.deliverGiftWrap(signedSenderRumor, senderPubkey);
+      if (keepCopy) {
+        await delivery.deliverGiftWrap(senderRumor, senderPubkey);
       }
 
       await Future.wait(bccFutures);
@@ -399,39 +402,35 @@ class EmailSender {
       // is a local write or a durable enqueue. Saving up-front guarantees
       // the email lands in the local Sent folder even if a per-recipient
       // sign call fails inside the parallel publish below.
-      Nip01Event? senderRumor;
-      if (keepCopy) {
-        final senderContentBytes = utf8.encode(rawContent);
-        final senderContent = senderContentBytes.length < maxInlineSize
-            ? rawContent
-            : content;
-        final senderTags = List<List<String>>.from(baseTags)
-          ..insert(0, ['p', senderPubkey]);
-        final senderEvent = Nip01Event(
-          pubKey: senderPubkey,
-          kind: emailKind,
-          tags: senderTags,
-          content: senderContent,
-          createdAt: delivery.rumorCreatedAt,
+      final senderContent = utf8.encode(rawContent).length < maxInlineSize
+          ? rawContent
+          : content;
+      final senderTags = List<List<String>>.from(baseTags)
+        ..insert(0, ['p', senderPubkey]);
+      final senderEvent = Nip01Event(
+        pubKey: senderPubkey,
+        kind: emailKind,
+        tags: senderTags,
+        content: senderContent,
+        createdAt: delivery.rumorCreatedAt,
+      );
+      senderRumor = signRumor
+          ? await _ndk.accounts.sign(senderEvent)
+          : senderEvent;
+      if (keepCopy && delivery.saveSelfCopy) {
+        await _saveSelfCopy(
+          rumor: senderRumor,
+          mimeContent: rawContent,
+          senderPubkey: senderPubkey,
+          isPublic: false,
         );
-        senderRumor = signRumor
-            ? await _ndk.accounts.sign(senderEvent)
-            : senderEvent;
-        if (delivery.saveSelfCopy) {
-          await _saveSelfCopy(
-            rumor: senderRumor,
-            mimeContent: rawContent,
-            senderPubkey: senderPubkey,
-            isPublic: false,
-          );
-        }
       }
 
       final sendFutures = targetPubkeys.map((pubkey) async {
         // Reuse the pre-built sender rumor so rumor.id stays stable:
         // when the gift wrap comes back via sync, the dedup is a no-op.
         if (keepCopy && pubkey == senderPubkey) {
-          await delivery.deliverGiftWrap(senderRumor!, pubkey);
+          await delivery.deliverGiftWrap(senderRumor, pubkey);
           return;
         }
 
@@ -475,6 +474,8 @@ class EmailSender {
       signRumor: signRumor,
       delivery: delivery,
     );
+
+    return senderRumor;
   }
 
   /// Send each SMTP bridge a gift-wrapped rumor with the envelope it relays on:

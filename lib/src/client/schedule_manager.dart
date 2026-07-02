@@ -1,8 +1,10 @@
 import 'dart:convert';
 
 import 'package:enough_mail_plus/enough_mail.dart';
+import 'package:ndk/entities.dart' show Nip01Event, Nip01EventModel;
 import 'package:nostr_event_scheduler/nostr_event_scheduler.dart';
 
+import '../constants.dart';
 import '../exceptions.dart';
 import '../models/recipient.dart';
 import '../models/scheduled_email.dart';
@@ -14,8 +16,9 @@ import 'email_sender.dart';
 ///
 /// One email maps to one package: one DVM job per outgoing event (a gift wrap
 /// per recipient, the public event, bridge gift wraps, and the sender's own
-/// gift wrap when keepCopy). The private display context (subject, recipients,
-/// preview, schedule time) is stored NIP-44 encrypted in the package content.
+/// gift wrap when keepCopy). The package content is the sender's self-copy
+/// rumor (the full email as a kind:1301 event, dated at the schedule time),
+/// stored NIP-44 encrypted, so a scheduled email is read back like any email.
 class ScheduleManager {
   final EventScheduler _scheduler;
   final EmailSender _sender;
@@ -112,7 +115,7 @@ class ScheduleManager {
     // stamp the MIME Date header regardless of when the message was composed.
     message.setHeader('date', DateCodec.encodeDate(at));
 
-    final outgoing = await _sender.buildOutgoing(
+    final build = await _sender.buildOutgoing(
       message,
       to: to,
       cc: cc,
@@ -123,11 +126,11 @@ class ScheduleManager {
       mailFrom: mailFrom,
       rumorCreatedAt: at.millisecondsSinceEpoch ~/ 1000,
     );
-    if (outgoing.isEmpty) {
+    if (build.events.isEmpty) {
       throw NostrMailException('No events to schedule');
     }
 
-    final items = outgoing
+    final items = build.events
         .map(
           (e) => SchedulePackageItem(
             event: e.event,
@@ -139,16 +142,10 @@ class ScheduleManager {
         )
         .toList();
 
-    final content = _encodeContent(
-      message: message,
-      to: to,
-      cc: cc,
-      bcc: bcc,
-      isPublic: isPublic,
-      at: at,
+    final package = await _scheduler.schedulePackage(
+      items,
+      content: _encodeRumor(build.selfRumor),
     );
-
-    final package = await _scheduler.schedulePackage(items, content: content);
     return _toScheduledEmail(package);
   }
 
@@ -196,51 +193,36 @@ class ScheduleManager {
     }
   }
 
+  /// The package content is the self-copy rumor. Decode it and read the email
+  /// straight from its MIME, so nothing about the schedule is stored twice.
   ScheduledEmail _toScheduledEmail(ScheduledPackage package) {
-    final data = jsonDecode(package.content) as Map<String, dynamic>;
-    List<String> strList(Object? v) =>
-        (v as List<dynamic>?)?.map((e) => e as String).toList() ?? const [];
+    final rumor = _decodeRumor(package.content);
+    final message = MimeMessage.parseFromText(rumor.content);
+    List<String> addrs(List<MailAddress>? a) =>
+        a?.map((m) => m.email).toList() ?? const [];
     return ScheduledEmail(
       packageId: package.packageId,
-      scheduleAt: DateTime.fromMillisecondsSinceEpoch(
-        (data['scheduleAt'] as int) * 1000,
-      ),
-      from: data['from'] as String?,
-      to: strList(data['to']),
-      cc: strList(data['cc']),
-      bcc: strList(data['bcc']),
-      subject: data['subject'] as String? ?? '',
-      bodyPreview: data['bodyPreview'] as String? ?? '',
-      isPublic: data['isPublic'] as bool? ?? false,
-      attachmentNames: strList(data['attachmentNames']),
+      scheduleAt: DateTime.fromMillisecondsSinceEpoch(rumor.createdAt * 1000),
+      from: message.fromEmail,
+      to: addrs(message.to),
+      cc: addrs(message.cc),
+      bcc: addrs(message.bcc),
+      subject: message.decodeSubject() ?? '',
+      bodyPreview: _bodyPreview(message),
+      // Only a public email carries a broadcast kind:1301 job; every other job
+      // is a gift wrap.
+      isPublic: package.jobs.any((j) => j.targetEvent.kind == emailKind),
+      attachmentNames: _attachmentNames(message),
       status: aggregateStatus(package.jobs.map((j) => j.status)),
       createdAt: DateTime.fromMillisecondsSinceEpoch(package.createdAt * 1000),
     );
   }
 
-  String _encodeContent({
-    required MimeMessage message,
-    required List<Recipient> to,
-    required List<Recipient> cc,
-    required List<Recipient> bcc,
-    required bool isPublic,
-    required DateTime at,
-  }) {
-    List<String> addrs(List<Recipient> rs) =>
-        rs.map((r) => r.mailAddress.email).toList();
-    return jsonEncode({
-      'v': 1,
-      'scheduleAt': at.millisecondsSinceEpoch ~/ 1000,
-      'from': message.fromEmail,
-      'to': addrs(to),
-      'cc': addrs(cc),
-      'bcc': addrs(bcc),
-      'subject': message.decodeSubject() ?? '',
-      'bodyPreview': _bodyPreview(message),
-      'isPublic': isPublic,
-      'attachmentNames': _attachmentNames(message),
-    });
-  }
+  String _encodeRumor(Nip01Event rumor) =>
+      Nip01EventModel.fromEntity(rumor).toJsonString();
+
+  Nip01Event _decodeRumor(String content) =>
+      Nip01EventModel.fromJson(jsonDecode(content) as Map<String, dynamic>);
 
   static String _bodyPreview(MimeMessage message, {int max = 140}) {
     var text = message.decodeTextPlainPart() ?? '';
