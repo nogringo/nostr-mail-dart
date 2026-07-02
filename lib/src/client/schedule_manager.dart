@@ -175,6 +175,17 @@ class ScheduleManager {
   /// DVM feedback. [watch] re-emits with the refreshed state.
   Future<void> resync() => _scheduler.resync();
 
+  /// The self-copy rumor stored as [packageId]'s content, or null if no such
+  /// package exists. The rumor carries the full email, so callers can
+  /// reconstruct its MIME (inline in the rumor's content, or a Blossom blob
+  /// referenced by its tags) to re-open the scheduled email in a composer.
+  Future<Nip01Event?> getPackageRumor(String packageId) async {
+    for (final package in await _scheduler.listPackages()) {
+      if (package.packageId == packageId) return _decodeRumor(package.content);
+    }
+    return null;
+  }
+
   // ── Mapping ────────────────────────────────────────────────────────────────
 
   List<ScheduledEmail> _sortNewest(Iterable<ScheduledEmail?> emails) {

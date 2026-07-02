@@ -528,6 +528,37 @@ class NostrMailClient {
     return content.isEmpty ? null : content;
   }
 
+  /// Reconstruct the full MIME text carried by a scheduled email's self-copy
+  /// [rumor]: inline in its `content`, or an encrypted Blossom blob referenced
+  /// by its `x`/`decryption-*` tags. Mirrors [_reconstructFullMimeText] for a
+  /// rumor that never became a stored [Email].
+  Future<String?> _reconstructRumorMimeText(Nip01Event rumor) async {
+    final hash = rumor.getFirstTag('x');
+    if (hash != null) {
+      final key = rumor.getFirstTag('decryption-key');
+      final nonce = rumor.getFirstTag('decryption-nonce');
+      if (key == null || nonce == null) return null;
+      final serverUrls = await resolveBlobServers(
+        ndk: _ndk,
+        pubkeys: [rumor.pubKey],
+        defaultBlossomServers: _defaultBlossomServers,
+      );
+      final encrypted = await fetchOrLoadEncryptedBlob(
+        blossomHash: hash,
+        serverUrls: serverUrls,
+        cache: _blossomCache,
+        ndk: _ndk,
+      );
+      final decrypted = await decryptBlob(
+        encryptedBytes: encrypted,
+        key: key,
+        nonce: nonce,
+      );
+      return utf8.decode(decrypted);
+    }
+    return rumor.content.isEmpty ? null : rumor.content;
+  }
+
   // ── Deletion ────────────────────────────────────────────────────────────
 
   /// Delete emails locally and publish one batched NIP-09 request.
@@ -818,6 +849,19 @@ class NostrMailClient {
   /// Cancel a scheduled email by its package id so the DVM never sends it.
   Future<void> cancelScheduledEmail(String packageId) =>
       _schedule.cancel(packageId);
+
+  /// Reconstruct the full editable MIME of a scheduled email so it can be
+  /// re-opened in a composer. Unlike [ScheduledEmail], this restores the
+  /// complete body and every attachment. Returns null if the package is gone
+  /// or its source content is unavailable locally (Blossom blob evicted
+  /// without re-download).
+  Future<MimeMessage?> getScheduledMime(String packageId) async {
+    final rumor = await _schedule.getPackageRumor(packageId);
+    if (rumor == null) return null;
+    final text = await _reconstructRumorMimeText(rumor);
+    if (text == null) return null;
+    return MimeMessage.parseFromText(text);
+  }
 
   /// Force a one-shot network resync of scheduled emails, cancellations and
   /// DVM status feedback. Updates the local store; [watchScheduledEmails]
