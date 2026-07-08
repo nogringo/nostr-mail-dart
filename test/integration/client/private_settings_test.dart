@@ -45,6 +45,7 @@ void main() {
           blossomCache: await openTestBlossomCache('private_settings_a'),
           defaultDmRelays: [relay.url],
         );
+        addTearDown(() async => await clientA.dispose());
 
         expect(clientA.cachedPrivateSettings, isNull);
 
@@ -64,6 +65,7 @@ void main() {
           blossomCache: await openTestBlossomCache('private_settings_b'),
           defaultDmRelays: [relay.url],
         );
+        addTearDown(() async => await clientB.dispose());
 
         final settings = await clientB.fetchPrivateSettings();
 
@@ -115,6 +117,7 @@ void main() {
     });
 
     tearDown(() async {
+      await client.dispose();
       await ndk.destroy();
       await relay.stopServer();
     });
