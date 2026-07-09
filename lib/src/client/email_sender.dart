@@ -145,6 +145,9 @@ class EmailSender {
   /// [to]/[cc]/[bcc] drive routing; the MIME headers drive only display and the
   /// relayed content. The grouping matters: a public email's To/Cc go in the
   /// public event while Bcc is gift-wrapped privately.
+  ///
+  /// [beforePublish] is called with each fully built outgoing event and the
+  /// exact resolved relay list immediately before the event is enqueued.
   Future<void> sendMime(
     MimeMessage message, {
     required List<Recipient> to,
@@ -154,6 +157,7 @@ class EmailSender {
     bool signRumor = false,
     bool isPublic = false,
     String? mailFrom,
+    Future<void> Function(Nip01Event event, List<String> relays)? beforePublish,
   }) => _dispatch(
     message,
     to: to,
@@ -163,7 +167,7 @@ class EmailSender {
     signRumor: signRumor,
     isPublic: isPublic,
     mailFrom: mailFrom,
-    delivery: BroadcastDelivery(_broadcastQueue, _buildGiftWrap),
+    delivery: BroadcastDelivery(_broadcastQueue, _buildGiftWrap, beforePublish),
   );
 
   /// Build every event this email would publish, dated at [rumorCreatedAt]

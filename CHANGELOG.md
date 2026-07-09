@@ -1,3 +1,9 @@
+## 2.4.0
+
+- **New**: `sendMime()` accepts an optional `beforePublish` callback, invoked
+  with each fully built outgoing event and its resolved destination relays
+  immediately before it is added to the broadcast queue.
+
 ## 2.3.0
 
 - **New**: Email scheduling through a Scheduler DVM. `scheduleEmail()`/`scheduleMime()` queue an email for future delivery at a given time (one DVM job per outgoing gift wrap or public event); `getScheduledEmails()`/`watchScheduledEmails()` list and observe them; `cancelScheduledEmail()` deletes the package so the DVM never sends; `getScheduledMime()` reconstructs the full editable MIME to re-open a scheduled email in a composer; `resyncScheduledEmails()` forces a one-shot resync; `startScheduling()`/`stopScheduling()` toggle live DVM feedback and multi-device sync. Configure the DVM via `schedulerDvm`/`schedulerDvmReadRelays` on `create()`.

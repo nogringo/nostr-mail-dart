@@ -757,6 +757,10 @@ class NostrMailClient {
     isPublic: isPublic,
   );
 
+  /// Sends a pre-built MIME message.
+  ///
+  /// [beforePublish] is called for every fully built outgoing event after its
+  /// destination relays are resolved and immediately before it is enqueued.
   Future<void> sendMime(
     MimeMessage message, {
     required List<Recipient> to,
@@ -766,6 +770,7 @@ class NostrMailClient {
     bool signRumor = false,
     bool isPublic = false,
     String? mailFrom,
+    Future<void> Function(Nip01Event event, List<String> relays)? beforePublish,
   }) => _sender.sendMime(
     message,
     to: to,
@@ -775,6 +780,7 @@ class NostrMailClient {
     signRumor: signRumor,
     isPublic: isPublic,
     mailFrom: mailFrom,
+    beforePublish: beforePublish,
   );
 
   // ── Scheduling ──────────────────────────────────────────────────────────

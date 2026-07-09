@@ -13,6 +13,11 @@ class OutgoingEvent {
 typedef GiftWrapBuilder =
     Future<OutgoingEvent> Function(Nip01Event rumor, String recipientPubkey);
 
+/// Hook invoked after an event and its destination relays are fully resolved,
+/// immediately before the event is persisted to the broadcast queue.
+typedef BeforePublish =
+    Future<void> Function(Nip01Event event, List<String> relays);
+
 /// Strategy for where the events built during a send go: broadcast now, or
 /// collected for later scheduling. Lets the sender share one build path for
 /// immediate and scheduled sends.
@@ -33,8 +38,9 @@ abstract class Delivery {
 class BroadcastDelivery implements Delivery {
   final OfflineBroadcast _queue;
   final GiftWrapBuilder _buildGiftWrap;
+  final BeforePublish? _beforePublish;
   final int _now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-  BroadcastDelivery(this._queue, this._buildGiftWrap);
+  BroadcastDelivery(this._queue, this._buildGiftWrap, this._beforePublish);
 
   @override
   int get rumorCreatedAt => _now;
@@ -43,12 +49,15 @@ class BroadcastDelivery implements Delivery {
   bool get saveSelfCopy => true;
 
   @override
-  Future<void> deliverEvent(Nip01Event event, List<String> relays) =>
-      _queue.broadcast(event, relays: relays);
+  Future<void> deliverEvent(Nip01Event event, List<String> relays) async {
+    await _beforePublish?.call(event, relays);
+    await _queue.broadcast(event, relays: relays);
+  }
 
   @override
   Future<void> deliverGiftWrap(Nip01Event rumor, String recipientPubkey) async {
     final out = await _buildGiftWrap(rumor, recipientPubkey);
+    await _beforePublish?.call(out.event, out.relays);
     await _queue.broadcast(out.event, relays: out.relays);
   }
 }
