@@ -19,6 +19,12 @@ class GiftWrapRepository {
     return true;
   }
 
+  /// Get a gift wrap record by its outer event ID.
+  Future<Map<String, dynamic>?> getById(String giftWrapId) async {
+    final record = await _store.record(giftWrapId).get(_db);
+    return record?.cast<String, dynamic>();
+  }
+
   /// Update a gift wrap with its decrypted seal and rumor.
   Future<void> updateDecrypted({
     required String giftWrapId,

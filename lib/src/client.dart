@@ -7,7 +7,7 @@ import 'package:enough_mail_plus/enough_mail.dart' hide MailEvent;
 import 'package:ndk/ndk.dart';
 import 'package:nostr_event_scheduler/nostr_event_scheduler.dart';
 import 'package:rxdart/rxdart.dart';
-import 'package:sembast/sembast.dart';
+import 'package:sembast/sembast.dart' hide Filter;
 
 import 'dart:convert';
 import 'dart:typed_data';
@@ -291,6 +291,91 @@ class NostrMailClient {
       recipientPubkey: _requirePubkey(),
     );
     return record?.toEmail();
+  }
+
+  /// Open an email from a Nostr event reference.
+  ///
+  /// [eventId] can point either to a public email event (kind 1301) or to the
+  /// outer NIP-59 gift wrap event (kind 1059). The method checks local storage
+  /// first, then fetches the referenced event from the client's DM/write relays
+  /// plus any relay hints provided in [relays].
+  ///
+  /// Returns `null` when the event is not found, is not an email, is not
+  /// addressed to the active account, or cannot be decrypted.
+  Future<Email?> openEmail({
+    required String eventId,
+    List<String> relays = const [],
+  }) async {
+    final pubkey = _requirePubkey();
+
+    final localEmail = await _emailRepo.getById(
+      eventId,
+      recipientPubkey: pubkey,
+    );
+    if (localEmail != null) return localEmail.toEmail();
+
+    final localGiftWrapEmail = await _getEmailByGiftWrapId(eventId, pubkey);
+    if (localGiftWrapEmail != null) return localGiftWrapEmail;
+
+    final effectiveRelays = await _openEmailRelays(relays, pubkey);
+    if (effectiveRelays.isEmpty) return null;
+
+    final events = await _ndk.requests
+        .query(
+          filter: Filter(ids: [eventId], limit: 1),
+          explicitRelays: effectiveRelays,
+        )
+        .future;
+
+    Nip01Event? event;
+    for (final candidate in events) {
+      if (candidate.id == eventId) {
+        event = candidate;
+        break;
+      }
+    }
+    if (event == null) return null;
+
+    if (event.kind == giftWrapKind) {
+      await _sync.onGiftWrap(event);
+      return _getEmailByGiftWrapId(eventId, pubkey);
+    }
+
+    if (event.kind == emailKind) {
+      await _sync.onPublicEmail(event);
+      return getEmail(eventId);
+    }
+
+    return null;
+  }
+
+  Future<Email?> _getEmailByGiftWrapId(String giftWrapId, String pubkey) async {
+    var record = await _giftWrapRepo.getById(giftWrapId);
+    if (record == null) return null;
+
+    var rumorId = record['rumorId'] as String?;
+    if (rumorId == null && record['processed'] != true) {
+      await _sync.retry(giftWrapId);
+      record = await _giftWrapRepo.getById(giftWrapId);
+      rumorId = record?['rumorId'] as String?;
+    }
+
+    if (rumorId == null) return null;
+
+    final email = await _emailRepo.getById(rumorId, recipientPubkey: pubkey);
+    return email?.toEmail();
+  }
+
+  Future<List<String>> _openEmailRelays(
+    List<String> relays,
+    String pubkey,
+  ) async {
+    final (dmRelays, writeRelays) = await (
+      _relayResolver.getDmRelays(pubkey),
+      _relayResolver.getWriteRelays(pubkey),
+    ).wait;
+
+    return {...dmRelays, ...writeRelays, ...relays}.toList();
   }
 
   Future<List<Email>> search(String query, {int? limit, int? offset}) async {

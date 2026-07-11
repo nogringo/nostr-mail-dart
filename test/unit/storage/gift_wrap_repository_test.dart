@@ -43,6 +43,16 @@ void main() {
       expect(await repo.save(makeEvent('event-1')), isFalse);
     });
 
+    test('getById returns a stored gift wrap by outer event id', () async {
+      await repo.save(makeEvent('event-1', content: 'wrapped content'));
+
+      final record = await repo.getById('event-1');
+
+      expect(record, isNotNull);
+      expect(record!['processed'], isFalse);
+      expect(record['event']['content'], 'wrapped content');
+    });
+
     test('save does not overwrite a processed entry', () async {
       await repo.save(makeEvent('event-1'));
       await repo.markProcessed('event-1');

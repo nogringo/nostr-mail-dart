@@ -1,3 +1,9 @@
+## 2.5.0
+
+- **New**: `openEmail()` opens an email from a Nostr event reference, accepting
+  either a public email event id (kind 1301) or an outer NIP-59 gift wrap id
+  (kind 1059), with optional relay hints for notification/deep-link flows.
+
 ## 2.4.0
 
 - **New**: `sendMime()` accepts an optional `beforePublish` callback, invoked
