@@ -14,15 +14,6 @@ A Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59
 
 ## Getting Started
 
-### Installation
-
-Add to your `pubspec.yaml`:
-
-```yaml
-dependencies:
-  nostr_mail: ^1.0.0
-```
-
 ### Prerequisites
 
 - A configured [ndk](https://pub.dev/packages/ndk) instance with a logged-in account

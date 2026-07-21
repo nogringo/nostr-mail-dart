@@ -1,3 +1,18 @@
+## 2.6.0
+
+- **New**: `clearLocalAccountData(pubkey:)` removes local cache for one
+  account, and `clearAllLocalData()` removes local cache for every account.
+  Both clear matching NDK fetched ranges so the next sync can rebuild from
+  relays. `clearAll()` stays as an alias of `clearAllLocalData()`.
+- **Fix**: Gift wraps are now stored with their own `recipientPubkey` and read
+  back per account, so `getGiftWrap()`, `getSeal()`, `getRumor()`, retries, the
+  failed-event counters and deletions never touch another account's cache. A
+  wrap that arrives mid account-switch is kept for its own recipient instead of
+  being dropped once its fetched range is marked covered.
+- **Breaking**: Bumped local schema version to rebuild gift-wrap records with
+  `recipientPubkey`, allowing account-scoped local data cleanup. Existing local
+  caches are wiped once on startup and rebuilt from the relays.
+
 ## 2.5.0
 
 - **New**: `openEmail()` opens an email from a Nostr event reference, accepting

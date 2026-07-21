@@ -156,7 +156,8 @@ NostrMailClient({
 - `fetchRecent()` — simple parallel fetch without range optimization
 - `watch()` — broadcast stream of `MailEvent` (emails, labels, deletions)
 - `stopWatching()` — closes stream & subscriptions
-- `clearAll()` — wipes local DBs and caches
+- `clearAllLocalData()` (alias `clearAll()`): wipes local DBs, caches and fetched ranges
+- `clearLocalAccountData(pubkey:)`: wipes local data for one account only
 
 **Sending:**
 - `send({List<MailAddress> to, cc, bcc, required subject, required body, ...})`

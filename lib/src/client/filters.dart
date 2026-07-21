@@ -39,3 +39,14 @@ Filter metadataFilter(String pubkey) => Filter(
   kinds: [metadataKind, relayListKind, dmRelayListKind, blossomServerListKind],
   authors: [pubkey],
 );
+
+/// Every filter the sync engine fetches for [pubkey].
+List<Filter> syncFilters(String pubkey) => [
+  emailFilter(pubkey),
+  deletionFilter(pubkey),
+  publicEmailFilter(pubkey),
+  labelFilter(pubkey),
+  repostFilter(pubkey),
+  settingsFilter(pubkey),
+  metadataFilter(pubkey),
+];

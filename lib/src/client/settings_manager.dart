@@ -156,8 +156,11 @@ class SettingsManager {
     await setPrivateSettings(updated);
   }
 
-  void clearCache() {
-    _cache.clear();
-    _repo.clear();
+  void clearCache({String? pubkey}) {
+    if (pubkey == null) {
+      _cache.clear();
+      return;
+    }
+    _cache.remove(pubkey);
   }
 }

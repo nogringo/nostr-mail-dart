@@ -138,17 +138,16 @@ class SyncEngine {
     _assertPubkey();
     final pubkey = _pubkey!;
 
-    await Future.wait([
-      _ndk.fetchedRanges.clearForFilter(emailFilter(pubkey)),
-      _ndk.fetchedRanges.clearForFilter(deletionFilter(pubkey)),
-      _ndk.fetchedRanges.clearForFilter(publicEmailFilter(pubkey)),
-      _ndk.fetchedRanges.clearForFilter(labelFilter(pubkey)),
-      _ndk.fetchedRanges.clearForFilter(repostFilter(pubkey)),
-      _ndk.fetchedRanges.clearForFilter(settingsFilter(pubkey)),
-      _ndk.fetchedRanges.clearForFilter(metadataFilter(pubkey)),
-    ]);
-
+    await clearFetchedRanges(pubkey);
     await sync(since: since, until: until);
+  }
+
+  /// Forget which time ranges were already fetched for [pubkey], so the next
+  /// sync re-downloads everything from the relays.
+  Future<void> clearFetchedRanges(String pubkey) {
+    return Future.wait(
+      syncFilters(pubkey).map(_ndk.fetchedRanges.clearForFilter),
+    );
   }
 
   /// Fetch all events without gap optimization.
@@ -185,20 +184,39 @@ class SyncEngine {
 
   /// Retry processing a single failed gift wrap.
   Future<bool> retry(String eventId) async {
-    final event = await _giftWraps.getUnprocessed(eventId);
+    final pubkey = _pubkey;
+    if (pubkey == null) return false;
+    final event = await _giftWraps.getUnprocessed(
+      eventId,
+      recipientPubkey: pubkey,
+    );
     if (event == null) return false;
     return _processEvent(event);
   }
 
-  Future<int> getFailedCount() => _giftWraps.getFailedCount();
-  Future<List<Nip01Event>> getFailedEvents() =>
-      _giftWraps.getUnprocessedEvents();
+  Future<int> getFailedCount() {
+    final pubkey = _pubkey;
+    if (pubkey == null) return Future.value(0);
+    return _giftWraps.getFailedCount(recipientPubkey: pubkey);
+  }
+
+  Future<List<Nip01Event>> getFailedEvents() {
+    final pubkey = _pubkey;
+    if (pubkey == null) return Future.value(const []);
+    return _giftWraps.getUnprocessedEvents(recipientPubkey: pubkey);
+  }
 
   // ── Event processing ────────────────────────────────────────────────────
 
   Future<void> onGiftWrap(Nip01Event event) async {
-    final isNew = await _giftWraps.save(event);
-    if (!isNew) return;
+    final owner = event.getFirstTag('p');
+    if (owner == null || !_ndk.accounts.hasAccount(owner)) return;
+
+    // Stored under the wrap's own recipient, not the active account, so one
+    // arriving mid account-switch stays retryable instead of being dropped
+    // once its fetched range is marked covered.
+    final isNew = await _giftWraps.save(event, recipientPubkey: owner);
+    if (!isNew || owner != _pubkey) return;
     await _processEvent(event);
   }
 
@@ -328,7 +346,9 @@ class SyncEngine {
             deletedEventId,
             recipientPubkey: pubkey,
           );
-          await _giftWraps.removeByRumorIds([deletedEventId]);
+          await _giftWraps.removeByRumorIdsForRecipient([
+            deletedEventId,
+          ], recipientPubkey: pubkey);
           _bus.emit(EmailDeleted(emailId: deletedEventId));
           continue;
         }

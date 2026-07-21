@@ -350,13 +350,19 @@ class NostrMailClient {
   }
 
   Future<Email?> _getEmailByGiftWrapId(String giftWrapId, String pubkey) async {
-    var record = await _giftWrapRepo.getById(giftWrapId);
+    var record = await _giftWrapRepo.getByIdForRecipient(
+      giftWrapId,
+      recipientPubkey: pubkey,
+    );
     if (record == null) return null;
 
     var rumorId = record['rumorId'] as String?;
     if (rumorId == null && record['processed'] != true) {
       await _sync.retry(giftWrapId);
-      record = await _giftWrapRepo.getById(giftWrapId);
+      record = await _giftWrapRepo.getByIdForRecipient(
+        giftWrapId,
+        recipientPubkey: pubkey,
+      );
       rumorId = record?['rumorId'] as String?;
     }
 
@@ -518,19 +524,34 @@ class NostrMailClient {
   // ── NIP-59 Introspection ────────────────────────────────────────────────
 
   Future<Nip01Event?> getGiftWrap(String emailId) async {
-    final record = await _giftWrapRepo.getByRumorId(emailId);
+    final pubkey = _ndk.accounts.getPublicKey();
+    if (pubkey == null) return null;
+    final record = await _giftWrapRepo.getByRumorIdForRecipient(
+      emailId,
+      recipientPubkey: pubkey,
+    );
     if (record == null) return null;
     return Nip01EventModel.fromJson(record['event'] as Map);
   }
 
   Future<Nip01Event?> getSeal(String emailId) async {
-    final record = await _giftWrapRepo.getByRumorId(emailId);
+    final pubkey = _ndk.accounts.getPublicKey();
+    if (pubkey == null) return null;
+    final record = await _giftWrapRepo.getByRumorIdForRecipient(
+      emailId,
+      recipientPubkey: pubkey,
+    );
     if (record == null || record['seal'] == null) return null;
     return Nip01EventModel.fromJson(record['seal'] as Map);
   }
 
   Future<Nip01Event?> getRumor(String emailId) async {
-    final record = await _giftWrapRepo.getByRumorId(emailId);
+    final pubkey = _ndk.accounts.getPublicKey();
+    if (pubkey == null) return null;
+    final record = await _giftWrapRepo.getByRumorIdForRecipient(
+      emailId,
+      recipientPubkey: pubkey,
+    );
     if (record == null || record['rumor'] == null) return null;
     return Nip01EventModel.fromJson(record['rumor'] as Map);
   }
@@ -606,7 +627,10 @@ class NostrMailClient {
     }
 
     // Inline email: the original MIME lives in the rumor's `content`.
-    final record = await _giftWrapRepo.getByRumorId(email.id);
+    final record = await _giftWrapRepo.getByRumorIdForRecipient(
+      email.id,
+      recipientPubkey: email.recipientPubkey,
+    );
     if (record == null || record['rumor'] == null) return null;
     final rumor = Nip01EventModel.fromJson(record['rumor'] as Map);
     final content = rumor.content;
@@ -705,7 +729,10 @@ class NostrMailClient {
       _tombstoneRepo.addMany(deletionIds, recipientPubkey: pubkey),
       _emailRepo.deleteByIds(uniqueIds, recipientPubkey: pubkey),
       _labelRepo.deleteLabelsForEmails(uniqueIds, recipientPubkey: pubkey),
-      _giftWrapRepo.removeByRumorIds(uniqueIds),
+      _giftWrapRepo.removeByRumorIdsForRecipient(
+        uniqueIds,
+        recipientPubkey: pubkey,
+      ),
     ]);
 
     for (final id in uniqueIds) {
@@ -998,16 +1025,31 @@ class NostrMailClient {
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
 
-  Future<void> clearAll() async {
+  Future<void> clearLocalAccountData({required String pubkey}) async {
+    await Future.wait([
+      _emailRepo.clearAll(recipientPubkey: pubkey),
+      _labelRepo.clearAll(recipientPubkey: pubkey),
+      _giftWrapRepo.clearAll(recipientPubkey: pubkey),
+      _settingsRepo.clear(pubkey: pubkey),
+      _tombstoneRepo.clearAll(recipientPubkey: pubkey),
+      _sync.clearFetchedRanges(pubkey),
+    ]);
+    _settings.clearCache(pubkey: pubkey);
+  }
+
+  Future<void> clearAllLocalData() async {
     await Future.wait([
       _emailRepo.clearAll(),
       _labelRepo.clearAll(),
       _giftWrapRepo.clearAll(),
       _settingsRepo.clear(),
       _tombstoneRepo.clearAll(),
+      _ndk.fetchedRanges.clearAll(),
     ]);
     _settings.clearCache();
   }
+
+  Future<void> clearAll() => clearAllLocalData();
 
   /// Stops background workers and, if this client owns either of the
   /// internal queues, disposes them and waits for any in-flight attempt

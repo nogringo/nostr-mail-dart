@@ -34,36 +34,44 @@ void main() {
       repo = GiftWrapRepository(db);
     });
 
+    Future<bool> save(
+      Nip01Event event, {
+      String recipientPubkey = 'recipient',
+    }) {
+      return repo.save(event, recipientPubkey: recipientPubkey);
+    }
+
     test('save returns true for a new event', () async {
-      expect(await repo.save(makeEvent('event-1')), isTrue);
+      expect(await save(makeEvent('event-1')), isTrue);
     });
 
     test('save returns false for an already-stored event', () async {
-      await repo.save(makeEvent('event-1'));
-      expect(await repo.save(makeEvent('event-1')), isFalse);
+      await save(makeEvent('event-1'));
+      expect(await save(makeEvent('event-1')), isFalse);
     });
 
     test('getById returns a stored gift wrap by outer event id', () async {
-      await repo.save(makeEvent('event-1', content: 'wrapped content'));
+      await save(makeEvent('event-1', content: 'wrapped content'));
 
       final record = await repo.getById('event-1');
 
       expect(record, isNotNull);
       expect(record!['processed'], isFalse);
       expect(record['event']['content'], 'wrapped content');
+      expect(record['recipientPubkey'], 'recipient');
     });
 
     test('save does not overwrite a processed entry', () async {
-      await repo.save(makeEvent('event-1'));
+      await save(makeEvent('event-1'));
       await repo.markProcessed('event-1');
-      await repo.save(makeEvent('event-1'));
+      await save(makeEvent('event-1'));
 
       final unprocessed = await repo.getUnprocessedEvents();
       expect(unprocessed.map((e) => e.id), isNot(contains('event-1')));
     });
 
     test('markProcessed removes event from unprocessed list', () async {
-      await repo.save(makeEvent('event-1'));
+      await save(makeEvent('event-1'));
       await repo.markProcessed('event-1');
 
       final unprocessed = await repo.getUnprocessedEvents();
@@ -71,9 +79,9 @@ void main() {
     });
 
     test('getUnprocessedEvents returns only unprocessed events', () async {
-      await repo.save(makeEvent('event-1'));
-      await repo.save(makeEvent('event-2'));
-      await repo.save(makeEvent('event-3'));
+      await save(makeEvent('event-1'));
+      await save(makeEvent('event-2'));
+      await save(makeEvent('event-3'));
       await repo.markProcessed('event-2');
 
       final unprocessed = await repo.getUnprocessedEvents();
@@ -82,18 +90,18 @@ void main() {
     });
 
     test('getUnprocessedEvents respects limit', () async {
-      await repo.save(makeEvent('event-1'));
-      await repo.save(makeEvent('event-2'));
-      await repo.save(makeEvent('event-3'));
+      await save(makeEvent('event-1'));
+      await save(makeEvent('event-2'));
+      await save(makeEvent('event-3'));
 
       final unprocessed = await repo.getUnprocessedEvents(limit: 2);
       expect(unprocessed.length, 2);
     });
 
     test('getFailedCount returns the number of unprocessed events', () async {
-      await repo.save(makeEvent('event-1'));
-      await repo.save(makeEvent('event-2'));
-      await repo.save(makeEvent('event-3'));
+      await save(makeEvent('event-1'));
+      await save(makeEvent('event-2'));
+      await save(makeEvent('event-3'));
       await repo.markProcessed('event-2');
 
       expect(await repo.getFailedCount(), 2);
@@ -110,7 +118,7 @@ void main() {
         content: 'encrypted content',
         sig: 'signature-123',
       );
-      await repo.save(event);
+      await save(event);
 
       final unprocessed = await repo.getUnprocessedEvents();
       expect(unprocessed, hasLength(1));
@@ -127,9 +135,9 @@ void main() {
     });
 
     test('removeByRumorIds removes processed gift wraps by email id', () async {
-      await repo.save(makeEvent('wrap-1'));
-      await repo.save(makeEvent('wrap-2'));
-      await repo.save(makeEvent('wrap-3'));
+      await save(makeEvent('wrap-1'));
+      await save(makeEvent('wrap-2'));
+      await save(makeEvent('wrap-3'));
       await repo.updateDecrypted(
         giftWrapId: 'wrap-1',
         seal: makeEvent('seal-1', kind: 13),
@@ -153,15 +161,100 @@ void main() {
       expect(await repo.getByRumorId('email-3'), isNotNull);
     });
 
+    test('removeByRumorIdsForRecipient preserves other accounts', () async {
+      await save(makeEvent('alice-wrap'), recipientPubkey: 'alice');
+      await save(makeEvent('bob-wrap'), recipientPubkey: 'bob');
+      await repo.updateDecrypted(
+        giftWrapId: 'alice-wrap',
+        seal: makeEvent('alice-seal', kind: 13),
+        rumor: makeEvent('same-email-id', kind: 1301),
+      );
+      await repo.updateDecrypted(
+        giftWrapId: 'bob-wrap',
+        seal: makeEvent('bob-seal', kind: 13),
+        rumor: makeEvent('same-email-id', kind: 1301),
+      );
+
+      await repo.removeByRumorIdsForRecipient([
+        'same-email-id',
+      ], recipientPubkey: 'alice');
+
+      expect(
+        await repo.getByIdForRecipient('alice-wrap', recipientPubkey: 'alice'),
+        isNull,
+      );
+      expect(
+        await repo.getByIdForRecipient('bob-wrap', recipientPubkey: 'bob'),
+        isNotNull,
+      );
+    });
+
     test('clearAll removes all gift wraps', () async {
-      await repo.save(makeEvent('event-1'));
-      await repo.save(makeEvent('event-2'));
+      await save(makeEvent('event-1'));
+      await save(makeEvent('event-2'));
       await repo.markProcessed('event-1');
 
       await repo.clearAll();
 
       expect(await repo.getUnprocessedEvents(), isEmpty);
       expect(await repo.getFailedCount(), 0);
+    });
+
+    test('scoped queries only return gift wraps for that account', () async {
+      await save(makeEvent('alice-1'), recipientPubkey: 'alice');
+      await save(makeEvent('bob-1'), recipientPubkey: 'bob');
+      await repo.updateDecrypted(
+        giftWrapId: 'alice-1',
+        seal: makeEvent('alice-seal', kind: 13),
+        rumor: makeEvent('alice-email', kind: 1301),
+      );
+      await repo.updateDecrypted(
+        giftWrapId: 'bob-1',
+        seal: makeEvent('bob-seal', kind: 13),
+        rumor: makeEvent('bob-email', kind: 1301),
+      );
+
+      final aliceEvents = await repo.getUnprocessedEvents(
+        recipientPubkey: 'alice',
+      );
+
+      expect(aliceEvents, isEmpty);
+      expect(
+        await repo.getByIdForRecipient('bob-1', recipientPubkey: 'alice'),
+        isNull,
+      );
+      expect(
+        await repo.getByRumorIdForRecipient(
+          'bob-email',
+          recipientPubkey: 'alice',
+        ),
+        isNull,
+      );
+      expect(
+        await repo.getByRumorIdForRecipient(
+          'alice-email',
+          recipientPubkey: 'alice',
+        ),
+        isNotNull,
+      );
+    });
+
+    test('clearAll with recipientPubkey preserves other accounts', () async {
+      await save(makeEvent('alice-1'), recipientPubkey: 'alice');
+      await save(makeEvent('bob-1'), recipientPubkey: 'bob');
+
+      await repo.clearAll(recipientPubkey: 'alice');
+
+      expect(
+        await repo.getUnprocessedEvents(recipientPubkey: 'alice'),
+        isEmpty,
+      );
+      expect(
+        (await repo.getUnprocessedEvents(
+          recipientPubkey: 'bob',
+        )).map((e) => e.id),
+        ['bob-1'],
+      );
     });
   });
 }

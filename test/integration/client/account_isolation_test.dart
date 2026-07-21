@@ -10,10 +10,14 @@ import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:ndk/shared/nips/nip01/key_pair.dart';
 import 'package:nostr_mail/nostr_mail.dart';
+import 'package:nostr_mail/src/client/filters.dart';
 import 'package:nostr_mail/src/storage/email_repository.dart';
+import 'package:nostr_mail/src/storage/gift_wrap_repository.dart';
 import 'package:nostr_mail/src/storage/label_repository.dart';
 import 'package:nostr_mail/src/storage/models/email_query.dart';
 import 'package:nostr_mail/src/storage/models/email_record.dart';
+import 'package:nostr_mail/src/storage/settings_repository.dart';
+import 'package:nostr_mail/src/storage/tombstone_repository.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
 
@@ -243,6 +247,18 @@ void main() {
       );
     }
 
+    Nip01Event makeEvent(String id, {int kind = 1059}) {
+      return Nip01Event(
+        id: id,
+        pubKey: 'sender',
+        createdAt: 1000,
+        kind: kind,
+        tags: const [],
+        content: 'content',
+        sig: 'sig',
+      );
+    }
+
     test(
       "reading after switchAccount only returns the new account's emails",
       () async {
@@ -298,5 +314,125 @@ void main() {
         expect(hits, isEmpty);
       },
     );
+
+    test('clearLocalAccountData removes only the targeted account', () async {
+      final emails = EmailRepository(db);
+      final labels = LabelRepository(db);
+      final giftWraps = GiftWrapRepository(db);
+      final settings = SettingsRepository(db);
+      final tombstones = TombstoneRepository(db);
+
+      await seedEmailFor(aliceAccount.publicKey, 'alice-email');
+      await seedEmailFor(bobAccount.publicKey, 'bob-email');
+      await labels.saveLabel(
+        emailId: 'alice-email',
+        label: 'custom:alice',
+        labelEventId: 'alice-label',
+        timestamp: 1000,
+        recipientPubkey: aliceAccount.publicKey,
+      );
+      await labels.saveLabel(
+        emailId: 'bob-email',
+        label: 'custom:bob',
+        labelEventId: 'bob-label',
+        timestamp: 1000,
+        recipientPubkey: bobAccount.publicKey,
+      );
+      await settings.save(pubkey: aliceAccount.publicKey, json: '{"a":true}');
+      await settings.save(pubkey: bobAccount.publicKey, json: '{"b":true}');
+      await tombstones.add(
+        'alice-deleted',
+        recipientPubkey: aliceAccount.publicKey,
+      );
+      await tombstones.add(
+        'bob-deleted',
+        recipientPubkey: bobAccount.publicKey,
+      );
+      await giftWraps.save(
+        makeEvent('alice-wrap'),
+        recipientPubkey: aliceAccount.publicKey,
+      );
+      await giftWraps.save(
+        makeEvent('bob-wrap'),
+        recipientPubkey: bobAccount.publicKey,
+      );
+      await ndk.fetchedRanges.addRange(
+        filter: emailFilter(aliceAccount.publicKey),
+        relayUrl: relay.url,
+        since: 0,
+        until: 1000,
+      );
+      await ndk.fetchedRanges.addRange(
+        filter: emailFilter(bobAccount.publicKey),
+        relayUrl: relay.url,
+        since: 0,
+        until: 1000,
+      );
+
+      await client.clearLocalAccountData(pubkey: aliceAccount.publicKey);
+
+      expect(
+        await emails.getById(
+          'alice-email',
+          recipientPubkey: aliceAccount.publicKey,
+        ),
+        isNull,
+      );
+      expect(
+        await emails.getById(
+          'bob-email',
+          recipientPubkey: bobAccount.publicKey,
+        ),
+        isNotNull,
+      );
+      expect(
+        await labels.getAllLabels(recipientPubkey: aliceAccount.publicKey),
+        isEmpty,
+      );
+      expect(
+        await labels.getAllLabels(recipientPubkey: bobAccount.publicKey),
+        hasLength(1),
+      );
+      expect(await settings.load(pubkey: aliceAccount.publicKey), isNull);
+      expect(await settings.load(pubkey: bobAccount.publicKey), '{"b":true}');
+      expect(
+        await tombstones.contains(
+          'alice-deleted',
+          recipientPubkey: aliceAccount.publicKey,
+        ),
+        isFalse,
+      );
+      expect(
+        await tombstones.contains(
+          'bob-deleted',
+          recipientPubkey: bobAccount.publicKey,
+        ),
+        isTrue,
+      );
+      expect(
+        await giftWraps.getByIdForRecipient(
+          'alice-wrap',
+          recipientPubkey: aliceAccount.publicKey,
+        ),
+        isNull,
+      );
+      expect(
+        await giftWraps.getByIdForRecipient(
+          'bob-wrap',
+          recipientPubkey: bobAccount.publicKey,
+        ),
+        isNotNull,
+      );
+      expect(
+        await ndk.fetchedRanges.getForFilter(
+          emailFilter(aliceAccount.publicKey),
+        ),
+        isEmpty,
+      );
+      expect(
+        await ndk.fetchedRanges.getForFilter(emailFilter(bobAccount.publicKey)),
+        isNotEmpty,
+      );
+    });
   });
 }
