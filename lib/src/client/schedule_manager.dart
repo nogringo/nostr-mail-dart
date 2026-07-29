@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/entities.dart' show Nip01Event, Nip01EventModel;
+import 'package:ndk/ndk.dart' show Ndk;
 import 'package:nostr_event_scheduler/nostr_event_scheduler.dart';
 
 import '../constants.dart';
@@ -20,12 +21,14 @@ import 'email_sender.dart';
 /// rumor (the full email as a kind:1301 event, dated at the schedule time),
 /// stored NIP-44 encrypted, so a scheduled email is read back like any email.
 class ScheduleManager {
+  final Ndk _ndk;
   final EventScheduler _scheduler;
   final EmailSender _sender;
   final String? defaultDvm;
   final List<String>? dvmReadRelays;
 
   ScheduleManager(
+    this._ndk,
     this._scheduler,
     this._sender, {
     this.defaultDvm,
@@ -34,12 +37,20 @@ class ScheduleManager {
 
   bool _listening = false;
 
+  String _requirePubkey() {
+    final pk = _ndk.accounts.getPublicKey();
+    if (pk == null) {
+      throw NostrMailException('No account configured in ndk');
+    }
+    return pk;
+  }
+
   /// Start listening for DVM feedback and multi-device sync. Requires a
   /// logged-in account. Idempotent.
   Future<void> startListening() async {
     if (_listening) return;
     _listening = true;
-    await _scheduler.startListening();
+    await _scheduler.startListening(pubkey: _requirePubkey());
   }
 
   Future<void> stopListening() async {
@@ -134,7 +145,7 @@ class ScheduleManager {
         .map(
           (e) => SchedulePackageItem(
             event: e.event,
-            dvmPubkey: dvm,
+            dvmPubkeys: [dvm],
             at: at,
             relays: e.relays,
             dvmReadRelays: dvmReadRelays,
@@ -145,42 +156,47 @@ class ScheduleManager {
     final package = await _scheduler.schedulePackage(
       items,
       content: _encodeRumor(build.selfRumor),
+      pubkey: _requirePubkey(),
     );
     return _toScheduledEmail(package);
   }
 
   /// All scheduled emails, newest first.
   Future<List<ScheduledEmail>> list() async {
-    final packages = await _scheduler.listPackages();
+    final packages = await _scheduler.listPackages(pubkey: _requirePubkey());
     return _sortNewest(packages.map(_tryMap));
   }
 
   /// Reactive [list]: re-emits whenever a schedule is added, cancelled, or its
   /// DVM feedback changes.
   Stream<List<ScheduledEmail>> watch() {
-    return _scheduler.schedulesStream.map(
-      (items) => _sortNewest(
-        items
-            .where((i) => i.type == ScheduledItemType.package)
-            .map((i) => _tryMap(i.package)),
-      ),
-    );
+    return _scheduler
+        .schedulesStream(pubkey: _requirePubkey())
+        .map(
+          (items) => _sortNewest(
+            items
+                .where((i) => i.type == ScheduledItemType.package)
+                .map((i) => _tryMap(i.package)),
+          ),
+        );
   }
 
   /// Cancel a scheduled email by its [packageId]: deletes the package and its
   /// DVM jobs (NIP-09), so the DVM never publishes.
-  Future<void> cancel(String packageId) => _scheduler.cancelPackage(packageId);
+  Future<void> cancel(String packageId) =>
+      _scheduler.cancelPackage(packageId, pubkey: _requirePubkey());
 
   /// Force a one-shot network resync of schedule requests, cancellations and
   /// DVM feedback. [watch] re-emits with the refreshed state.
-  Future<void> resync() => _scheduler.resync();
+  Future<void> resync() => _scheduler.resync(pubkey: _requirePubkey());
 
   /// The self-copy rumor stored as [packageId]'s content, or null if no such
   /// package exists. The rumor carries the full email, so callers can
   /// reconstruct its MIME (inline in the rumor's content, or a Blossom blob
   /// referenced by its tags) to re-open the scheduled email in a composer.
   Future<Nip01Event?> getPackageRumor(String packageId) async {
-    for (final package in await _scheduler.listPackages()) {
+    final packages = await _scheduler.listPackages(pubkey: _requirePubkey());
+    for (final package in packages) {
       if (package.packageId == packageId) return _decodeRumor(package.content);
     }
     return null;

@@ -202,6 +202,7 @@ class NostrMailClient {
     );
 
     final scheduleManager = ScheduleManager(
+      ndk,
       EventScheduler(ndk: ndk, broadcast: queue, db: db),
       emailSender,
       defaultDvm: schedulerDvm,

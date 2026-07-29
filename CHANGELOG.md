@@ -1,3 +1,11 @@
+## 2.6.1
+
+- Upgrade `nostr_event_scheduler` to 0.3.0 (multi-account, multi-DVM API) and
+  adapt the internal `ScheduleManager`: every scheduler call now acts for the
+  active account explicitly. No public API change.
+- Bump `broadcast_queue_shim_for_ndk` to 0.4.0, `blossom_cache` to 0.4.0 and
+  `blossom_upload_queue_shim_for_ndk` to 0.6.0.
+
 ## 2.6.0
 
 - **New**: `clearLocalAccountData(pubkey:)` removes local cache for one

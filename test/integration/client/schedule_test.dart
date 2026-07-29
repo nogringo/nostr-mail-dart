@@ -70,7 +70,9 @@ void main() {
       );
       addTearDown(() async => await inspector.dispose());
 
-      final packages = await inspector.listPackages();
+      final packages = await inspector.listPackages(
+        pubkey: sender.keyPair.publicKey,
+      );
       expect(packages, hasLength(1));
       final pkg = packages.single;
 
@@ -80,7 +82,7 @@ void main() {
       for (final job in pkg.jobs) {
         expect(job.targetEvent.kind, giftWrapKind);
         expect(job.scheduleAt, atEpoch);
-        expect(job.dvmPubkey, dvm.publicKey);
+        expect(job.dvmPubkeys, [dvm.publicKey]);
         // Privacy: the visible envelope is dated in the 2 days before the schedule
         // time, never "now" and never in the future.
         expect(job.targetEvent.createdAt, lessThan(atEpoch));
@@ -119,7 +121,10 @@ void main() {
       // Cancelling removes it from the client and from the store.
       await sender.client.cancelScheduledEmail(scheduled.packageId);
       expect(await sender.client.getScheduledEmails(), isEmpty);
-      expect(await inspector.listPackages(), isEmpty);
+      expect(
+        await inspector.listPackages(pubkey: sender.keyPair.publicKey),
+        isEmpty,
+      );
     },
   );
 }
