@@ -35,12 +35,22 @@ abstract class Delivery {
 }
 
 /// Broadcasts each built event immediately through the offline queue.
+///
+/// Every entry is attributed to [senderPubkey] so the queue can be wiped per
+/// account on logout. Gift wraps carry an ephemeral event pubkey, so the
+/// sending account is the only usable attribution.
 class BroadcastDelivery implements Delivery {
   final OfflineBroadcast _queue;
   final GiftWrapBuilder _buildGiftWrap;
   final BeforePublish? _beforePublish;
+  final String senderPubkey;
   final int _now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-  BroadcastDelivery(this._queue, this._buildGiftWrap, this._beforePublish);
+  BroadcastDelivery(
+    this._queue,
+    this._buildGiftWrap,
+    this._beforePublish, {
+    required this.senderPubkey,
+  });
 
   @override
   int get rumorCreatedAt => _now;
@@ -51,14 +61,14 @@ class BroadcastDelivery implements Delivery {
   @override
   Future<void> deliverEvent(Nip01Event event, List<String> relays) async {
     await _beforePublish?.call(event, relays);
-    await _queue.broadcast(event, relays: relays);
+    await _queue.broadcast(event, relays: relays, pubkey: senderPubkey);
   }
 
   @override
   Future<void> deliverGiftWrap(Nip01Event rumor, String recipientPubkey) async {
     final out = await _buildGiftWrap(rumor, recipientPubkey);
     await _beforePublish?.call(out.event, out.relays);
-    await _queue.broadcast(out.event, relays: out.relays);
+    await _queue.broadcast(out.event, relays: out.relays, pubkey: senderPubkey);
   }
 }
 

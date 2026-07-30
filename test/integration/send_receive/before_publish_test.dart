@@ -55,6 +55,12 @@ void main() {
         expect(callbackEvent, isNotNull);
         expect(callbackEvent!.kind, giftWrapKind);
         expect(queued.single.event.id, callbackEvent!.id);
+        expect(queued.single.pubkey, sender.keyPair.publicKey);
+        expect(
+          queued.single.event.pubKey,
+          isNot(sender.keyPair.publicKey),
+          reason: 'a gift wrap is signed by an ephemeral key',
+        );
         expect(callbackRelays, [relay.url, relayAddedByCallback.url]);
         expect(queued.single.relays, callbackRelays);
       },

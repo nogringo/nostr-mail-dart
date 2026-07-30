@@ -63,6 +63,10 @@ class NostrMailClient {
   /// pending broadcasts in the UI (`watchPending()`), inspect history
   /// (`listAll()`), or force a retry pass (`retryNow()`).
   ///
+  /// Every event the SDK enqueues is attributed to the sending account, so a
+  /// shared queue can be filtered or cleared per account. Gift wraps are
+  /// attributed to the sender, not to their ephemeral event pubkey.
+  ///
   /// When the client was constructed without an explicit queue, it owns
   /// this instance and disposes it as part of [dispose]. When you pass
   /// your own queue to [create], its lifecycle is yours to manage.
@@ -97,9 +101,10 @@ class NostrMailClient {
   /// Pass [broadcastQueue] to share a single queue across SDKs, tune its
   /// parameters, or inject a custom one in tests. When you provide your own
   /// queue, you also own its lifecycle: call `.start()` yourself before
-  /// `create()` (or before the first send) and `.dispose()` when you no
-  /// longer need it. When [broadcastQueue] is null, the client instantiates
-  /// and starts an internal `OfflineBroadcast.withNdk(ndk, db: db)`, and
+  /// `create()` (or before the first send), `.dispose()` when you no longer
+  /// need it, and clear it yourself on logout (see [clearLocalAccountData]).
+  /// When [broadcastQueue] is null, the client instantiates and starts an
+  /// internal `OfflineBroadcast.withNdk(ndk, db: db)`, and
   /// `NostrMailClient.dispose()` disposes it.
   ///
   /// [blossomCache] is the local blob store that holds the encrypted bytes
@@ -748,7 +753,7 @@ class NostrMailClient {
     ];
     final relayLists = await Future.wait(relayLookups);
     final relays = relayLists.expand((relays) => relays).toSet().toList();
-    await broadcastQueue.broadcast(signed, relays: relays);
+    await broadcastQueue.broadcast(signed, relays: relays, pubkey: pubkey);
   }
 
   // ── Repost ──────────────────────────────────────────────────────────────
@@ -778,8 +783,12 @@ class NostrMailClient {
     final signedRepost = await _ndk.accounts.sign(repostEvent);
 
     await Future.wait([
-      broadcastQueue.broadcast(emailEvent, relays: writeRelays),
-      broadcastQueue.broadcast(signedRepost, relays: writeRelays),
+      broadcastQueue.broadcast(emailEvent, relays: writeRelays, pubkey: pubkey),
+      broadcastQueue.broadcast(
+        signedRepost,
+        relays: writeRelays,
+        pubkey: pubkey,
+      ),
     ]);
   }
 
@@ -1026,6 +1035,18 @@ class NostrMailClient {
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
 
+  /// Drops every local record belonging to [pubkey], including its still
+  /// undelivered broadcasts and Blossom uploads, so nothing keeps being retried
+  /// for an account that logged out. Entries queued for another account, or
+  /// queued before 2.6.2 without an account label, are untouched.
+  ///
+  /// Both queues are only touched when this client owns them. A queue passed to
+  /// [create] is the caller's: clear it yourself with
+  /// `OfflineBroadcast.clearLocalAccountData(pubkey:)` and
+  /// `OfflineBlossomUpload.clearLocalAccountData(pubkey:)`.
+  ///
+  /// Do not call this for an account that is concurrently sending: a broadcast
+  /// overlapping the clear can re-create its record.
   Future<void> clearLocalAccountData({required String pubkey}) async {
     await Future.wait([
       _emailRepo.clearAll(recipientPubkey: pubkey),
@@ -1034,10 +1055,17 @@ class NostrMailClient {
       _settingsRepo.clear(pubkey: pubkey),
       _tombstoneRepo.clearAll(recipientPubkey: pubkey),
       _sync.clearFetchedRanges(pubkey),
+      if (_ownsBroadcastQueue)
+        broadcastQueue.clearLocalAccountData(pubkey: pubkey),
+      if (_ownsBlossomUploadQueue)
+        blossomUploadQueue.clearLocalAccountData(pubkey: pubkey),
     ]);
     _settings.clearCache(pubkey: pubkey);
   }
 
+  /// Drops every local record for every account. Same ownership rule as
+  /// [clearLocalAccountData]: a caller-provided queue is left alone, since its
+  /// pending entries may belong to another SDK sharing it.
   Future<void> clearAllLocalData() async {
     await Future.wait([
       _emailRepo.clearAll(),
@@ -1046,6 +1074,8 @@ class NostrMailClient {
       _settingsRepo.clear(),
       _tombstoneRepo.clearAll(),
       _ndk.fetchedRanges.clearAll(),
+      if (_ownsBroadcastQueue) broadcastQueue.clearAllLocalData(),
+      if (_ownsBlossomUploadQueue) blossomUploadQueue.clearAllLocalData(),
     ]);
     _settings.clearCache();
   }
@@ -1070,6 +1100,10 @@ class NostrMailClient {
       await blossomUploadQueue.dispose();
     }
   }
+
+  // TODO: extract flush methods to a test utility class, or to the queues
+  // themselves, so they can be used in tests without exposing them on the
+  // public API.
 
   // ── Broadcast queue ─────────────────────────────────────────────────────
 

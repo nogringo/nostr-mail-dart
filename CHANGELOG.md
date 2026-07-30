@@ -1,3 +1,19 @@
+## 2.6.2
+
+- Every event the SDK enqueues is now attributed to the sending account in the
+  broadcast queue, and every blob upload to the uploading account. Gift wraps
+  are attributed to the sender rather than to their ephemeral event pubkey, so
+  they can be filtered and cleared per account.
+- Blob uploads are now signed by the account that queued them instead of by
+  whoever is logged in when a retry fires.
+- `clearLocalAccountData(pubkey:)` and `clearAllLocalData()` now also drop the
+  matching entries in the broadcast and Blossom upload queues, so nothing keeps
+  being retried for an account that logged out. Only queues the client created
+  itself are touched: one passed to `create()` may be shared with other SDKs,
+  so clearing it stays the caller's job.
+- Entries queued by an earlier version carry no account label. They keep being
+  retried and are only removed by `clearAllLocalData()`.
+
 ## 2.6.1
 
 - Upgrade `nostr_event_scheduler` to 0.3.0 (multi-account, multi-DVM API) and

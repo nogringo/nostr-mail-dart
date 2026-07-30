@@ -158,17 +158,25 @@ class EmailSender {
     bool isPublic = false,
     String? mailFrom,
     Future<void> Function(Nip01Event event, List<String> relays)? beforePublish,
-  }) => _dispatch(
-    message,
-    to: to,
-    cc: cc,
-    bcc: bcc,
-    keepCopy: keepCopy,
-    signRumor: signRumor,
-    isPublic: isPublic,
-    mailFrom: mailFrom,
-    delivery: BroadcastDelivery(_broadcastQueue, _buildGiftWrap, beforePublish),
-  );
+  }) {
+    _assertPubkey();
+    return _dispatch(
+      message,
+      to: to,
+      cc: cc,
+      bcc: bcc,
+      keepCopy: keepCopy,
+      signRumor: signRumor,
+      isPublic: isPublic,
+      mailFrom: mailFrom,
+      delivery: BroadcastDelivery(
+        _broadcastQueue,
+        _buildGiftWrap,
+        beforePublish,
+        senderPubkey: _pubkey!,
+      ),
+    );
+  }
 
   /// Build every event this email would publish, dated at [rumorCreatedAt]
   /// (epoch seconds), without broadcasting. Hands the events to a scheduler so a
@@ -309,10 +317,13 @@ class EmailSender {
         type: 'application/octet-stream',
       );
       final sha256Hash = descriptor.sha256;
+      // The pubkey binds every retry to the sending account instead of
+      // whoever happens to be logged in when the retry fires.
       await _blossomUploadQueue.upload(
         sha256: sha256Hash,
         servers: allBlossomServers.toSet().toList(),
         contentType: 'application/octet-stream',
+        pubkey: senderPubkey,
       );
 
       baseTags

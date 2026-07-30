@@ -132,7 +132,11 @@ class SettingsManager {
     );
 
     final writeRelays = await _relays.getWriteRelays(pubkey);
-    await _broadcastQueue.broadcast(signed, relays: writeRelays);
+    await _broadcastQueue.broadcast(
+      signed,
+      relays: writeRelays,
+      pubkey: pubkey,
+    );
   }
 
   /// Update a single field in private settings and enqueue relay sync.

@@ -368,6 +368,16 @@ void main() {
         since: 0,
         until: 1000,
       );
+      await client.broadcastQueue.broadcast(
+        makeEvent('alice-queued'),
+        relays: [relay.url],
+        pubkey: aliceAccount.publicKey,
+      );
+      await client.broadcastQueue.broadcast(
+        makeEvent('bob-queued'),
+        relays: [relay.url],
+        pubkey: bobAccount.publicKey,
+      );
 
       await client.clearLocalAccountData(pubkey: aliceAccount.publicKey);
 
@@ -433,6 +443,9 @@ void main() {
         await ndk.fetchedRanges.getForFilter(emailFilter(bobAccount.publicKey)),
         isNotEmpty,
       );
+      expect((await client.broadcastQueue.listAll()).map((b) => b.id), [
+        'bob-queued',
+      ]);
     });
   });
 }

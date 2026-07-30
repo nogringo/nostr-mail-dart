@@ -46,6 +46,10 @@ void main() {
         body: largeBody,
       );
 
+      final uploads = await sender.client.blossomUploadQueue.listAll();
+      expect(uploads, hasLength(1));
+      expect(uploads.single.pubkey, sender.keyPair.publicKey);
+
       // Allow the relay to broadcast and the recipient to receive.
       await Future.delayed(const Duration(seconds: 2));
 

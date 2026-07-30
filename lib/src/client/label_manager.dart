@@ -90,7 +90,7 @@ class LabelManager {
     // any network attempt and retries until every write relay has acked,
     // so a label survives offline use and process death.
     _relays.getWriteRelays(pubkey).then((relays) {
-      _broadcastQueue.broadcast(signed, relays: relays);
+      _broadcastQueue.broadcast(signed, relays: relays, pubkey: pubkey);
     });
   }
 
@@ -136,7 +136,7 @@ class LabelManager {
     // exception.
     _ndk.accounts.sign(deletionEvent).then((signed) {
       _relays.getWriteRelays(pubkey).then((relays) {
-        _broadcastQueue.broadcast(signed, relays: relays);
+        _broadcastQueue.broadcast(signed, relays: relays, pubkey: pubkey);
       });
     });
   }
