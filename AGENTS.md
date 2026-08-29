@@ -83,7 +83,7 @@ lib/
     │   └── unwrapped_gift_wrap.dart # Seal + Rumor pair
     ├── client/
     │   ├── email_sender.dart    # Build, encrypt, send emails via GiftWraps
-    │   ├── mail_sync.dart       # sync(), resync(), fetchRecent(), event processing
+    │   ├── mail_sync.dart       # declares the sync requests, fetchRecent(), event processing
     │   ├── watch_manager.dart   # watch() — real-time MailEvent stream
     │   ├── label_manager.dart   # addLabel, removeLabel, broadcast labels
     │   ├── settings_manager.dart# Private settings CRUD + cache
@@ -157,12 +157,10 @@ await NostrMailClient.create({
 ```
 
 **Lifecycle:**
-- `sync()` — fills whatever the sync engine considers missing or stale, then rebuilds the local stores from the NDK cache. Unbounded: a mailbox is wanted whole
-- `resync()` — same, but goes to the relays however fresh the coverage is (pull to refresh)
-- `fetchRecent()` — alias of `resync()`, kept for backward compatibility
+- `fetchRecent()` — pull to refresh: goes to the relays now, however fresh the coverage is. The only sync method, and never needed to stay up to date: the engine revisits on its own and the client declares its requests from `create()` and from `ndk.accounts.authStateChanges`
 - `watch()` — broadcast stream of `MailEvent` (emails, labels, deletions)
 - `stopWatching()` — closes stream & subscriptions
-- `clearAllLocalData()` (alias `clearAll()`): wipes local DBs and caches. The NDK cache belongs to the caller and is left alone, so a later `sync()` rebuilds from it
+- `clearAllLocalData()` (alias `clearAll()`): wipes local DBs and caches. The NDK cache belongs to the caller and is left alone, so the next pass rebuilds from it
 - `clearLocalAccountData(pubkey:)`: wipes local data for one account only
 
 **Sending:**
@@ -260,7 +258,7 @@ dart test test/cc_bcc_test.dart                # hard-codes ws://localhost:7777,
 ### Sync (sync_engine_shim_for_ndk)
 NDK's `fetchedRanges` is broken and is no longer used. The caller passes a `SyncEngine` from `sync_engine_shim_for_ndk`, which tracks its own coverage per relay/filter pair, paginates, backs off per relay, and adds the 2-day NIP-59 margin on kind 1059. `MailSync` declares three `SyncRequest`s covering all 7 filter categories, split by relay set: gift wraps on DM relays, deletions on DM + write relays, and public emails / labels / reposts / settings / metadata on write relays.
 
-The engine never returns events: it fills the NDK cache. The cache is therefore the source of truth for raw events, and the sembast stores are a projection rebuilt from it by `_processFromCache` after every pass. Every handler is idempotent, so replaying the whole cache costs one lookup per already-known event, and an event whose processing failed is retried on the next sync instead of being lost. A schema bump just drops the stores; the next `sync()` rebuilds them without network.
+The engine never returns events: it fills the NDK cache. The cache is therefore the source of truth for raw events, and the sembast stores are a projection rebuilt from it by `_processFromCache`. A held request revisits its windows every `maxStaleness` on its own, so `MailSync` watches each handle's `SyncRequestStatus.progress` for as long as it holds the handle, and replays the cache on every page that brought events. Mail therefore lands without anyone polling the SDK, and surfaces during a long backfill instead of after it. Replays are serialised through `_replayCache`: asking while a round runs queues a single follow-up, so pages coalesce and no event is processed twice. Every handler is idempotent, so replaying the whole cache costs one lookup per already-known event, and an event whose processing failed is retried on the next pass instead of being lost. A schema bump just drops the stores; the next pass rebuilds them without network.
 
 ### Label Event Format (NIP-32)
 ```json
@@ -300,7 +298,7 @@ An email is considered "bridged" if the sender's pubkey does **not** match the p
 
 ## When Modifying This Codebase
 
-- **Keep `NostrMailClient` backwards-compatible** if possible; consumers rely heavily on `send()`, `sync()`, and `watch()`.
+- **Keep `NostrMailClient` backwards-compatible** if possible; consumers rely heavily on `send()`, `fetchRecent()`, and `watch()`.
 - **Add tests** for new storage operations in `nostr_mail_test.dart` or a new feature-specific file.
 - **Update `CHANGELOG.md`** with user-visible changes.
 - **Update `email-labels.md`** if you change the label protocol.

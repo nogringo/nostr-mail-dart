@@ -45,8 +45,10 @@ void main() async {
     syncEngine: syncEngine,
   );
 
-  // Sync emails from relays
-  await client.sync();
+  // The sync engine keeps the ndk cache filled and revisits it on its own, so
+  // nothing has to be called to stay up to date. This is the pull-to-refresh
+  // gesture: go and look now.
+  await client.fetchRecent();
 
   // Get cached emails
   final emails = await client.getEmails(limit: 10);

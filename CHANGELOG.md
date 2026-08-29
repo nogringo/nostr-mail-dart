@@ -1,39 +1,25 @@
 ## 2.6.3
 
-- **Breaking**: `NostrMailClient.create` takes a `syncEngine`, a `SyncEngine`
-  from `sync_engine_shim_for_ndk`. NDK's `fetchedRanges` is broken, so the SDK
-  no longer uses it: the shim tracks its own coverage per relay/filter pair,
-  paginates, backs off per relay and adds the 2-day NIP-59 margin on gift
-  wraps. The engine belongs to the caller: `create()` starts it, which is
-  idempotent, but never stops nor disposes it. Share it with your other
-  ndk-based SDKs.
-- **Breaking**: `migrateSchemaIfNeeded` no longer takes an `ndk`. It only drops
-  the local stores now; the next `sync()` rebuilds them from the NDK cache,
-  without going back to the relays.
-- The sync engine fills the NDK cache and never returns events, so the cache is
-  now the source of truth for raw events and the local stores are a projection
-  rebuilt from it after every pass. An event whose processing fails stays in
-  the cache and is retried on the next sync, instead of being lost once its
-  range was marked covered.
-- `resync()` no longer clears anything: it goes to the relays however fresh the
-  coverage is, which is the pull-to-refresh gesture. `fetchRecent()` is now an
-  alias of it.
-- **Breaking**: `sync()` and `resync()` no longer take `since` and `until`. A
-  mailbox is wanted whole, so nothing bounds how far back a sync reaches: the
-  engine walks back until every relay has nothing older, once, and remembers
-  it. The two parameters only ever bounded the fetch anyway, never the
-  processing, which replays the whole cache.
-- `clearLocalAccountData(pubkey:)` and `clearAllLocalData()` no longer touch
-  NDK state. The raw events stay in the caller's NDK cache, so a later `sync()`
-  rebuilds that account's mail from there; clear the NDK cache too to forget an
-  account entirely.
-- **Breaking**: requires `ndk` 0.9.0. Bump `nostr_event_scheduler` to 0.4.0,
-  `broadcast_queue_shim_for_ndk` to 0.5.0 and
-  `blossom_upload_queue_shim_for_ndk` to 0.7.0, which all move with it.
-  `sync_engine_shim_for_ndk` 0.3.2 is the minimum: before it, staleness was
-  measured on the whole coverage of a filter, so resuming an interrupted
-  backfill made the recent end look freshly validated and new mail waited for
-  the next staleness window.
+- **Breaking**: `NostrMailClient.create` takes a `syncEngine`
+  (`sync_engine_shim_for_ndk`), which replaces NDK's broken `fetchedRanges`. It
+  belongs to the caller: `create()` starts it but never stops nor disposes it.
+- **Breaking**: `sync()` and `resync()` are gone. `fetchRecent()` is the only
+  one left, and it is the pull-to-refresh gesture. Nothing has to be called to
+  stay up to date: the client declares what the active account needs and
+  follows logins and account switches, and the engine revisits on its own.
+- **Breaking**: `migrateSchemaIfNeeded` no longer takes an `ndk`.
+- **Breaking**: requires `ndk` 0.9.0, `nostr_event_scheduler` 0.4.0,
+  `broadcast_queue_shim_for_ndk` 0.5.0, `blossom_upload_queue_shim_for_ndk`
+  0.7.0 and `sync_engine_shim_for_ndk` 0.4.0.
+- The NDK cache is now the source of truth for raw events, and the local stores
+  a projection of it replayed on every page that lands. Mail therefore surfaces
+  during a long backfill instead of after it, an event whose processing fails
+  is retried on the next pass instead of being lost, and a schema bump rebuilds
+  the stores without going back to the relays.
+- `clearLocalAccountData(pubkey:)` and `clearAllLocalData()` no longer touch NDK
+  state, so clear the NDK cache too to forget an account entirely.
+- **Fix**: a sent email no longer loses its labels when its own gift wrap comes
+  back through the sync and rebuilds the row from scratch.
 
 ## 2.6.2
 

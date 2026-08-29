@@ -122,7 +122,7 @@ void main() {
         );
 
         // Check the BCC notification (gift wrap) reaches the BCC recipient.
-        await bccUser.client.sync();
+        await bccUser.client.fetchRecent();
         final emails = await bccUser.client.getEmails();
         final bccEmail = emails.firstWhere(
           (e) => e.subject == 'Public with BCC',

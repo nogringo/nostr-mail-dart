@@ -96,13 +96,15 @@ class NostrMailClient {
   ///
   /// This is the only supported entry point. The migration is fast (a single
   /// drop per store) and runs automatically on every version mismatch so the
-  /// caller cannot accidentally read records in a stale format. The next
-  /// [sync] rebuilds the dropped stores from the NDK cache, without network.
+  /// caller cannot accidentally read records in a stale format. The dropped
+  /// stores are rebuilt from the NDK cache, without network.
   ///
   /// [syncEngine] keeps the NDK cache filled with everything the account needs
-  /// (`sync_engine_shim_for_ndk`). It is the caller's: [create] starts it,
-  /// which is idempotent, but never stops nor disposes it. Share it with the
-  /// other SDKs reading the same relays.
+  /// (`sync_engine_shim_for_ndk`), and revisits it every `maxStaleness` of its
+  /// own accord, so nothing has to poll this client. It is the caller's:
+  /// [create] starts it, which is idempotent, but never stops nor disposes it.
+  /// Stop it when the app goes to the background, and share it with the other
+  /// SDKs reading the same relays.
   ///
   /// Pass [broadcastQueue] to share a single queue across SDKs, tune its
   /// parameters, or inject a custom one in tests. When you provide your own
@@ -202,6 +204,13 @@ class NostrMailClient {
     if (ndk.accounts.isLoggedIn) {
       await settingsManager.getPrivateSettings();
     }
+
+    // Declaring is what makes the engine keep this account's mail available
+    // and revisit it, so it happens here rather than on a first call the
+    // caller has to remember. The relay lookups it needs are not worth
+    // delaying `create()` for: the engine walks on once they land.
+    mailSync.followActiveAccount();
+    mailSync.declare().ignore();
 
     final emailSender = EmailSender(
       ndk,
@@ -852,14 +861,12 @@ class NostrMailClient {
 
   // ── Sync ────────────────────────────────────────────────────────────────
 
-  /// Fetches whatever the sync engine considers missing or stale, then
-  /// rebuilds the local stores from the NDK cache. Cheap to call repeatedly.
-  Future<void> sync() => _sync.sync();
-
-  /// Goes to the relays now, however fresh the coverage is. Pull to refresh.
-  Future<void> resync() => _sync.resync();
-
-  /// Alias of [resync], kept for backward compatibility.
+  /// Goes to the relays now, however fresh the coverage is, then rebuilds the
+  /// local stores. This is the pull-to-refresh gesture.
+  ///
+  /// Staying up to date needs no call: the sync engine keeps this account's
+  /// requests filled and revisits them on its own, and the client follows
+  /// logins and account switches to redraw them.
   Future<void> fetchRecent() => _sync.fetchRecent();
 
   Future<bool> retry(String eventId) => _sync.retry(eventId);
@@ -1109,7 +1116,7 @@ class NostrMailClient {
   /// interest in its sync requests.
   Future<void> dispose() async {
     stopWatching();
-    _sync.releaseHandles();
+    _sync.dispose();
     await _schedule.dispose();
     if (_ownsBroadcastQueue) {
       await broadcastQueue.dispose();

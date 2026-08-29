@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:blossom_cache/blossom_cache.dart';
 import 'package:ndk/ndk.dart';
 import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
@@ -39,6 +41,18 @@ class MailSync {
   /// or the client is disposed.
   final Map<String, SyncHandle> _handles = {};
 
+  final Map<SyncHandle, StreamSubscription<SyncRequestStatus>> _watchers = {};
+
+  StreamSubscription<Account?>? _account;
+
+  /// The last page seen per handle. A status carries the page that landed, and
+  /// is re-emitted on every phase change and replayed to every new listener,
+  /// so the instance itself is what tells a new page from an echo.
+  final Map<SyncHandle, SyncProgress> _lastProgress = {};
+
+  Future<void>? _replaying;
+  var _replayAgain = false;
+
   MailSync(
     this._ndk,
     this._engine,
@@ -63,39 +77,51 @@ class MailSync {
 
   // ── Public API ──────────────────────────────────────────────────────────
 
-  /// Brings the NDK cache up to date, then rebuilds the local stores from it.
-  ///
-  /// Only what the sync engine considers missing or stale is fetched, so this
-  /// is cheap to call repeatedly. Nothing bounds how far back it reaches: a
-  /// mailbox is wanted whole, so the engine walks back until every relay has
-  /// nothing older, once, and remembers it.
-  Future<void> sync() async {
-    _assertPubkey();
-    final handles = await _ensureHandles();
-    await Future.wait(handles.map(_awaitSynced));
-    await _processFromCache();
-  }
-
   /// Goes to the relays now, however fresh the coverage is, then rebuilds the
-  /// local stores. This is the pull-to-refresh gesture.
-  Future<void> resync() async {
+  /// local stores. This is the pull-to-refresh gesture, and the only reason
+  /// left to ask for anything: staying up to date needs no call at all.
+  Future<void> fetchRecent() async {
     _assertPubkey();
     final handles = await _ensureHandles();
     await Future.wait(handles.map(_engine.refresh));
-    await _processFromCache();
+    await _replayCache();
   }
 
-  /// Alias of [resync] kept for backward compatibility.
-  Future<void> fetchRecent() => resync();
+  /// Declares this account's requests, so the engine keeps them filled and
+  /// revisits them on its own. Called on every account change; idempotent.
+  Future<void> declare() async {
+    if (_pubkey == null) {
+      release();
+      return;
+    }
+    await _ensureHandles();
+  }
 
-  /// Drops this client's interest in its sync requests. The coverage the
-  /// engine persisted survives; the engine itself belongs to the caller and is
-  /// never started, stopped or disposed from here.
-  void releaseHandles() {
+  /// Drops this client's interest in its sync requests, which stops the engine
+  /// revisiting them. The coverage it persisted survives; the engine itself
+  /// belongs to the caller and is never started, stopped or disposed here.
+  void release() {
     for (final handle in _handles.values) {
-      _engine.release(handle);
+      _drop(handle);
     }
     _handles.clear();
+  }
+
+  /// Follows the active account: what to sync is derived from its pubkey, so a
+  /// login, a switch or a logout has to redraw every request. Without this the
+  /// caller would have to remember to say so, and forgetting would look like a
+  /// mailbox that simply stopped filling.
+  void followActiveAccount() {
+    _account ??= _ndk.accounts.authStateChanges.listen((_) {
+      declare().ignore();
+    });
+  }
+
+  /// Stops following the account and drops every request.
+  void dispose() {
+    _account?.cancel().ignore();
+    _account = null;
+    release();
   }
 
   // ── Sync requests ───────────────────────────────────────────────────────
@@ -139,26 +165,68 @@ class MailSync {
       // ensure() counts one more holder per call; a scope only ever holds one.
       _engine.release(handle);
     } else {
-      if (held != null) _engine.release(held);
+      if (held != null) _drop(held);
       _handles[scope] = handle;
+      _watch(handle);
     }
 
     return handle;
   }
 
-  Future<void> _awaitSynced(SyncHandle handle) async {
-    if (_engine.engineStatus.phase == SyncEnginePhase.stopped) return;
+  /// Replays the cache on every page [handle] brings in, for as long as it is
+  /// held. A held request revisits its windows on its own every
+  /// `maxStaleness`, so most pages land outside any call of ours: watching
+  /// only during one would leave that mail sitting in the cache, unprojected.
+  void _watch(SyncHandle handle) {
+    _watchers[handle] = _engine.watchStatus(handle).listen((status) {
+      final progress = status.progress;
+      if (progress == null || identical(_lastProgress[handle], progress)) {
+        return;
+      }
+      _lastProgress[handle] = progress;
 
-    await _engine
-        .watchStatus(handle)
-        .firstWhere(
-          (status) =>
-              status.phase == SyncRequestPhase.synced ||
-              status.phase == SyncRequestPhase.failed,
-        );
+      // A page that brought nothing cannot have changed the cache, and most
+      // pages of a routine pass are empty ones closing a window.
+      if (progress.eventCount == 0) return;
+
+      // Best effort: nobody is awaiting this round, and the cache keeps what
+      // failed, so the next round retries it.
+      _replayCache().ignore();
+    });
+  }
+
+  void _drop(SyncHandle handle) {
+    _engine.release(handle);
+    _watchers.remove(handle)?.cancel().ignore();
+    _lastProgress.remove(handle);
   }
 
   // ── Cache processing ────────────────────────────────────────────────────
+
+  /// Replays the cache, one round at a time. Asking again while a round runs
+  /// queues a single follow-up instead of racing it, so a walk landing twenty
+  /// pages costs a handful of rounds rather than twenty, and two rounds never
+  /// process the same event at once.
+  Future<void> _replayCache() {
+    final running = _replaying;
+    if (running != null) {
+      _replayAgain = true;
+      return running;
+    }
+
+    return _replaying = _replayRounds();
+  }
+
+  Future<void> _replayRounds() async {
+    try {
+      do {
+        _replayAgain = false;
+        await _processFromCache();
+      } while (_replayAgain);
+    } finally {
+      _replaying = null;
+    }
+  }
 
   /// Rebuilds the local stores from the NDK cache. Every handler is idempotent,
   /// so replaying the whole cache only costs a lookup per already-known event.
@@ -277,8 +345,23 @@ class MailSync {
         blossomCache: _blossomCache,
       );
 
-      final folder = email.senderPubkey == myPubkey ? 'sent' : 'inbox';
-      final record = buildEmailRecord(email: email, folder: folder);
+      // A sent copy is stored the moment it is sent, but its gift wrap is
+      // addressed to us too and comes back through the sync. Labels are
+      // denormalized onto the row, so rebuilding it from the wrap would put a
+      // trashed, starred or read email back to square one.
+      final existing = await _emails.getById(
+        email.id,
+        recipientPubkey: myPubkey,
+      );
+      final record = buildEmailRecord(
+        email: email,
+        folder:
+            existing?.folder ??
+            (email.senderPubkey == myPubkey ? 'sent' : 'inbox'),
+        labels: existing?.labels ?? const [],
+        isRead: existing?.isRead ?? false,
+        isStarred: existing?.isStarred ?? false,
+      );
 
       await _emails.save(record);
       await _giftWraps.updateDecrypted(

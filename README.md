@@ -84,13 +84,12 @@ await client.send(
 ### Receive emails
 
 ```dart
-// Bring the ndk cache up to date, then rebuild the local stores from it.
-// Only what the sync engine considers missing or stale is fetched, so this
-// is cheap to call repeatedly.
-await client.sync();
+// Nothing has to be called to stay up to date: the sync engine keeps the ndk
+// cache filled and revisits it every `maxStaleness` on its own, and the client
+// declares what the active account needs, following logins and switches.
 
 // Go to the relays now, however fresh the coverage is (pull to refresh).
-await client.resync();
+await client.fetchRecent();
 
 // Watch for new emails in real-time
 client.watchInbox().listen((email) {
