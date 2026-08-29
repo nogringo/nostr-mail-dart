@@ -6,6 +6,7 @@ import 'package:test/test.dart';
 
 import '../../helpers/test_blossom_cache.dart';
 import '../../mocks/mock_relay.dart';
+import '../../helpers/test_sync_engine.dart';
 
 void main() {
   test('exposes gift wrap, seal, and rumor for a sent email', () async {
@@ -24,7 +25,6 @@ void main() {
         cache: MemCacheManager(),
         bootstrapRelays: [relay.url],
         logLevel: LogLevel.off,
-        fetchedRangesEnabled: true,
       ),
     );
     addTearDown(() async => await ndk.destroy());
@@ -37,6 +37,7 @@ void main() {
     final client = await NostrMailClient.create(
       ndk: ndk,
       db: db,
+      syncEngine: testSyncEngine(ndk, db),
       blossomCache: await openTestBlossomCache('technical_details_test'),
       defaultDmRelays: [relay.url],
     );

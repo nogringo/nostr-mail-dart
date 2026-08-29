@@ -18,6 +18,8 @@ A Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59
 
 - A configured [ndk](https://pub.dev/packages/ndk) instance with a logged-in account
 - A sembast database instance for local storage
+- A [sync_engine_shim_for_ndk](https://pub.dev/packages/sync_engine_shim_for_ndk) `SyncEngine`, which keeps the ndk cache filled from the relays
+- A [blossom_cache](https://pub.dev/packages/blossom_cache) instance for large-email blobs
 
 ## Usage
 
@@ -26,13 +28,13 @@ A Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59
 ```dart
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:ndk/ndk.dart';
-import 'package:sembast/sembast_io.dart';
+import 'package:sembast/sembast_io.dart' hide Filter;
+import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 
 // Initialize ndk with your account
 final ndk = Ndk(NdkConfig(
   cache: MemCacheManager(),
   eventVerifier: Bip340EventVerifier(),
-  fetchedRangesEnabled: true,
 ));
 final keyPair = Bip340.generatePrivateKey();
 ndk.accounts.loginPrivateKey(
@@ -43,10 +45,21 @@ ndk.accounts.loginPrivateKey(
 // Open a database for local storage
 final db = await databaseFactoryIo.openDatabase('emails.db');
 
+// Local blob store for large emails on their way to Blossom. Use
+// `idbFactoryBrowser` on web and `idbFactorySembastIo` on native.
+final blossomCache = await IdbBlossomCache.open(factory: idbFactorySembastIo);
+
+// Keeps the ndk cache in sync with the relays. Yours to own: the client
+// starts it but never stops nor disposes it, so you can share it with your
+// other ndk-based SDKs.
+final syncEngine = SyncEngine(ndk, db: db);
+
 // Create the client
-final client = NostrMailClient(
+final client = await NostrMailClient.create(
   ndk: ndk,
   db: db,
+  blossomCache: blossomCache,
+  syncEngine: syncEngine,
 );
 ```
 
@@ -71,8 +84,13 @@ await client.send(
 ### Receive emails
 
 ```dart
-// Sync historical emails from relays
+// Bring the ndk cache up to date, then rebuild the local stores from it.
+// Only what the sync engine considers missing or stale is fetched, so this
+// is cheap to call repeatedly.
 await client.sync();
+
+// Go to the relays now, however fresh the coverage is (pull to refresh).
+await client.resync();
 
 // Watch for new emails in real-time
 client.watchInbox().listen((email) {

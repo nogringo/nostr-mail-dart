@@ -8,6 +8,7 @@ import 'package:test/test.dart';
 
 import '../../helpers/test_blossom_cache.dart';
 import '../../mocks/mock_relay.dart';
+import '../../helpers/test_sync_engine.dart';
 
 void main() {
   group('PrivateSettings end-to-end', () {
@@ -23,7 +24,6 @@ void main() {
             eventVerifier: Bip340EventVerifier(),
             cache: MemCacheManager(),
             bootstrapRelays: [relay.url],
-            fetchedRangesEnabled: true,
           ),
         );
         addTearDown(() async => await ndk.destroy());
@@ -42,6 +42,7 @@ void main() {
         final clientA = await NostrMailClient.create(
           ndk: ndk,
           db: db,
+          syncEngine: testSyncEngine(ndk, db),
           blossomCache: await openTestBlossomCache('private_settings_a'),
           defaultDmRelays: [relay.url],
         );
@@ -62,6 +63,7 @@ void main() {
         final clientB = await NostrMailClient.create(
           ndk: ndk,
           db: db2,
+          syncEngine: testSyncEngine(ndk, db2),
           blossomCache: await openTestBlossomCache('private_settings_b'),
           defaultDmRelays: [relay.url],
         );
@@ -97,7 +99,6 @@ void main() {
           bootstrapRelays: [relay.url],
           eventVerifier: Bip340EventVerifier(),
           cache: MemCacheManager(),
-          fetchedRangesEnabled: true,
         ),
       );
 
@@ -111,6 +112,7 @@ void main() {
       client = await NostrMailClient.create(
         ndk: ndk,
         db: db,
+        syncEngine: testSyncEngine(ndk, db),
         blossomCache: blossomCache,
         defaultDmRelays: [relay.url],
       );
@@ -141,6 +143,7 @@ void main() {
         final reopened = await NostrMailClient.create(
           ndk: ndk,
           db: db,
+          syncEngine: testSyncEngine(ndk, db),
           blossomCache: blossomCache,
           defaultDmRelays: [relay.url],
         );
@@ -194,63 +197,47 @@ void main() {
       timeout: const Timeout(Duration(seconds: 30)),
     );
 
-    test(
-      'updatePrivateSettings updates an existing signature',
-      () async {
-        await client.updatePrivateSettings(signature: 'First signature');
-        var settings = await client.getPrivateSettings();
-        expect(settings!.signature, 'First signature');
+    test('updatePrivateSettings updates an existing signature', () async {
+      await client.updatePrivateSettings(signature: 'First signature');
+      var settings = await client.getPrivateSettings();
+      expect(settings!.signature, 'First signature');
 
-        await client.updatePrivateSettings(signature: 'Updated signature');
-        settings = await client.getPrivateSettings();
-        expect(settings!.signature, 'Updated signature');
-      },
-      timeout: const Timeout(Duration(seconds: 30)),
-    );
+      await client.updatePrivateSettings(signature: 'Updated signature');
+      settings = await client.getPrivateSettings();
+      expect(settings!.signature, 'Updated signature');
+    }, timeout: const Timeout(Duration(seconds: 30)));
 
-    test(
-      'updatePrivateSettings persists bridges',
-      () async {
-        final bridges = ['nostr.mail', 'bridge.example.com'];
-        await client.updatePrivateSettings(bridges: bridges);
+    test('updatePrivateSettings persists bridges', () async {
+      final bridges = ['nostr.mail', 'bridge.example.com'];
+      await client.updatePrivateSettings(bridges: bridges);
 
-        final settings = await client.getPrivateSettings();
+      final settings = await client.getPrivateSettings();
 
-        expect(settings!.bridges, bridges);
-      },
-      timeout: const Timeout(Duration(seconds: 30)),
-    );
+      expect(settings!.bridges, bridges);
+    }, timeout: const Timeout(Duration(seconds: 30)));
 
-    test(
-      'updatePrivateSettings with identities sets defaultAddress',
-      () async {
-        final identities = [
-          MailAddress('Alice', 'alice@nostr.mail'),
-          MailAddress(null, 'bob@bridge.com'),
-        ];
-        await client.updatePrivateSettings(identities: identities);
+    test('updatePrivateSettings with identities sets defaultAddress', () async {
+      final identities = [
+        MailAddress('Alice', 'alice@nostr.mail'),
+        MailAddress(null, 'bob@bridge.com'),
+      ];
+      await client.updatePrivateSettings(identities: identities);
 
-        final settings = await client.getPrivateSettings();
+      final settings = await client.getPrivateSettings();
 
-        expect(settings!.defaultAddress!.personalName, 'Alice');
-        expect(settings.identities!.length, 2);
-      },
-      timeout: const Timeout(Duration(seconds: 30)),
-    );
+      expect(settings!.defaultAddress!.personalName, 'Alice');
+      expect(settings.identities!.length, 2);
+    }, timeout: const Timeout(Duration(seconds: 30)));
 
-    test(
-      'clearAll resets the private settings cache',
-      () async {
-        await client.updatePrivateSettings(signature: 'Test signature');
-        await client.getPrivateSettings();
-        expect(client.cachedPrivateSettings, isNotNull);
+    test('clearAll resets the private settings cache', () async {
+      await client.updatePrivateSettings(signature: 'Test signature');
+      await client.getPrivateSettings();
+      expect(client.cachedPrivateSettings, isNotNull);
 
-        await client.clearAll();
+      await client.clearAll();
 
-        expect(client.cachedPrivateSettings, isNull);
-      },
-      timeout: const Timeout(Duration(seconds: 30)),
-    );
+      expect(client.cachedPrivateSettings, isNull);
+    }, timeout: const Timeout(Duration(seconds: 30)));
 
     test(
       'updatePrivateSettings with clearSignature drops the signature',
@@ -266,43 +253,33 @@ void main() {
       timeout: const Timeout(Duration(seconds: 30)),
     );
 
-    test(
-      'sourceEvent is populated on fetchPrivateSettings',
-      () async {
-        await client.setPrivateSettings(
-          const PrivateSettings(signature: 'test'),
-        );
-        final settings = await client.fetchPrivateSettings();
+    test('sourceEvent is populated on fetchPrivateSettings', () async {
+      await client.setPrivateSettings(const PrivateSettings(signature: 'test'));
+      final settings = await client.fetchPrivateSettings();
 
-        expect(settings!.sourceEvent, isNotNull);
-        expect(settings.sourceEvent!.kind, appSettingsKind);
-        final dTag = settings.sourceEvent!.tags.firstWhere(
-          (t) => t.isNotEmpty && t[0] == 'd',
-          orElse: () => [],
-        );
-        expect(dTag, isNotEmpty);
-        expect(dTag[1], privateSettingsDTag);
-      },
-      timeout: const Timeout(Duration(seconds: 30)),
-    );
+      expect(settings!.sourceEvent, isNotNull);
+      expect(settings.sourceEvent!.kind, appSettingsKind);
+      final dTag = settings.sourceEvent!.tags.firstWhere(
+        (t) => t.isNotEmpty && t[0] == 'd',
+        orElse: () => [],
+      );
+      expect(dTag, isNotEmpty);
+      expect(dTag[1], privateSettingsDTag);
+    }, timeout: const Timeout(Duration(seconds: 30)));
 
-    test(
-      'updatePrivateSettings persists identities',
-      () async {
-        final identities = [
-          MailAddress('Alice Real', 'alice@nostr.mail'),
-          MailAddress(null, 'bob@bridge.com'),
-        ];
-        await client.updatePrivateSettings(identities: identities);
+    test('updatePrivateSettings persists identities', () async {
+      final identities = [
+        MailAddress('Alice Real', 'alice@nostr.mail'),
+        MailAddress(null, 'bob@bridge.com'),
+      ];
+      await client.updatePrivateSettings(identities: identities);
 
-        final settings = await client.getPrivateSettings();
+      final settings = await client.getPrivateSettings();
 
-        expect(settings!.identities, hasLength(2));
-        expect(settings.identities![0].personalName, 'Alice Real');
-        expect(settings.identities![1].personalName, isNull);
-      },
-      timeout: const Timeout(Duration(seconds: 30)),
-    );
+      expect(settings!.identities, hasLength(2));
+      expect(settings.identities![0].personalName, 'Alice Real');
+      expect(settings.identities![1].personalName, isNull);
+    }, timeout: const Timeout(Duration(seconds: 30)));
 
     test(
       'updatePrivateSettings with clearIdentities drops identities',

@@ -24,7 +24,6 @@ void main() {
           eventVerifier: Bip340EventVerifier(),
           cache: MemCacheManager(),
           bootstrapRelays: [relay.url],
-          fetchedRangesEnabled: true,
         ),
       );
       dvmNdk.accounts.loginPrivateKey(

@@ -8,6 +8,7 @@ import 'package:ndk/ndk.dart';
 import 'package:nostr_event_scheduler/nostr_event_scheduler.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:sembast/sembast.dart' hide Filter;
+import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 
 import 'dart:convert';
 import 'dart:typed_data';
@@ -16,7 +17,7 @@ import 'client/email_sender.dart';
 import 'client/event_bus.dart';
 import 'client/label_manager.dart';
 import 'client/settings_manager.dart';
-import 'client/sync_engine.dart';
+import 'client/mail_sync.dart';
 import 'client/watch_manager.dart';
 import 'client/relay_resolver.dart';
 import 'client/schedule_manager.dart';
@@ -55,7 +56,7 @@ class NostrMailClient {
   final EmailSender _sender;
   final LabelManager _labels;
   final SettingsManager _settings;
-  final SyncEngine _sync;
+  final MailSync _sync;
   final WatchManager _watch;
   final ScheduleManager _schedule;
 
@@ -94,9 +95,14 @@ class NostrMailClient {
   /// Build a [NostrMailClient] after running any pending schema migration.
   ///
   /// This is the only supported entry point. The migration is fast (a single
-  /// drop per store + ndk fetched-ranges clear) and runs automatically on
-  /// every version mismatch so the caller cannot accidentally read records in
-  /// a stale format.
+  /// drop per store) and runs automatically on every version mismatch so the
+  /// caller cannot accidentally read records in a stale format. The next
+  /// [sync] rebuilds the dropped stores from the NDK cache, without network.
+  ///
+  /// [syncEngine] keeps the NDK cache filled with everything the account needs
+  /// (`sync_engine_shim_for_ndk`). It is the caller's: [create] starts it,
+  /// which is idempotent, but never stops nor disposes it. Share it with the
+  /// other SDKs reading the same relays.
   ///
   /// Pass [broadcastQueue] to share a single queue across SDKs, tune its
   /// parameters, or inject a custom one in tests. When you provide your own
@@ -124,6 +130,7 @@ class NostrMailClient {
     required Ndk ndk,
     required Database db,
     required BlossomCache blossomCache,
+    required SyncEngine syncEngine,
     List<String>? defaultDmRelays,
     List<String>? defaultBlossomServers,
     Map<String, String>? nip05Overrides,
@@ -132,7 +139,8 @@ class NostrMailClient {
     String? schedulerDvm,
     List<String>? schedulerDvmReadRelays,
   }) async {
-    await migrateSchemaIfNeeded(db: db, ndk: ndk);
+    await migrateSchemaIfNeeded(db: db);
+    syncEngine.start();
     final emailRepo = EmailRepository(db);
     final labelRepo = LabelRepository(db);
     final giftWrapRepo = GiftWrapRepository(db);
@@ -173,8 +181,9 @@ class NostrMailClient {
       relayResolver,
       queue,
     );
-    final syncEngine = SyncEngine(
+    final mailSync = MailSync(
       ndk,
+      syncEngine,
       emailRepo,
       labelRepo,
       giftWrapRepo,
@@ -235,8 +244,8 @@ class NostrMailClient {
         queue,
       ),
       settings: settingsManager,
-      sync: syncEngine,
-      watch: WatchManager(ndk, syncEngine, bus, relayResolver),
+      sync: mailSync,
+      watch: WatchManager(ndk, mailSync, bus, relayResolver),
       broadcastQueue: queue,
       ownsBroadcastQueue: ownsQueue,
       blossomUploadQueue: blossomQueue,
@@ -843,10 +852,14 @@ class NostrMailClient {
 
   // ── Sync ────────────────────────────────────────────────────────────────
 
-  Future<void> sync({int? since, int? until}) =>
-      _sync.sync(since: since, until: until);
-  Future<void> resync({int? since, int? until}) =>
-      _sync.resync(since: since, until: until);
+  /// Fetches whatever the sync engine considers missing or stale, then
+  /// rebuilds the local stores from the NDK cache. Cheap to call repeatedly.
+  Future<void> sync() => _sync.sync();
+
+  /// Goes to the relays now, however fresh the coverage is. Pull to refresh.
+  Future<void> resync() => _sync.resync();
+
+  /// Alias of [resync], kept for backward compatibility.
   Future<void> fetchRecent() => _sync.fetchRecent();
 
   Future<bool> retry(String eventId) => _sync.retry(eventId);
@@ -1047,6 +1060,10 @@ class NostrMailClient {
   ///
   /// Do not call this for an account that is concurrently sending: a broadcast
   /// overlapping the clear can re-create its record.
+  ///
+  /// The raw events stay in the NDK cache, which belongs to the caller, so a
+  /// later [sync] for this account rebuilds its mail from there. Clear that
+  /// cache too to forget the account entirely.
   Future<void> clearLocalAccountData({required String pubkey}) async {
     await Future.wait([
       _emailRepo.clearAll(recipientPubkey: pubkey),
@@ -1054,7 +1071,6 @@ class NostrMailClient {
       _giftWrapRepo.clearAll(recipientPubkey: pubkey),
       _settingsRepo.clear(pubkey: pubkey),
       _tombstoneRepo.clearAll(recipientPubkey: pubkey),
-      _sync.clearFetchedRanges(pubkey),
       if (_ownsBroadcastQueue)
         broadcastQueue.clearLocalAccountData(pubkey: pubkey),
       if (_ownsBlossomUploadQueue)
@@ -1065,7 +1081,8 @@ class NostrMailClient {
 
   /// Drops every local record for every account. Same ownership rule as
   /// [clearLocalAccountData]: a caller-provided queue is left alone, since its
-  /// pending entries may belong to another SDK sharing it.
+  /// pending entries may belong to another SDK sharing it, and the NDK cache
+  /// is left untouched.
   Future<void> clearAllLocalData() async {
     await Future.wait([
       _emailRepo.clearAll(),
@@ -1073,7 +1090,6 @@ class NostrMailClient {
       _giftWrapRepo.clearAll(),
       _settingsRepo.clear(),
       _tombstoneRepo.clearAll(),
-      _ndk.fetchedRanges.clearAll(),
       if (_ownsBroadcastQueue) broadcastQueue.clearAllLocalData(),
       if (_ownsBlossomUploadQueue) blossomUploadQueue.clearAllLocalData(),
     ]);
@@ -1088,10 +1104,12 @@ class NostrMailClient {
   /// Blossom cache.
   ///
   /// When a queue was passed to [create] explicitly, the caller owns its
-  /// lifecycle and must dispose it themselves. The Blossom cache is never
-  /// owned by the client.
+  /// lifecycle and must dispose it themselves. The Blossom cache and the sync
+  /// engine are never owned by the client: this only drops the client's
+  /// interest in its sync requests.
   Future<void> dispose() async {
     stopWatching();
+    _sync.releaseHandles();
     await _schedule.dispose();
     if (_ownsBroadcastQueue) {
       await broadcastQueue.dispose();

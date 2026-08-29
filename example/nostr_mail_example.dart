@@ -4,7 +4,8 @@ import 'package:idb_shim/idb_client_memory.dart';
 import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:nostr_mail/nostr_mail.dart';
-import 'package:sembast/sembast_memory.dart';
+import 'package:sembast/sembast_memory.dart' hide Filter;
+import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 
 void main() async {
   // Initialize Sembast database (use sembast_io for file-based storage)
@@ -16,7 +17,6 @@ void main() async {
       bootstrapRelays: ['wss://relay.damus.io', 'wss://nos.lol'],
       eventVerifier: Bip340EventVerifier(),
       cache: MemCacheManager(),
-      fetchedRangesEnabled: true,
     ),
   );
 
@@ -33,11 +33,16 @@ void main() async {
     factory: newIdbFactoryMemory(),
   );
 
+  // Keeps the ndk cache in sync with the relays. The client starts it, but
+  // never stops nor disposes it: share it with your other ndk-based SDKs.
+  final syncEngine = SyncEngine(ndk, db: db);
+
   // Create the mail client (runs any pending schema migration first)
   final client = await NostrMailClient.create(
     ndk: ndk,
     db: db,
     blossomCache: blossomCache,
+    syncEngine: syncEngine,
   );
 
   // Sync emails from relays

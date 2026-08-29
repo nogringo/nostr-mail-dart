@@ -5,13 +5,13 @@ import '../models/mail_event.dart';
 import 'event_bus.dart';
 import 'filters.dart';
 import 'relay_resolver.dart';
-import 'sync_engine.dart';
+import 'mail_sync.dart';
 
 /// Manages real-time Nostr subscriptions and routes incoming events
-/// to the [SyncEngine] for processing.
+/// to the [MailSync] for processing.
 class WatchManager {
   final Ndk _ndk;
-  final SyncEngine _sync;
+  final MailSync _sync;
   final EventBus _bus;
   final RelayResolver _relays;
 

@@ -10,7 +10,6 @@ import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:ndk/shared/nips/nip01/key_pair.dart';
 import 'package:nostr_mail/nostr_mail.dart';
-import 'package:nostr_mail/src/client/filters.dart';
 import 'package:nostr_mail/src/storage/email_repository.dart';
 import 'package:nostr_mail/src/storage/gift_wrap_repository.dart';
 import 'package:nostr_mail/src/storage/label_repository.dart';
@@ -23,6 +22,7 @@ import 'package:test/test.dart';
 
 import '../../helpers/test_blossom_cache.dart';
 import '../../mocks/mock_relay.dart';
+import '../../helpers/test_sync_engine.dart';
 
 void main() {
   final aliceKeys = Bip340.generatePrivateKey();
@@ -82,11 +82,10 @@ void main() {
         EmailQuery.inbox(recipientPubkey: alice),
       );
 
-      expect(
-        result.items.map((e) => e.id).toSet(),
-        {'a1', 'a2'},
-        reason: "Alice's inbox must not include Bob's emails",
-      );
+      expect(result.items.map((e) => e.id).toSet(), {
+        'a1',
+        'a2',
+      }, reason: "Alice's inbox must not include Bob's emails");
     });
 
     test('count is per-account, not global', () async {
@@ -110,11 +109,9 @@ void main() {
 
       final hits = await emails.search('shared', recipientPubkey: alice);
 
-      expect(
-        hits.map((e) => e.id).toSet(),
-        {'a1'},
-        reason: 'search results must be scoped to the active account',
-      );
+      expect(hits.map((e) => e.id).toSet(), {
+        'a1',
+      }, reason: 'search results must be scoped to the active account');
     });
 
     test("getById cannot fetch another account's email", () async {
@@ -149,11 +146,9 @@ void main() {
       );
 
       final all = await labels.getAllLabels(recipientPubkey: alice);
-      expect(
-        all.map((r) => r['emailId']).toSet(),
-        {'a1'},
-        reason: 'Alice should only see labels attached to her own emails',
-      );
+      expect(all.map((r) => r['emailId']).toSet(), {
+        'a1',
+      }, reason: 'Alice should only see labels attached to her own emails');
     });
   });
 
@@ -181,7 +176,6 @@ void main() {
           eventVerifier: Bip340EventVerifier(),
           cache: MemCacheManager(),
           bootstrapRelays: [relay.url],
-          fetchedRangesEnabled: true,
         ),
       );
 
@@ -196,6 +190,7 @@ void main() {
       client = await NostrMailClient.create(
         ndk: ndk,
         db: db,
+        syncEngine: testSyncEngine(ndk, db),
         blossomCache: await openTestBlossomCache('account_isolation_test'),
         defaultDmRelays: [relay.url],
       );
@@ -356,18 +351,6 @@ void main() {
         makeEvent('bob-wrap'),
         recipientPubkey: bobAccount.publicKey,
       );
-      await ndk.fetchedRanges.addRange(
-        filter: emailFilter(aliceAccount.publicKey),
-        relayUrl: relay.url,
-        since: 0,
-        until: 1000,
-      );
-      await ndk.fetchedRanges.addRange(
-        filter: emailFilter(bobAccount.publicKey),
-        relayUrl: relay.url,
-        since: 0,
-        until: 1000,
-      );
       await client.broadcastQueue.broadcast(
         makeEvent('alice-queued'),
         relays: [relay.url],
@@ -432,16 +415,6 @@ void main() {
           recipientPubkey: bobAccount.publicKey,
         ),
         isNotNull,
-      );
-      expect(
-        await ndk.fetchedRanges.getForFilter(
-          emailFilter(aliceAccount.publicKey),
-        ),
-        isEmpty,
-      );
-      expect(
-        await ndk.fetchedRanges.getForFilter(emailFilter(bobAccount.publicKey)),
-        isNotEmpty,
       );
       expect((await client.broadcastQueue.listAll()).map((b) => b.id), [
         'bob-queued',

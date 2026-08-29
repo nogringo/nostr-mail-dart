@@ -1,4 +1,3 @@
-import 'package:ndk/ndk.dart';
 import 'package:sembast/sembast.dart';
 
 /// Current on-disk schema version expected by this build.
@@ -25,27 +24,21 @@ const schemaVersionKey = 'schema_version';
 
 final _metaStore = StoreRef<String, int>('_meta');
 
-/// Drops every local store and clears ndk's fetched-range cache when the
-/// on-disk schema version differs from [kSchemaVersion].
+/// Drops every local store when the on-disk schema version differs from
+/// [kSchemaVersion].
 ///
 /// Returns `true` if a migration ran, `false` if the schema was already
 /// current. Callers can use the return value for logging or analytics.
 ///
-/// The library assumes the user pays for retention on their relays and
-/// Blossom servers, so a full resync is acceptable on every schema bump.
-Future<bool> migrateSchemaIfNeeded({
-  required Database db,
-  required Ndk ndk,
-}) async {
+/// The dropped stores are a projection of the NDK cache, so the next
+/// `sync()` rebuilds them without going back to the relays.
+Future<bool> migrateSchemaIfNeeded({required Database db}) async {
   final current = await _metaStore.record(schemaVersionKey).get(db);
   if (current == kSchemaVersion) return false;
 
-  // Clear ndk fetched ranges first. It is idempotent, so if the sembast
-  // transaction below fails the next run can safely repeat it. Writing the
-  // version is the *last* observable step so a crash anywhere before the
-  // commit leaves the on-disk version stale and the migration replays.
-  await ndk.fetchedRanges.clearAll();
-
+  // Writing the version is the *last* observable step so a crash anywhere
+  // before the commit leaves the on-disk version stale and the migration
+  // replays.
   await db.transaction((txn) async {
     for (final name in migratableAppStores) {
       await stringMapStoreFactory.store(name).delete(txn);

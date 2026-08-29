@@ -4,7 +4,8 @@ import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:ndk/shared/nips/nip01/key_pair.dart';
 import 'package:nostr_mail/src/client.dart';
-import 'package:sembast/sembast_memory.dart';
+import 'package:sembast/sembast_memory.dart' hide Filter;
+import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 
 class TestUser {
   String id;
@@ -18,6 +19,7 @@ class TestUser {
   late Ndk ndk;
   late Database db;
   late BlossomCache blossomCache;
+  late SyncEngine syncEngine;
   late NostrMailClient client;
 
   TestUser(
@@ -36,7 +38,6 @@ class TestUser {
         eventVerifier: Bip340EventVerifier(),
         cache: MemCacheManager(),
         bootstrapRelays: defaultDmRelays ?? [],
-        fetchedRangesEnabled: true,
       ),
     );
 
@@ -51,10 +52,13 @@ class TestUser {
       dbName: 'blossom_cache_$id',
     );
 
+    syncEngine = SyncEngine(ndk, db: db);
+
     client = await NostrMailClient.create(
       ndk: ndk,
       db: db,
       blossomCache: blossomCache,
+      syncEngine: syncEngine,
       defaultDmRelays: defaultDmRelays,
       defaultBlossomServers: defaultBlossomServers,
       nip05Overrides: nip05Overrides,
@@ -67,6 +71,7 @@ class TestUser {
 
   Future<void> destroy() async {
     await client.dispose();
+    await syncEngine.dispose();
     await ndk.destroy();
     await db.close();
   }

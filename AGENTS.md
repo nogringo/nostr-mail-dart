@@ -83,7 +83,7 @@ lib/
     │   └── unwrapped_gift_wrap.dart # Seal + Rumor pair
     ├── client/
     │   ├── email_sender.dart    # Build, encrypt, send emails via GiftWraps
-    │   ├── sync_engine.dart     # sync(), resync(), fetchRecent(), event processing
+    │   ├── mail_sync.dart       # sync(), resync(), fetchRecent(), event processing
     │   ├── watch_manager.dart   # watch() — real-time MailEvent stream
     │   ├── label_manager.dart   # addLabel, removeLabel, broadcast labels
     │   ├── settings_manager.dart# Private settings CRUD + cache
@@ -123,8 +123,8 @@ test/
 
 - **`client.dart`** is a thin façade. All business logic lives in the **manager classes** under `lib/src/client/`.
 - **`RelayResolver`** eliminates duplication of `_getDmRelays()` / `_getWriteRelays()` across managers.
-- **`GapSync<T>`** (inside `sync_engine.dart`) is a template method that removes duplication between the filter-specific sync implementations.
-- **`filters.dart`** is the single source of truth for all Nostr query filters used by the SDK (7 filter categories). Both `SyncEngine` and `WatchManager` import from it, so filters can never diverge.
+- **`MailSync`** (in `mail_sync.dart`) declares what the caller-provided `SyncEngine` (`sync_engine_shim_for_ndk`) must keep available, then rebuilds the local stores from the NDK cache. It never queries a relay itself.
+- **`filters.dart`** is the single source of truth for all Nostr query filters used by the SDK (7 filter categories). `MailSync` uses them both as sync declarations and as cache reads, and `WatchManager` for its subscriptions, so filters can never diverge.
 - **Denormalized storage**: `EmailRecord` has flat fields (`folder`, `isRead`, `isStarred`, `attachmentCount`, `searchText`) so queries never need joins.
 - **`LabelRepository`** updates denormalized `EmailRecord` fields atomically inside Sembast transactions.
 
@@ -141,22 +141,28 @@ import 'package:nostr_mail/nostr_mail.dart';
 ### Main Class: `NostrMailClient`
 
 ```dart
-NostrMailClient({
+await NostrMailClient.create({
   required Ndk ndk,               // Configured ndk instance with logged-in account
   required Database db,           // Sembast database (memory or file)
+  required BlossomCache blossomCache, // Local blob store for large emails
+  required SyncEngine syncEngine, // sync_engine_shim_for_ndk; started here, never stopped
   List<String>? defaultDmRelays,
   List<String>? defaultBlossomServers,
   Map<String, String>? nip05Overrides, // For testing / local resolution
+  OfflineBroadcast? broadcastQueue,
+  OfflineBlossomUpload? blossomUploadQueue,
+  String? schedulerDvm,
+  List<String>? schedulerDvmReadRelays,
 })
 ```
 
 **Lifecycle:**
-- `sync()` — incremental sync using NDK `fetchedRanges` (gap-only fetching)
-- `resync()` — full sync after clearing `fetchedRanges`
-- `fetchRecent()` — simple parallel fetch without range optimization
+- `sync()` — fills whatever the sync engine considers missing or stale, then rebuilds the local stores from the NDK cache. Unbounded: a mailbox is wanted whole
+- `resync()` — same, but goes to the relays however fresh the coverage is (pull to refresh)
+- `fetchRecent()` — alias of `resync()`, kept for backward compatibility
 - `watch()` — broadcast stream of `MailEvent` (emails, labels, deletions)
 - `stopWatching()` — closes stream & subscriptions
-- `clearAllLocalData()` (alias `clearAll()`): wipes local DBs, caches and fetched ranges
+- `clearAllLocalData()` (alias `clearAll()`): wipes local DBs and caches. The NDK cache belongs to the caller and is left alone, so a later `sync()` rebuilds from it
 - `clearLocalAccountData(pubkey:)`: wipes local data for one account only
 
 **Sending:**
@@ -249,10 +255,12 @@ dart test test/cc_bcc_test.dart                # hard-codes ws://localhost:7777,
 - **`RelayResolver`** is a shared helper instantiated once in `NostrMailClient` and injected into all managers.
 - **DM relays**: read from NIP-17 kind 10050 event; fallback to `recommendedDmRelays`.
 - **Write relays**: read from NIP-65 kind 10002 event; fallback to `recommendedDmRelays`.
-- Both lists are fetched on-demand, but the `SyncEngine` proactively warms the NDK cache by syncing metadata & relay list events (kinds 0, 10002, 10050, 10063), so subsequent `RelayResolver` calls usually hit cache.
+- Both lists are fetched on-demand, but `MailSync` declares metadata & relay list events (kinds 0, 10002, 10050, 10063) in its write-relay sync request, so subsequent `RelayResolver` calls usually hit cache.
 
-### FetchedRanges (Gap Sync)
-The client relies on NDK's `fetchedRanges` to avoid re-downloading already-synced time ranges. `sync()` only fills gaps across **all 7 filter categories** (emails, deletions, labels, reposts, settings, metadata). `resync()` clears ranges and starts over. `fetchRecent()` bypasses range optimization entirely.
+### Sync (sync_engine_shim_for_ndk)
+NDK's `fetchedRanges` is broken and is no longer used. The caller passes a `SyncEngine` from `sync_engine_shim_for_ndk`, which tracks its own coverage per relay/filter pair, paginates, backs off per relay, and adds the 2-day NIP-59 margin on kind 1059. `MailSync` declares three `SyncRequest`s covering all 7 filter categories, split by relay set: gift wraps on DM relays, deletions on DM + write relays, and public emails / labels / reposts / settings / metadata on write relays.
+
+The engine never returns events: it fills the NDK cache. The cache is therefore the source of truth for raw events, and the sembast stores are a projection rebuilt from it by `_processFromCache` after every pass. Every handler is idempotent, so replaying the whole cache costs one lookup per already-known event, and an event whose processing failed is retried on the next sync instead of being lost. A schema bump just drops the stores; the next `sync()` rebuilds them without network.
 
 ### Label Event Format (NIP-32)
 ```json
@@ -279,7 +287,7 @@ An email is considered "bridged" if the sender's pubkey does **not** match the p
 |------|----------------|
 | `lib/src/client.dart` | Public façade; delegates to all managers. |
 | `lib/src/constants.dart` | All event kinds and protocol magic values. |
-| `lib/src/client/sync_engine.dart` | Fetches & processes all 7 filter categories; handles decryption. |
+| `lib/src/client/mail_sync.dart` | Declares the sync requests, replays the NDK cache into the local stores, handles decryption. |
 | `lib/src/client/filters.dart` | Single source of truth for every Nostr query filter. |
 | `lib/src/client/relay_resolver.dart` | Shared relay lookup logic (NIP-17/65). |
 | `email-labels.md` | Formal spec for NIP-32 label usage in this project. |

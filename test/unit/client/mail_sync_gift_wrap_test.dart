@@ -1,34 +1,36 @@
 // A gift wrap can reach onGiftWrap while it is no longer the active
 // account's: a live subscription or an in-flight fetch keeps delivering
-// after `switchAccount`. Its fetched range is already marked covered, so
-// dropping it would lose the wrap until a manual resync.
+// after `switchAccount`. Dropping it would lose the wrap for the account it
+// belongs to, so it is stored under its own recipient.
 
 import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:nostr_mail/src/client/event_bus.dart';
 import 'package:nostr_mail/src/client/relay_resolver.dart';
-import 'package:nostr_mail/src/client/sync_engine.dart';
+import 'package:nostr_mail/src/client/mail_sync.dart';
 import 'package:nostr_mail/src/storage/email_repository.dart';
 import 'package:nostr_mail/src/storage/gift_wrap_repository.dart';
 import 'package:nostr_mail/src/storage/label_repository.dart';
 import 'package:nostr_mail/src/storage/tombstone_repository.dart';
-import 'package:sembast/sembast_memory.dart';
+import 'package:sembast/sembast_memory.dart' hide Filter;
+import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_blossom_cache.dart';
 
 void main() {
-  group('SyncEngine.onGiftWrap account attribution', () {
+  group('MailSync.onGiftWrap account attribution', () {
     late Database db;
     late Ndk ndk;
     late GiftWrapRepository giftWraps;
-    late SyncEngine sync;
+    late SyncEngine engine;
+    late MailSync sync;
     late String alice;
     late String bob;
 
     setUp(() async {
       db = await databaseFactoryMemory.openDatabase(
-        'sync_engine_${DateTime.now().microsecondsSinceEpoch}',
+        'mail_sync_${DateTime.now().microsecondsSinceEpoch}',
       );
 
       ndk = Ndk(
@@ -36,7 +38,6 @@ void main() {
           eventVerifier: Bip340EventVerifier(),
           cache: MemCacheManager(),
           bootstrapRelays: const [],
-          fetchedRangesEnabled: true,
         ),
       );
 
@@ -52,19 +53,22 @@ void main() {
       ndk.accounts.loginPrivateKey(pubkey: bob, privkey: bobKeys.privateKey!);
 
       giftWraps = GiftWrapRepository(db);
-      sync = SyncEngine(
+      engine = SyncEngine(ndk, db: db);
+      sync = MailSync(
         ndk,
+        engine,
         EmailRepository(db),
         LabelRepository(db),
         giftWraps,
         TombstoneRepository(db),
         EventBus(),
         RelayResolver(ndk),
-        blossomCache: await openTestBlossomCache('sync_engine_test'),
+        blossomCache: await openTestBlossomCache('mail_sync_test'),
       );
     });
 
     tearDown(() async {
+      await engine.dispose();
       await ndk.destroy();
       await db.close();
     });

@@ -8,7 +8,8 @@ import 'package:nostr_mail/src/models/email.dart';
 import 'package:nostr_mail/src/models/recipient.dart';
 import 'package:nostr_mail/src/utils/recipient_resolver.dart';
 
-import 'package:sembast/sembast_memory.dart';
+import 'package:sembast/sembast_memory.dart' hide Filter;
+import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 
 import '../helpers/test_blossom_cache.dart';
 
@@ -21,6 +22,7 @@ class MockBridge {
   late KeyPair keyPair;
   late Ndk ndk;
   late Database db;
+  late SyncEngine syncEngine;
   late NostrMailClient client;
 
   final Map<String, List<MimeMessage>> mailboxes = {};
@@ -51,7 +53,6 @@ class MockBridge {
         eventVerifier: Bip340EventVerifier(),
         cache: MemCacheManager(),
         bootstrapRelays: defaultDmRelays ?? [],
-        fetchedRangesEnabled: true,
       ),
     );
 
@@ -62,9 +63,12 @@ class MockBridge {
 
     db = await databaseFactoryMemory.openDatabase('bridge_$domain');
 
+    syncEngine = SyncEngine(ndk, db: db);
+
     client = await NostrMailClient.create(
       ndk: ndk,
       db: db,
+      syncEngine: syncEngine,
       blossomCache: await openTestBlossomCache('bridge_$domain'),
       defaultDmRelays: defaultDmRelays,
       defaultBlossomServers: defaultBlossomServers,
@@ -95,6 +99,7 @@ class MockBridge {
 
   Future<void> stop() async {
     await _emailSubscription?.cancel();
+    await syncEngine.dispose();
     await ndk.destroy();
     await db.close();
   }

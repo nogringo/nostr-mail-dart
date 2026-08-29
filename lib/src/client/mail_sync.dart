@@ -1,6 +1,6 @@
 import 'package:blossom_cache/blossom_cache.dart';
 import 'package:ndk/ndk.dart';
-import 'package:ndk/domain_layer/entities/filter.dart' as ndk;
+import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 
 import '../constants.dart';
 import '../exceptions.dart';
@@ -15,13 +15,17 @@ import 'relay_resolver.dart';
 import '../utils/event_email_parser.dart';
 import 'event_bus.dart';
 import 'filters.dart';
-import 'gap_sync.dart';
 
 /// Orchestrates inbound synchronization from Nostr relays.
 ///
-/// Uses [GapSync] to avoid re-downloading already-synced time ranges.
-class SyncEngine {
+/// The [SyncEngine] shim keeps the NDK cache filled with everything this
+/// account needs; the cache is then the source of truth for raw events, and
+/// the local sembast stores are a projection of it rebuilt by
+/// [_processFromCache]. An event whose processing fails therefore stays in the
+/// cache and is retried on the next sync.
+class MailSync {
   final Ndk _ndk;
+  final SyncEngine _engine;
   final EmailRepository _emails;
   final LabelRepository _labels;
   final GiftWrapRepository _giftWraps;
@@ -31,8 +35,13 @@ class SyncEngine {
   final List<String> _defaultBlossomServers;
   final BlossomCache _blossomCache;
 
-  SyncEngine(
+  /// One handle per scope of [_ensureHandles], held until the account changes
+  /// or the client is disposed.
+  final Map<String, SyncHandle> _handles = {};
+
+  MailSync(
     this._ndk,
+    this._engine,
     this._emails,
     this._labels,
     this._giftWraps,
@@ -54,133 +63,136 @@ class SyncEngine {
 
   // ── Public API ──────────────────────────────────────────────────────────
 
-  /// Incremental sync using gap optimization.
-  Future<void> sync({int? since, int? until}) async {
+  /// Brings the NDK cache up to date, then rebuilds the local stores from it.
+  ///
+  /// Only what the sync engine considers missing or stale is fetched, so this
+  /// is cheap to call repeatedly. Nothing bounds how far back it reaches: a
+  /// mailbox is wanted whole, so the engine walks back until every relay has
+  /// nothing older, once, and remembers it.
+  Future<void> sync() async {
     _assertPubkey();
+    final handles = await _ensureHandles();
+    await Future.wait(handles.map(_awaitSynced));
+    await _processFromCache();
+  }
+
+  /// Goes to the relays now, however fresh the coverage is, then rebuilds the
+  /// local stores. This is the pull-to-refresh gesture.
+  Future<void> resync() async {
+    _assertPubkey();
+    final handles = await _ensureHandles();
+    await Future.wait(handles.map(_engine.refresh));
+    await _processFromCache();
+  }
+
+  /// Alias of [resync] kept for backward compatibility.
+  Future<void> fetchRecent() => resync();
+
+  /// Drops this client's interest in its sync requests. The coverage the
+  /// engine persisted survives; the engine itself belongs to the caller and is
+  /// never started, stopped or disposed from here.
+  void releaseHandles() {
+    for (final handle in _handles.values) {
+      _engine.release(handle);
+    }
+    _handles.clear();
+  }
+
+  // ── Sync requests ───────────────────────────────────────────────────────
+
+  /// Declares everything this account needs locally, split by the relay set
+  /// each filter belongs to. Reposts, settings and metadata are declared only
+  /// to warm the NDK cache: nothing processes them here.
+  Future<List<SyncHandle>> _ensureHandles() async {
     final pubkey = _pubkey!;
-    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final effectiveSince = since;
-    final effectiveUntil = until ?? now;
 
     final (dmRelays, writeRelays) = await (
       _relays.getDmRelays(pubkey),
       _relays.getWriteRelays(pubkey),
     ).wait;
-
     final allRelays = {...dmRelays, ...writeRelays}.toList();
 
-    await _EmailGapSync(
-      _ndk,
-      pubkey,
-      dmRelays,
-      effectiveSince,
-      effectiveUntil,
-      onGiftWrap,
-    ).execute();
-
-    await _DeletionGapSync(
-      _ndk,
-      pubkey,
-      allRelays,
-      effectiveSince,
-      effectiveUntil,
-      onDeletion,
-    ).execute();
-
-    await _PublicEmailGapSync(
-      _ndk,
-      pubkey,
-      writeRelays,
-      effectiveSince,
-      effectiveUntil,
-      onPublicEmail,
-    ).execute();
-
-    await _LabelAdditionGapSync(
-      _ndk,
-      pubkey,
-      writeRelays,
-      effectiveSince,
-      effectiveUntil,
-      onLabelAddition,
-    ).execute();
-
-    await _PassiveGapSync(
-      _ndk,
-      pubkey,
-      writeRelays,
-      effectiveSince,
-      effectiveUntil,
-      repostFilter,
-    ).execute();
-
-    await _PassiveGapSync(
-      _ndk,
-      pubkey,
-      writeRelays,
-      effectiveSince,
-      effectiveUntil,
-      settingsFilter,
-    ).execute();
-
-    await _PassiveGapSync(
-      _ndk,
-      pubkey,
-      writeRelays,
-      effectiveSince,
-      effectiveUntil,
-      metadataFilter,
-    ).execute();
+    return [
+      _ensure('emails', [emailFilter(pubkey)], dmRelays),
+      _ensure('deletions', [deletionFilter(pubkey)], allRelays),
+      _ensure('write', [
+        publicEmailFilter(pubkey),
+        labelFilter(pubkey),
+        repostFilter(pubkey),
+        settingsFilter(pubkey),
+        metadataFilter(pubkey),
+      ], writeRelays),
+    ];
   }
 
-  /// Full sync after clearing cached fetched ranges.
-  Future<void> resync({int? since, int? until}) async {
-    _assertPubkey();
-    final pubkey = _pubkey!;
-
-    await clearFetchedRanges(pubkey);
-    await sync(since: since, until: until);
-  }
-
-  /// Forget which time ranges were already fetched for [pubkey], so the next
-  /// sync re-downloads everything from the relays.
-  Future<void> clearFetchedRanges(String pubkey) {
-    return Future.wait(
-      syncFilters(pubkey).map(_ndk.fetchedRanges.clearForFilter),
+  /// The engine derives the request identity from the filters and the relay
+  /// set, both of which move here: switching account rewrites the filters, and
+  /// [RelayResolver] hands back the fallback list until the kind 10050 lands.
+  /// A hand-written id would pin whichever it saw first.
+  SyncHandle _ensure(String scope, List<Filter> filters, List<String> relays) {
+    final handle = _engine.ensure(
+      SyncRequest(filters: filters, relays: relays),
     );
+
+    final held = _handles[scope];
+    if (held == handle) {
+      // ensure() counts one more holder per call; a scope only ever holds one.
+      _engine.release(handle);
+    } else {
+      if (held != null) _engine.release(held);
+      _handles[scope] = handle;
+    }
+
+    return handle;
   }
 
-  /// Fetch all events without gap optimization.
-  Future<void> fetchRecent() async {
-    _assertPubkey();
-    final pubkey = _pubkey!;
+  Future<void> _awaitSynced(SyncHandle handle) async {
+    if (_engine.engineStatus.phase == SyncEnginePhase.stopped) return;
 
-    final (dmRelays, writeRelays) = await (
-      _relays.getDmRelays(pubkey),
-      _relays.getWriteRelays(pubkey),
-    ).wait;
-
-    final allRelays = {...dmRelays, ...writeRelays}.toList();
-
-    // Fetch all filters in parallel; process sequentially to avoid races.
-    final (emails, deletions, publicEmails, labelAdditions, _, _, _) = await (
-      _fetchEvents(emailFilter(pubkey), dmRelays),
-      _fetchEvents(deletionFilter(pubkey), allRelays),
-      _fetchEvents(publicEmailFilter(pubkey), writeRelays),
-      _fetchEvents(labelFilter(pubkey), writeRelays),
-      _fetchEvents(repostFilter(pubkey), writeRelays),
-      _fetchEvents(settingsFilter(pubkey), writeRelays),
-      _fetchEvents(metadataFilter(pubkey), writeRelays),
-    ).wait;
-
-    // Process all event types in parallel where safe.
-    // NDK PR #632 added configurable signer concurrency (default 100),
-    // so gift-wrap decryption no longer blocks sequentially.
-    await Future.wait(emails.map(onGiftWrap));
-    await Future.wait(deletions.map(onDeletion));
-    await Future.wait(publicEmails.map(onPublicEmail));
-    await Future.wait(labelAdditions.map(onLabelAddition));
+    await _engine
+        .watchStatus(handle)
+        .firstWhere(
+          (status) =>
+              status.phase == SyncRequestPhase.synced ||
+              status.phase == SyncRequestPhase.failed,
+        );
   }
+
+  // ── Cache processing ────────────────────────────────────────────────────
+
+  /// Rebuilds the local stores from the NDK cache. Every handler is idempotent,
+  /// so replaying the whole cache only costs a lookup per already-known event.
+  Future<void> _processFromCache() async {
+    final pubkey = _pubkey;
+    if (pubkey == null) return;
+
+    // Gift wraps and public emails run in parallel: NDK PR #632 added
+    // configurable signer concurrency (default 100), so decryption no longer
+    // blocks sequentially. Deletions and labels stay sequential to avoid races.
+    await Future.wait((await _fromCache(emailFilter(pubkey))).map(onGiftWrap));
+
+    for (final event in await _fromCache(deletionFilter(pubkey))) {
+      await onDeletion(event);
+    }
+
+    await Future.wait(
+      (await _fromCache(publicEmailFilter(pubkey))).map(onPublicEmail),
+    );
+
+    for (final event in await _fromCache(labelFilter(pubkey))) {
+      await onLabelAddition(event);
+    }
+  }
+
+  Future<List<Nip01Event>> _fromCache(Filter filter) =>
+      _ndk.config.cache.loadEvents(
+        ids: filter.ids,
+        pubKeys: filter.authors,
+        kinds: filter.kinds,
+        tags: filter.tags,
+        since: filter.since,
+        until: filter.until,
+      );
 
   /// Retry processing a single failed gift wrap.
   Future<bool> retry(String eventId) async {
@@ -213,8 +225,7 @@ class SyncEngine {
     if (owner == null || !_ndk.accounts.hasAccount(owner)) return;
 
     // Stored under the wrap's own recipient, not the active account, so one
-    // arriving mid account-switch stays retryable instead of being dropped
-    // once its fetched range is marked covered.
+    // arriving mid account-switch stays retryable instead of being dropped.
     final isNew = await _giftWraps.save(event, recipientPubkey: owner);
     if (!isNew || owner != _pubkey) return;
     await _processEvent(event);
@@ -301,6 +312,12 @@ class SyncEngine {
       return;
     }
 
+    // Every sync replays the whole cache, and parsing pulls Blossom blobs.
+    if (await _emails.getById(event.id, recipientPubkey: recipientPubkey) !=
+        null) {
+      return;
+    }
+
     try {
       final email = await parseEmailEvent(
         event: event,
@@ -329,6 +346,16 @@ class SyncEngine {
     for (final tag in event.tags) {
       if (tag.isNotEmpty && tag[0] == 'e') {
         final deletedEventId = tag[1];
+
+        // Already tombstoned means this deletion was applied before, or the
+        // local action that published it removed its rows itself. Skipping
+        // spares a full label scan per tag on every replay of the cache.
+        if (await _tombstones.contains(
+          deletedEventId,
+          recipientPubkey: pubkey,
+        )) {
+          continue;
+        }
 
         // Record a tombstone unconditionally so the deleted event is not
         // re-applied if a relay re-serves it (or if a stale NDK cache
@@ -452,166 +479,5 @@ class SyncEngine {
     } catch (_) {
       return null;
     }
-  }
-
-  Future<List<Nip01Event>> _fetchEvents(
-    ndk.Filter filter,
-    List<String> relays,
-  ) async {
-    final response = _ndk.requests.query(
-      filter: filter,
-      explicitRelays: relays,
-    );
-    return response.future;
-  }
-}
-
-// ── Concrete GapSync implementations ──────────────────────────────────────
-
-class _EmailGapSync extends GapSync<Nip01Event> {
-  final Future<void> Function(Nip01Event) _processor;
-
-  _EmailGapSync(
-    super._ndk,
-    super._pubkey,
-    super._relays,
-    super._since,
-    super._until,
-    this._processor,
-  );
-
-  @override
-  ndk.Filter buildFilter(String pubkey) => emailFilter(pubkey);
-
-  @override
-  Future<List<Nip01Event>> fetch(ndk.Filter filter, List<String> relays) {
-    final response = ndkClient.requests.query(
-      filter: filter,
-      explicitRelays: relays,
-    );
-    return response.future;
-  }
-
-  @override
-  Future<void> process(Nip01Event item) => _processor(item);
-
-  @override
-  Future<void> processBatch(List<Nip01Event> items) async {
-    await Future.wait(items.map(process));
-  }
-}
-
-class _DeletionGapSync extends GapSync<Nip01Event> {
-  final Future<void> Function(Nip01Event) _processor;
-
-  _DeletionGapSync(
-    super._ndk,
-    super._pubkey,
-    super._relays,
-    super._since,
-    super._until,
-    this._processor,
-  );
-
-  @override
-  ndk.Filter buildFilter(String pubkey) => deletionFilter(pubkey);
-
-  @override
-  Future<List<Nip01Event>> fetch(ndk.Filter filter, List<String> relays) {
-    final response = ndkClient.requests.query(
-      filter: filter,
-      explicitRelays: relays,
-    );
-    return response.future;
-  }
-
-  @override
-  Future<void> process(Nip01Event item) => _processor(item);
-}
-
-class _PublicEmailGapSync extends GapSync<Nip01Event> {
-  final Future<void> Function(Nip01Event) _processor;
-
-  _PublicEmailGapSync(
-    super._ndk,
-    super._pubkey,
-    super._relays,
-    super._since,
-    super._until,
-    this._processor,
-  );
-
-  @override
-  ndk.Filter buildFilter(String pubkey) => publicEmailFilter(pubkey);
-
-  @override
-  Future<List<Nip01Event>> fetch(ndk.Filter filter, List<String> relays) {
-    final response = ndkClient.requests.query(
-      filter: filter,
-      explicitRelays: relays,
-    );
-    return response.future;
-  }
-
-  @override
-  Future<void> process(Nip01Event item) => _processor(item);
-}
-
-class _LabelAdditionGapSync extends GapSync<Nip01Event> {
-  final Future<void> Function(Nip01Event) _processor;
-
-  _LabelAdditionGapSync(
-    super._ndk,
-    super._pubkey,
-    super._relays,
-    super._since,
-    super._until,
-    this._processor,
-  );
-
-  @override
-  ndk.Filter buildFilter(String pubkey) => labelFilter(pubkey);
-
-  @override
-  Future<List<Nip01Event>> fetch(ndk.Filter filter, List<String> relays) {
-    final response = ndkClient.requests.query(
-      filter: filter,
-      explicitRelays: relays,
-    );
-    return response.future;
-  }
-
-  @override
-  Future<void> process(Nip01Event item) => _processor(item);
-}
-
-/// Fetches events only to warm the NDK cache; no local processing.
-class _PassiveGapSync extends GapSync<Nip01Event> {
-  final ndk.Filter Function(String) _filterBuilder;
-
-  _PassiveGapSync(
-    super._ndk,
-    super._pubkey,
-    super._relays,
-    super._since,
-    super._until,
-    this._filterBuilder,
-  );
-
-  @override
-  ndk.Filter buildFilter(String pubkey) => _filterBuilder(pubkey);
-
-  @override
-  Future<List<Nip01Event>> fetch(ndk.Filter filter, List<String> relays) {
-    final response = ndkClient.requests.query(
-      filter: filter,
-      explicitRelays: relays,
-    );
-    return response.future;
-  }
-
-  @override
-  Future<void> process(Nip01Event item) async {
-    // No-op: events are only fetched to warm the NDK cache.
   }
 }

@@ -6,6 +6,7 @@ import 'package:test/test.dart';
 
 import '../../helpers/test_blossom_cache.dart';
 import '../../mocks/mock_relay.dart';
+import '../../helpers/test_sync_engine.dart';
 
 void main() {
   group('Folder label mutual exclusion', () {
@@ -25,7 +26,6 @@ void main() {
           bootstrapRelays: [relay.url],
           eventVerifier: Bip340EventVerifier(),
           cache: MemCacheManager(),
-          fetchedRangesEnabled: true,
         ),
       );
 
@@ -38,6 +38,7 @@ void main() {
       client = await NostrMailClient.create(
         ndk: ndk,
         db: db,
+        syncEngine: testSyncEngine(ndk, db),
         blossomCache: await openTestBlossomCache('folder_labels_test'),
         defaultDmRelays: [relay.url],
       );
