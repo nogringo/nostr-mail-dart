@@ -102,6 +102,27 @@ class GiftWrapRepository {
     }
   }
 
+  /// Outer event ids of [recipientPubkey]'s wraps carrying [rumorIds].
+  ///
+  /// Deletions target the rumor id, which is only readable after decryption;
+  /// callers use this to tombstone the wraps themselves.
+  Future<List<String>> getIdsByRumorIdsForRecipient(
+    Iterable<String> rumorIds, {
+    required String recipientPubkey,
+  }) async {
+    final uniqueIds = rumorIds.toSet().toList();
+    if (uniqueIds.isEmpty) return [];
+
+    final finder = Finder(
+      filter: Filter.and([
+        Filter.inList('rumorId', uniqueIds),
+        Filter.equals('recipientPubkey', recipientPubkey),
+      ]),
+    );
+    final keys = await _store.findKeys(_db, finder: finder);
+    return keys.cast<String>();
+  }
+
   /// Remove gift wrap records by rumor id only if they belong to [recipientPubkey].
   Future<void> removeByRumorIdsForRecipient(
     Iterable<String> rumorIds, {

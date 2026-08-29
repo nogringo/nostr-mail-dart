@@ -20,6 +20,18 @@
   state, so clear the NDK cache too to forget an account entirely.
 - **Fix**: a sent email no longer loses its labels when its own gift wrap comes
   back through the sync and rebuilds the row from scratch.
+- **Fix**: an email whose labels landed before it now picks them up. The labels
+  were saved but had no row to be denormalized onto, so the email stayed in the
+  inbox, unread and unstarred, while `getLabels()` reported it trashed, read or
+  starred.
+- **Fix**: deleting an encrypted email now names its gift wrap in the NIP-09
+  request. Only the rumor id was named, an event no relay has ever held, so the
+  wrap stayed on the relays forever. NIP-59 has relays honor a deletion signed
+  by the pubkey in the wrap's `p` tag, which is the recipient. The rumor id is
+  still named too: it is what other devices match against their own rows.
+- Gift wraps are also tombstoned by their own event id now, so a relay
+  re-serving a deleted one costs a lookup per replay instead of unwrapping and
+  unsealing it every time.
 
 ## 2.6.2
 

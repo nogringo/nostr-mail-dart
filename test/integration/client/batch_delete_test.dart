@@ -1,6 +1,7 @@
 import 'package:ndk/ndk.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:nostr_mail/src/storage/email_repository.dart';
+import 'package:nostr_mail/src/storage/gift_wrap_repository.dart';
 import 'package:nostr_mail/src/storage/label_repository.dart';
 import 'package:nostr_mail/src/storage/models/email_record.dart';
 import 'package:test/test.dart';
@@ -117,6 +118,63 @@ void main() {
         giftWrapKind.toString(),
         labelKind.toString(),
       });
+    });
+
+    // A relay holds the wrap and has never seen the rumor inside it, so a
+    // request naming only the email id asks it to delete nothing at all.
+    // NIP-59 has it honor a deletion signed by the pubkey in the wrap's p tag.
+    test('names the gift wrap carrying the email', () async {
+      await emails.save(makeRecord('email-1'));
+
+      final giftWraps = GiftWrapRepository(user.db);
+      await giftWraps.save(
+        Nip01Event(
+          id: 'wrap-1',
+          pubKey: 'ephemeral-pubkey',
+          createdAt: 1000,
+          kind: giftWrapKind,
+          tags: [
+            ['p', user.keyPair.publicKey],
+          ],
+          content: 'encrypted',
+          sig: 'sig',
+        ),
+        recipientPubkey: user.keyPair.publicKey,
+      );
+      await giftWraps.updateDecrypted(
+        giftWrapId: 'wrap-1',
+        seal: Nip01Event(
+          id: 'seal-1',
+          pubKey: 'sender-pubkey',
+          createdAt: 1000,
+          kind: 13,
+          tags: const [],
+          content: 'sealed',
+        ),
+        rumor: Nip01Event(
+          id: 'email-1',
+          pubKey: 'sender-pubkey',
+          createdAt: 1000,
+          kind: emailKind,
+          tags: const [],
+          content: 'mime',
+        ),
+      );
+
+      await user.client.delete(['email-1']);
+      await user.client.flushBroadcasts();
+
+      final deletionEvents = await user.ndk.requests
+          .query(
+            filter: Filter(
+              kinds: [deletionRequestKind],
+              authors: [user.keyPair.publicKey],
+            ),
+            explicitRelays: [relay.url],
+          )
+          .future;
+
+      expect(deletionEvents.single.getTags('e').toSet(), {'email-1', 'wrap-1'});
     });
   });
 }

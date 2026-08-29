@@ -726,7 +726,17 @@ class NostrMailClient {
       recipientPubkey: pubkey,
     );
 
-    final deletionIds = [...uniqueIds, ...labelEventIds];
+    // The wrap is the only thing a relay holds: the rumor id inside it was
+    // never published, so naming it alone asks for an event nobody has. NIP-59
+    // has the relay honor a deletion whose signer matches the wrap's p tag,
+    // which is us. The rumor id stays in the request all the same, as the id
+    // other devices match against their own rows.
+    final giftWrapIds = await _giftWrapRepo.getIdsByRumorIdsForRecipient(
+      uniqueIds,
+      recipientPubkey: pubkey,
+    );
+
+    final deletionIds = [...uniqueIds, ...labelEventIds, ...giftWrapIds];
     final targetKinds = emails
         .map((email) => email.isPublic ? emailKind : giftWrapKind)
         .toSet();

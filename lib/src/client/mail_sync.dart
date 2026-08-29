@@ -11,6 +11,7 @@ import '../models/unwrapped_gift_wrap.dart';
 import '../storage/email_repository.dart';
 import '../storage/gift_wrap_repository.dart';
 import '../storage/label_repository.dart';
+import '../storage/models/label_state.dart';
 import '../storage/tombstone_repository.dart';
 import '../utils/email_record_builder.dart';
 import 'relay_resolver.dart';
@@ -292,6 +293,11 @@ class MailSync {
     final owner = event.getFirstTag('p');
     if (owner == null || !_ndk.accounts.hasAccount(owner)) return;
 
+    // A deleted email's wrap keeps being served, and dropping its row makes it
+    // look new on every replay. Its own id is tombstoned alongside the rumor
+    // id, so recognizing it here costs a lookup instead of two decryptions.
+    if (await _tombstones.contains(event.id, recipientPubkey: owner)) return;
+
     // Stored under the wrap's own recipient, not the active account, so one
     // arriving mid account-switch stays retryable instead of being dropped.
     final isNew = await _giftWraps.save(event, recipientPubkey: owner);
@@ -328,6 +334,7 @@ class MailSync {
       // re-served by relays that ignore NIP-09, while the tombstone is keyed
       // by the user-facing email id (the rumor id).
       if (await _tombstones.contains(rumor.id, recipientPubkey: myPubkey)) {
+        await _tombstones.add(event.id, recipientPubkey: myPubkey);
         await _giftWraps.remove(event.id);
         return false;
       }
@@ -353,14 +360,21 @@ class MailSync {
         email.id,
         recipientPubkey: myPubkey,
       );
+      // Labels can land before the wrap they point at, in which case they are
+      // in the label store but were never denormalized onto a row.
+      final state = existing != null
+          ? LabelState.of(existing)
+          : await _labels.getStateForEmail(
+              email.id,
+              recipientPubkey: myPubkey,
+              defaultFolder: email.senderPubkey == myPubkey ? 'sent' : 'inbox',
+            );
       final record = buildEmailRecord(
         email: email,
-        folder:
-            existing?.folder ??
-            (email.senderPubkey == myPubkey ? 'sent' : 'inbox'),
-        labels: existing?.labels ?? const [],
-        isRead: existing?.isRead ?? false,
-        isStarred: existing?.isStarred ?? false,
+        folder: state.folder,
+        labels: state.labels,
+        isRead: state.isRead,
+        isStarred: state.isStarred,
       );
 
       await _emails.save(record);
@@ -411,8 +425,18 @@ class MailSync {
         blossomCache: _blossomCache,
       );
 
-      final folder = email.senderPubkey == recipientPubkey ? 'sent' : 'inbox';
-      final record = buildEmailRecord(email: email, folder: folder);
+      final state = await _labels.getStateForEmail(
+        email.id,
+        recipientPubkey: recipientPubkey,
+        defaultFolder: email.senderPubkey == recipientPubkey ? 'sent' : 'inbox',
+      );
+      final record = buildEmailRecord(
+        email: email,
+        folder: state.folder,
+        labels: state.labels,
+        isRead: state.isRead,
+        isStarred: state.isStarred,
+      );
 
       await _emails.save(record);
       _bus.emit(EmailReceived(email: email, timestamp: email.date));
@@ -454,6 +478,14 @@ class MailSync {
           await _emails.delete(deletedEventId, recipientPubkey: pubkey);
           await _labels.deleteLabelsForEmail(
             deletedEventId,
+            recipientPubkey: pubkey,
+          );
+          // Tombstone the wraps before dropping their rows, so a relay
+          // re-serving them costs a lookup rather than a decryption.
+          await _tombstones.addMany(
+            await _giftWraps.getIdsByRumorIdsForRecipient([
+              deletedEventId,
+            ], recipientPubkey: pubkey),
             recipientPubkey: pubkey,
           );
           await _giftWraps.removeByRumorIdsForRecipient([

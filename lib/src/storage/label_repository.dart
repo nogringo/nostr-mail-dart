@@ -1,6 +1,7 @@
 import 'package:sembast/sembast.dart';
 
 import 'models/email_record.dart';
+import 'models/label_state.dart';
 
 /// Repository for NIP-32 labels with denormalized email updates.
 ///
@@ -90,6 +91,23 @@ class LabelRepository {
     );
     final records = await _labelsStore.find(_db, finder: finder);
     return records.map((r) => r.value['label'] as String).toList();
+  }
+
+  /// The denormalized state [emailId]'s stored labels imply.
+  ///
+  /// Labels can be saved before the email they point at exists, in which case
+  /// [saveLabel] had nothing to denormalize onto; this rebuilds that state
+  /// when the email finally lands.
+  Future<LabelState> getStateForEmail(
+    String emailId, {
+    required String recipientPubkey,
+    required String defaultFolder,
+  }) async {
+    final labels = await getLabelsForEmail(
+      emailId,
+      recipientPubkey: recipientPubkey,
+    );
+    return LabelState.fromLabels(labels, defaultFolder: defaultFolder);
   }
 
   /// Check if [recipientPubkey]'s [emailId] has [label].

@@ -23,6 +23,7 @@ void main() {
     late Database db;
     late Ndk ndk;
     late GiftWrapRepository giftWraps;
+    late TombstoneRepository tombstones;
     late SyncEngine engine;
     late MailSync sync;
     late String alice;
@@ -53,6 +54,7 @@ void main() {
       ndk.accounts.loginPrivateKey(pubkey: bob, privkey: bobKeys.privateKey!);
 
       giftWraps = GiftWrapRepository(db);
+      tombstones = TombstoneRepository(db);
       engine = SyncEngine(ndk, db: db);
       sync = MailSync(
         ndk,
@@ -60,7 +62,7 @@ void main() {
         EmailRepository(db),
         LabelRepository(db),
         giftWraps,
-        TombstoneRepository(db),
+        tombstones,
         EventBus(),
         RelayResolver(ndk),
         blossomCache: await openTestBlossomCache('mail_sync_test'),
@@ -111,6 +113,17 @@ void main() {
         await giftWraps.getUnprocessedEvents(recipientPubkey: bob),
         isEmpty,
       );
+    });
+
+    // The wrap of a deleted email is still served by relays that hold it. It
+    // carries no readable link to the email, so only a tombstone on its own id
+    // can spare the decryption it would otherwise cost on every replay.
+    test('ignores a wrap whose own id is tombstoned', () async {
+      await tombstones.add('alice-wrap', recipientPubkey: alice);
+
+      await sync.onGiftWrap(wrapFor(alice, id: 'alice-wrap'));
+
+      expect(await giftWraps.getById('alice-wrap'), isNull);
     });
 
     test('ignores a wrap addressed to an unknown pubkey', () async {
