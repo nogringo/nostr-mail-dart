@@ -38,6 +38,7 @@ import 'storage/schema_migrator.dart';
 import 'storage/settings_repository.dart';
 import 'storage/tombstone_repository.dart';
 import 'storage/models/email_query.dart';
+import 'storage/models/email_record.dart';
 import 'utils/attachment_extractor.dart';
 import 'utils/blob_fetcher.dart';
 import 'utils/decrypt_blob.dart';
@@ -381,20 +382,28 @@ class NostrMailClient {
     );
     if (record == null) return null;
 
-    var rumorId = record['rumorId'] as String?;
-    if (rumorId == null && record['stage'] != GiftWrapStage.stored.name) {
+    // The rumor id can be known while the email is not: a wrap stops at the
+    // seal when the Blossom body behind it is out of reach.
+    var email = await _emailForGiftWrap(record, pubkey);
+    if (email == null && record['stage'] != GiftWrapStage.stored.name) {
       await _sync.retry(giftWrapId);
       record = await _giftWrapRepo.getByIdForRecipient(
         giftWrapId,
         recipientPubkey: pubkey,
       );
-      rumorId = record?['rumorId'] as String?;
+      email = record == null ? null : await _emailForGiftWrap(record, pubkey);
     }
 
-    if (rumorId == null) return null;
-
-    final email = await _emailRepo.getById(rumorId, recipientPubkey: pubkey);
     return email?.toEmail();
+  }
+
+  Future<EmailRecord?> _emailForGiftWrap(
+    Map<String, dynamic> record,
+    String pubkey,
+  ) async {
+    final rumorId = record['rumorId'] as String?;
+    if (rumorId == null) return null;
+    return _emailRepo.getById(rumorId, recipientPubkey: pubkey);
   }
 
   Future<List<String>> _openEmailRelays(

@@ -41,6 +41,19 @@ void main() {
       return repo.save(event, recipientPubkey: recipientPubkey);
     }
 
+    Future<void> store({
+      required String giftWrapId,
+      required Nip01Event seal,
+      required Nip01Event rumor,
+    }) async {
+      await repo.updateUnsealed(
+        giftWrapId: giftWrapId,
+        seal: seal,
+        rumor: rumor,
+      );
+      await repo.markStored(giftWrapId);
+    }
+
     test('save returns true for a new event', () async {
       expect(await save(makeEvent('event-1')), isTrue);
     });
@@ -61,18 +74,18 @@ void main() {
       expect(record['recipientPubkey'], 'recipient');
     });
 
-    test('save does not overwrite a processed entry', () async {
+    test('save does not overwrite a stored entry', () async {
       await save(makeEvent('event-1'));
-      await repo.markProcessed('event-1');
+      await repo.markStored('event-1');
       await save(makeEvent('event-1'));
 
       final unprocessed = await repo.getUnprocessedEvents();
       expect(unprocessed.map((e) => e.id), isNot(contains('event-1')));
     });
 
-    test('markProcessed removes event from unprocessed list', () async {
+    test('markStored removes event from unprocessed list', () async {
       await save(makeEvent('event-1'));
-      await repo.markProcessed('event-1');
+      await repo.markStored('event-1');
 
       final unprocessed = await repo.getUnprocessedEvents();
       expect(unprocessed.map((e) => e.id), isNot(contains('event-1')));
@@ -82,7 +95,7 @@ void main() {
       await save(makeEvent('event-1'));
       await save(makeEvent('event-2'));
       await save(makeEvent('event-3'));
-      await repo.markProcessed('event-2');
+      await repo.markStored('event-2');
 
       final unprocessed = await repo.getUnprocessedEvents();
       expect(unprocessed.map((e) => e.id), containsAll(['event-1', 'event-3']));
@@ -102,7 +115,7 @@ void main() {
       await save(makeEvent('event-1'));
       await save(makeEvent('event-2'));
       await save(makeEvent('event-3'));
-      await repo.markProcessed('event-2');
+      await repo.markStored('event-2');
 
       expect(await repo.getFailedCount(), 2);
     });
@@ -138,17 +151,17 @@ void main() {
       await save(makeEvent('wrap-1'));
       await save(makeEvent('wrap-2'));
       await save(makeEvent('wrap-3'));
-      await repo.updateDecrypted(
+      await store(
         giftWrapId: 'wrap-1',
         seal: makeEvent('seal-1', kind: 13),
         rumor: makeEvent('email-1', kind: 1301),
       );
-      await repo.updateDecrypted(
+      await store(
         giftWrapId: 'wrap-2',
         seal: makeEvent('seal-2', kind: 13),
         rumor: makeEvent('email-2', kind: 1301),
       );
-      await repo.updateDecrypted(
+      await store(
         giftWrapId: 'wrap-3',
         seal: makeEvent('seal-3', kind: 13),
         rumor: makeEvent('email-3', kind: 1301),
@@ -164,12 +177,12 @@ void main() {
     test('removeByRumorIdsForRecipient preserves other accounts', () async {
       await save(makeEvent('alice-wrap'), recipientPubkey: 'alice');
       await save(makeEvent('bob-wrap'), recipientPubkey: 'bob');
-      await repo.updateDecrypted(
+      await store(
         giftWrapId: 'alice-wrap',
         seal: makeEvent('alice-seal', kind: 13),
         rumor: makeEvent('same-email-id', kind: 1301),
       );
-      await repo.updateDecrypted(
+      await store(
         giftWrapId: 'bob-wrap',
         seal: makeEvent('bob-seal', kind: 13),
         rumor: makeEvent('same-email-id', kind: 1301),
@@ -192,7 +205,7 @@ void main() {
     test('clearAll removes all gift wraps', () async {
       await save(makeEvent('event-1'));
       await save(makeEvent('event-2'));
-      await repo.markProcessed('event-1');
+      await repo.markStored('event-1');
 
       await repo.clearAll();
 
@@ -203,12 +216,12 @@ void main() {
     test('scoped queries only return gift wraps for that account', () async {
       await save(makeEvent('alice-1'), recipientPubkey: 'alice');
       await save(makeEvent('bob-1'), recipientPubkey: 'bob');
-      await repo.updateDecrypted(
+      await store(
         giftWrapId: 'alice-1',
         seal: makeEvent('alice-seal', kind: 13),
         rumor: makeEvent('alice-email', kind: 1301),
       );
-      await repo.updateDecrypted(
+      await store(
         giftWrapId: 'bob-1',
         seal: makeEvent('bob-seal', kind: 13),
         rumor: makeEvent('bob-email', kind: 1301),

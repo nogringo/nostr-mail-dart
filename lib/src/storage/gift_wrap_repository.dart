@@ -46,8 +46,13 @@ class GiftWrapRepository {
     return record;
   }
 
-  /// Update a gift wrap with its decrypted seal and rumor.
-  Future<void> updateDecrypted({
+  /// Record the seal and rumor a gift wrap yielded, before the email itself
+  /// is built.
+  ///
+  /// Written as soon as they are in hand so a later failure resumes at the
+  /// Blossom fetch: reaching this point cost the signer its approvals, and a
+  /// remote signer would have to ask its user for them again.
+  Future<void> updateUnsealed({
     required String giftWrapId,
     required Nip01Event seal,
     required Nip01Event rumor,
@@ -63,7 +68,7 @@ class GiftWrapRepository {
             'seal': Nip01EventModel.fromEntity(seal).toJson(),
             'rumor': Nip01EventModel.fromEntity(rumor).toJson(),
             'rumorId': rumor.id,
-            'stage': _stored,
+            'stage': GiftWrapStage.unsealed.name,
           }..remove('failure'),
         );
   }
@@ -90,8 +95,8 @@ class GiftWrapRepository {
     return record?.value;
   }
 
-  /// Mark a gift wrap as processed.
-  Future<void> markProcessed(String eventId) async {
+  /// Mark a gift wrap as fully processed. Terminal: nothing reopens it.
+  Future<void> markStored(String eventId) async {
     final existing = await _store.record(eventId).get(_db);
     if (existing == null) return;
     await _store

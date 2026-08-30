@@ -317,14 +317,14 @@ class MailSync {
       if (unwrapped == null) return false;
 
       final rumor = unwrapped.rumor;
-      final seal = unwrapped.seal;
+      await _giftWraps.updateUnsealed(
+        giftWrapId: event.id,
+        seal: unwrapped.seal,
+        rumor: rumor,
+      );
 
       if (rumor.kind != emailKind) {
-        await _giftWraps.updateDecrypted(
-          giftWrapId: event.id,
-          seal: seal,
-          rumor: rumor,
-        );
+        await _giftWraps.markStored(event.id);
         return false;
       }
 
@@ -378,18 +378,14 @@ class MailSync {
       );
 
       await _emails.save(record);
-      await _giftWraps.updateDecrypted(
-        giftWrapId: event.id,
-        seal: seal,
-        rumor: rumor,
-      );
+      await _giftWraps.markStored(event.id);
 
       _bus.emit(EmailReceived(email: email, timestamp: email.date));
       return true;
     } on SignerRequestCancelledException {
       rethrow;
     } on SignerRequestRejectedException {
-      await _giftWraps.markProcessed(event.id);
+      await _giftWraps.markStored(event.id);
       return false;
     } catch (_) {
       return false;
