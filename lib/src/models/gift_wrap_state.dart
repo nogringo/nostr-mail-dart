@@ -1,3 +1,5 @@
+import 'package:ndk/ndk.dart' show Nip01Event;
+
 /// How far a gift wrap got through processing.
 ///
 /// The stage is what makes a failure resumable: a wrap that reached
@@ -40,4 +42,12 @@ class GiftWrapProgress {
     this.failure,
     this.attempts = 0,
   });
+}
+
+/// A gift wrap that has not reached the email store, and what stopped it.
+class FailedGiftWrap {
+  final Nip01Event event;
+  final GiftWrapProgress progress;
+
+  const FailedGiftWrap({required this.event, required this.progress});
 }

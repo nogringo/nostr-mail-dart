@@ -79,35 +79,38 @@ void main() {
       await repo.markStored('event-1');
       await save(makeEvent('event-1'));
 
-      final unprocessed = await repo.getUnprocessedEvents();
-      expect(unprocessed.map((e) => e.id), isNot(contains('event-1')));
+      final unprocessed = await repo.getUnfinished();
+      expect(unprocessed.map((w) => w.event.id), isNot(contains('event-1')));
     });
 
     test('markStored removes event from unprocessed list', () async {
       await save(makeEvent('event-1'));
       await repo.markStored('event-1');
 
-      final unprocessed = await repo.getUnprocessedEvents();
-      expect(unprocessed.map((e) => e.id), isNot(contains('event-1')));
+      final unprocessed = await repo.getUnfinished();
+      expect(unprocessed.map((w) => w.event.id), isNot(contains('event-1')));
     });
 
-    test('getUnprocessedEvents returns only unprocessed events', () async {
+    test('getUnfinished returns only unprocessed events', () async {
       await save(makeEvent('event-1'));
       await save(makeEvent('event-2'));
       await save(makeEvent('event-3'));
       await repo.markStored('event-2');
 
-      final unprocessed = await repo.getUnprocessedEvents();
-      expect(unprocessed.map((e) => e.id), containsAll(['event-1', 'event-3']));
-      expect(unprocessed.map((e) => e.id), isNot(contains('event-2')));
+      final unprocessed = await repo.getUnfinished();
+      expect(
+        unprocessed.map((w) => w.event.id),
+        containsAll(['event-1', 'event-3']),
+      );
+      expect(unprocessed.map((w) => w.event.id), isNot(contains('event-2')));
     });
 
-    test('getUnprocessedEvents respects limit', () async {
+    test('getUnfinished respects limit', () async {
       await save(makeEvent('event-1'));
       await save(makeEvent('event-2'));
       await save(makeEvent('event-3'));
 
-      final unprocessed = await repo.getUnprocessedEvents(limit: 2);
+      final unprocessed = await repo.getUnfinished(limit: 2);
       expect(unprocessed.length, 2);
     });
 
@@ -120,7 +123,7 @@ void main() {
       expect(await repo.getFailedCount(), 2);
     });
 
-    test('getUnprocessedEvents preserves the full event payload', () async {
+    test('getUnfinished preserves the full event payload', () async {
       final event = makeEvent(
         'test-id',
         pubKey: 'test-pubkey-123',
@@ -133,9 +136,9 @@ void main() {
       );
       await save(event);
 
-      final unprocessed = await repo.getUnprocessedEvents();
+      final unprocessed = await repo.getUnfinished();
       expect(unprocessed, hasLength(1));
-      final stored = unprocessed.single;
+      final stored = unprocessed.single.event;
       expect(stored.id, 'test-id');
       expect(stored.pubKey, 'test-pubkey-123');
       expect(stored.createdAt, 1234567890);
@@ -209,7 +212,7 @@ void main() {
 
       await repo.clearAll();
 
-      expect(await repo.getUnprocessedEvents(), isEmpty);
+      expect(await repo.getUnfinished(), isEmpty);
       expect(await repo.getFailedCount(), 0);
     });
 
@@ -227,9 +230,7 @@ void main() {
         rumor: makeEvent('bob-email', kind: 1301),
       );
 
-      final aliceEvents = await repo.getUnprocessedEvents(
-        recipientPubkey: 'alice',
-      );
+      final aliceEvents = await repo.getUnfinished(recipientPubkey: 'alice');
 
       expect(aliceEvents, isEmpty);
       expect(
@@ -258,14 +259,11 @@ void main() {
 
       await repo.clearAll(recipientPubkey: 'alice');
 
+      expect(await repo.getUnfinished(recipientPubkey: 'alice'), isEmpty);
       expect(
-        await repo.getUnprocessedEvents(recipientPubkey: 'alice'),
-        isEmpty,
-      );
-      expect(
-        (await repo.getUnprocessedEvents(
+        (await repo.getUnfinished(
           recipientPubkey: 'bob',
-        )).map((e) => e.id),
+        )).map((w) => w.event.id),
         ['bob-1'],
       );
     });

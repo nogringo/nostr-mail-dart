@@ -889,9 +889,24 @@ class NostrMailClient {
   /// logins and account switches to redraw them.
   Future<void> fetchRecent() => _sync.fetchRecent();
 
+  /// Attempt a gift wrap the sync could not process, whatever state it is in.
+  ///
+  /// This is the user's own gesture, so it ignores the [maxSignerAttempts]
+  /// cap that parks a wrap whose signer keeps answering with an error. It
+  /// does not reset the count: if the signer errors again, the wrap stays
+  /// parked instead of restarting a round of approval prompts.
   Future<bool> retry(String eventId) => _sync.retry(eventId);
+
+  /// How many gift wraps are still owed work and can still succeed.
+  ///
+  /// Permanent failures are left out, since anyone can address a malformed
+  /// wrap to this account. [getFailedGiftWraps] lists them all.
   Future<int> getFailedCount() => _sync.getFailedCount();
-  Future<List<Nip01Event>> getFailedEvents() => _sync.getFailedEvents();
+
+  /// Every gift wrap that has not reached the email store, with the stage it
+  /// got to and what stopped it.
+  Future<List<FailedGiftWrap>> getFailedGiftWraps() =>
+      _sync.getFailedGiftWraps();
 
   // ── Sending ─────────────────────────────────────────────────────────────
 

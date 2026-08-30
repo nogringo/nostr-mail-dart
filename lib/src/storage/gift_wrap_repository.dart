@@ -114,7 +114,10 @@ class GiftWrapRepository {
   /// Where [giftWrapId] stands, or null if it is unknown.
   Future<GiftWrapProgress?> progressOf(String giftWrapId) async {
     final record = await _store.record(giftWrapId).get(_db);
-    if (record == null) return null;
+    return record == null ? null : _progressOf(record);
+  }
+
+  GiftWrapProgress _progressOf(Map<String, Object?> record) {
     final failure = record['failure'];
     return GiftWrapProgress(
       stage: GiftWrapStage.values.firstWhere(
@@ -226,8 +229,8 @@ class GiftWrapRepository {
     return Nip01EventModel.fromJson(record['event'] as Map);
   }
 
-  /// Get unprocessed gift wrap events.
-  Future<List<Nip01Event>> getUnprocessedEvents({
+  /// Every gift wrap still owed work, with what stopped it.
+  Future<List<FailedGiftWrap>> getUnfinished({
     String? recipientPubkey,
     int? limit,
   }) async {
@@ -237,14 +240,26 @@ class GiftWrapRepository {
     );
     final records = await _store.find(_db, finder: finder);
     return records
-        .map((r) => Nip01EventModel.fromJson(r.value['event'] as Map))
-        .cast<Nip01Event>()
+        .map(
+          (r) => FailedGiftWrap(
+            event: Nip01EventModel.fromJson(r.value['event'] as Map),
+            progress: _progressOf(r.value),
+          ),
+        )
         .toList();
   }
 
-  /// Get count of unprocessed (failed) events.
-  Future<int> getFailedCount({String? recipientPubkey}) =>
-      _store.count(_db, filter: _unfinishedFor(recipientPubkey));
+  /// How many gift wraps are still owed work and can still succeed.
+  ///
+  /// Permanent failures are left out: anyone can address a malformed wrap to
+  /// an account, so a count a stranger inflates is not worth showing.
+  Future<int> getFailedCount({String? recipientPubkey}) => _store.count(
+    _db,
+    filter: Filter.and([
+      _unfinishedFor(recipientPubkey),
+      Filter.notEquals('failure', GiftWrapFailure.permanent.name),
+    ]),
+  );
 
   Filter _unfinishedFor(String? recipientPubkey) => recipientPubkey == null
       ? _unfinished

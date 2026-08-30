@@ -1,4 +1,4 @@
-## 2.6.3
+## 3.0.0
 
 - **Breaking**: `NostrMailClient.create` takes a `syncEngine`
   (`sync_engine_shim_for_ndk`), which replaces NDK's broken `fetchedRanges`. It
@@ -8,14 +8,18 @@
   stay up to date: the client declares what the active account needs and
   follows logins and account switches, and the engine revisits on its own.
 - **Breaking**: `migrateSchemaIfNeeded` no longer takes an `ndk`.
+- **Breaking**: `getFailedEvents()` becomes `getFailedGiftWraps()` and returns
+  `FailedGiftWrap`, which carries the stage a wrap reached, what stopped it and
+  how many attempts it cost.
 - **Breaking**: requires `ndk` 0.9.0, `nostr_event_scheduler` 0.4.0,
   `broadcast_queue_shim_for_ndk` 0.5.0, `blossom_upload_queue_shim_for_ndk`
   0.7.0 and `sync_engine_shim_for_ndk` 0.4.0.
 - The NDK cache is now the source of truth for raw events, and the local stores
   a projection of it replayed on every page that lands. Mail therefore surfaces
   during a long backfill instead of after it, an event whose processing fails
-  is retried on the next pass instead of being lost, and a schema bump rebuilds
-  the stores without going back to the relays.
+  is retried on the next pass unless its recorded failure says another attempt
+  cannot help, and a schema bump rebuilds the stores without going back to the
+  relays.
 - `clearLocalAccountData(pubkey:)` and `clearAllLocalData()` no longer touch NDK
   state, so clear the NDK cache too to forget an account entirely.
 - **Fix**: a sent email no longer loses its labels when its own gift wrap comes
@@ -32,6 +36,24 @@
 - Gift wraps are also tombstoned by their own event id now, so a relay
   re-serving a deleted one costs a lookup per replay instead of unwrapping and
   unsealing it every time.
+- A gift wrap now records why it failed, and that decides what happens next: a
+  permanent failure (a local key that cannot open it, a malformed body) is
+  never retried, a transient one (relay, Blossom server, network) is retried on
+  the next pass, and a remote signer's error is retried `maxSignerAttempts`
+  times before the wrap is parked. NIP-46 carries no error taxonomy, so a user
+  refusing and a bunker unable to decrypt cannot be told apart, and each
+  attempt can cost the user an approval prompt.
+- **Fix**: a remote signer's error no longer marks a gift wrap as processed,
+  which used to drop the mail for good.
+- **Fix**: a gift wrap that arrived while another account was active is
+  processed when that account comes back, instead of waiting for an explicit
+  `retry`.
+- A gift wrap records its seal and rumor as soon as it yields them, so a
+  failure on the Blossom body resumes at the download instead of asking the
+  signer to decrypt again.
+- `getFailedCount()` leaves out permanently failed wraps: anyone can address a
+  malformed wrap to an account, so a count a stranger inflates is not worth
+  showing. `getFailedGiftWraps()` still lists them.
 
 ## 2.6.2
 

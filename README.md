@@ -31,7 +31,9 @@ import 'package:ndk/ndk.dart';
 import 'package:sembast/sembast_io.dart' hide Filter;
 import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 
-// Initialize ndk with your account
+// Initialize ndk with your account. With a remote signer, prefer a cache
+// manager that persists (`SembastCacheManager`): ndk keeps the plaintext it
+// decrypted there, so approvals already granted are not asked for again.
 final ndk = Ndk(NdkConfig(
   cache: MemCacheManager(),
   eventVerifier: Bip340EventVerifier(),

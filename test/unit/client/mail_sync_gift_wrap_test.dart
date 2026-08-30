@@ -104,15 +104,12 @@ void main() {
         isNull,
       );
       expect(
-        (await giftWraps.getUnprocessedEvents(
+        (await giftWraps.getUnfinished(
           recipientPubkey: alice,
-        )).map((e) => e.id),
+        )).map((w) => w.event.id),
         ['alice-wrap'],
       );
-      expect(
-        await giftWraps.getUnprocessedEvents(recipientPubkey: bob),
-        isEmpty,
-      );
+      expect(await giftWraps.getUnfinished(recipientPubkey: bob), isEmpty);
     });
 
     // The wrap of a deleted email is still served by relays that hold it. It

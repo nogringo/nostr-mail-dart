@@ -282,10 +282,10 @@ class MailSync {
     return _giftWraps.getFailedCount(recipientPubkey: pubkey);
   }
 
-  Future<List<Nip01Event>> getFailedEvents() {
+  Future<List<FailedGiftWrap>> getFailedGiftWraps() {
     final pubkey = _pubkey;
     if (pubkey == null) return Future.value(const []);
-    return _giftWraps.getUnprocessedEvents(recipientPubkey: pubkey);
+    return _giftWraps.getUnfinished(recipientPubkey: pubkey);
   }
 
   // ── Event processing ────────────────────────────────────────────────────
