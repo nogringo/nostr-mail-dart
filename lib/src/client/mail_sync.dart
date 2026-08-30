@@ -332,23 +332,20 @@ class MailSync {
 
     // Stored under the wrap's own recipient, not the active account, so one
     // arriving mid account-switch stays retryable instead of being dropped.
-    final isNew = await _giftWraps.save(event, recipientPubkey: owner);
+    final progress = await _giftWraps.save(event, recipientPubkey: owner);
     if (owner != _pubkey) return;
-    if (!isNew && !await _worthAttempting(event.id)) return;
+    if (!_worthAttempting(progress)) return;
     await _processEvent(event);
   }
 
-  /// Whether a wrap we already know is worth another attempt.
+  /// Whether a wrap is worth an attempt.
   ///
   /// A permanent failure never turns into a success. A signer failure might,
   /// since a refusal and an impossible decryption reach us as the same error,
   /// but every attempt can cost the user an approval prompt: past
   /// [maxSignerAttempts] the wrap is parked, and only [retry] reopens it.
-  Future<bool> _worthAttempting(String giftWrapId) async {
-    final progress = await _giftWraps.progressOf(giftWrapId);
-    if (progress == null || progress.stage == GiftWrapStage.stored) {
-      return false;
-    }
+  bool _worthAttempting(GiftWrapProgress progress) {
+    if (progress.stage == GiftWrapStage.stored) return false;
     return switch (progress.failure) {
       GiftWrapFailure.permanent => false,
       GiftWrapFailure.signer => progress.attempts < maxSignerAttempts,

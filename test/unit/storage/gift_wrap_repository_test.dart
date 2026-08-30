@@ -1,4 +1,5 @@
 import 'package:ndk/ndk.dart';
+import 'package:nostr_mail/src/models/gift_wrap_state.dart';
 import 'package:nostr_mail/src/storage/gift_wrap_repository.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
@@ -34,7 +35,7 @@ void main() {
       repo = GiftWrapRepository(db);
     });
 
-    Future<bool> save(
+    Future<GiftWrapProgress> save(
       Nip01Event event, {
       String recipientPubkey = 'recipient',
     }) {
@@ -54,13 +55,28 @@ void main() {
       await repo.markStored(giftWrapId);
     }
 
-    test('save returns true for a new event', () async {
-      expect(await save(makeEvent('event-1')), isTrue);
-    });
+    test(
+      'save reports a new event as saved with no attempt behind it',
+      () async {
+        final progress = await save(makeEvent('event-1'));
 
-    test('save returns false for an already-stored event', () async {
+        expect(progress.stage, GiftWrapStage.saved);
+        expect(progress.failure, isNull);
+        expect(progress.attempts, 0);
+      },
+    );
+
+    test('save leaves an already-known event alone and reports it', () async {
       await save(makeEvent('event-1'));
-      expect(await save(makeEvent('event-1')), isFalse);
+      await repo.recordFailure(
+        giftWrapId: 'event-1',
+        failure: GiftWrapFailure.signer,
+      );
+
+      final progress = await save(makeEvent('event-1'));
+
+      expect(progress.failure, GiftWrapFailure.signer);
+      expect(progress.attempts, 1);
     });
 
     test('getById returns a stored gift wrap by outer event id', () async {

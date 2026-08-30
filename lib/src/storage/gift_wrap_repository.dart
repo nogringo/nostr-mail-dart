@@ -16,17 +16,25 @@ class GiftWrapRepository {
   /// Anything short of [GiftWrapStage.stored] is still owed work.
   static final _unfinished = Filter.notEquals('stage', _stored);
 
-  /// Save a gift wrap event if new. Returns true if it was inserted.
-  Future<bool> save(Nip01Event event, {required String recipientPubkey}) async {
+  /// Save a gift wrap event if new, and report where it stands.
+  ///
+  /// Both answers come from one read: sembast copies a record's whole value on
+  /// every get, and a wrap that got anywhere carries its seal and rumor, so
+  /// asking twice meant copying an entire email out of the store to learn a
+  /// stage.
+  Future<GiftWrapProgress> save(
+    Nip01Event event, {
+    required String recipientPubkey,
+  }) async {
     final existing = await _store.record(event.id).get(_db);
-    if (existing != null) return false;
+    if (existing != null) return _progressOf(existing);
     await _store.record(event.id).put(_db, {
       'recipientPubkey': recipientPubkey,
       'event': Nip01EventModel.fromEntity(event).toJson(),
       'stage': GiftWrapStage.saved.name,
       'attempts': 0,
     });
-    return true;
+    return const GiftWrapProgress(stage: GiftWrapStage.saved);
   }
 
   /// Get a gift wrap record by its globally unique outer event ID.
@@ -109,12 +117,6 @@ class GiftWrapRepository {
       seal: Nip01EventModel.fromJson(seal as Map),
       rumor: Nip01EventModel.fromJson(rumor as Map),
     );
-  }
-
-  /// Where [giftWrapId] stands, or null if it is unknown.
-  Future<GiftWrapProgress?> progressOf(String giftWrapId) async {
-    final record = await _store.record(giftWrapId).get(_db);
-    return record == null ? null : _progressOf(record);
   }
 
   GiftWrapProgress _progressOf(Map<String, Object?> record) {
