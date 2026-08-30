@@ -6,6 +6,7 @@ import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 
 import '../constants.dart';
 import '../exceptions.dart';
+import '../models/gift_wrap_state.dart';
 import '../models/mail_event.dart';
 import '../models/unwrapped_gift_wrap.dart';
 import '../storage/email_repository.dart';
@@ -384,10 +385,15 @@ class MailSync {
       return true;
     } on SignerRequestCancelledException {
       rethrow;
-    } on SignerRequestRejectedException {
-      await _giftWraps.markStored(event.id);
-      return false;
-    } catch (_) {
+    } catch (error) {
+      // Past the seal, what is left is the body: a malformed one will never
+      // parse, anything else is a server we could not reach.
+      await _giftWraps.recordFailure(
+        giftWrapId: event.id,
+        failure: error is EmailParseException || error is FormatException
+            ? GiftWrapFailure.permanent
+            : GiftWrapFailure.transient,
+      );
       return false;
     }
   }
@@ -585,10 +591,22 @@ class MailSync {
       return UnwrappedGiftWrap(seal: seal, rumor: rumor);
     } on SignerRequestCancelledException {
       rethrow;
-    } on SignerRequestRejectedException {
-      rethrow;
-    } catch (_) {
+    } catch (error) {
+      await _giftWraps.recordFailure(
+        giftWrapId: giftWrapEvent.id,
+        failure: _decryptionFailure(error),
+      );
       return null;
     }
+  }
+
+  /// A decryption that failed on a key we hold will fail the same way forever.
+  /// A remote signer's answer says nothing: NIP-46 carries no error taxonomy,
+  /// so a user refusing and a bunker unable to decrypt arrive identically.
+  GiftWrapFailure _decryptionFailure(Object error) {
+    if (error is FormatException) return GiftWrapFailure.permanent;
+    return _ndk.accounts.getLoggedAccount()?.type == AccountType.privateKey
+        ? GiftWrapFailure.permanent
+        : GiftWrapFailure.signer;
   }
 }

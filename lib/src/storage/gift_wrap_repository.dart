@@ -95,6 +95,22 @@ class GiftWrapRepository {
     return record?.value;
   }
 
+  /// Record why the last attempt on [giftWrapId] stopped, and count it.
+  ///
+  /// The stage is left alone: a failure never undoes what was already opened.
+  Future<void> recordFailure({
+    required String giftWrapId,
+    required GiftWrapFailure failure,
+  }) async {
+    final existing = await _store.record(giftWrapId).get(_db);
+    if (existing == null) return;
+    await _store.record(giftWrapId).put(_db, {
+      ...existing,
+      'failure': failure.name,
+      'attempts': (existing['attempts'] as int? ?? 0) + 1,
+    });
+  }
+
   /// Mark a gift wrap as fully processed. Terminal: nothing reopens it.
   Future<void> markStored(String eventId) async {
     final existing = await _store.record(eventId).get(_db);

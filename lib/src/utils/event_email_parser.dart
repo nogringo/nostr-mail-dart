@@ -121,13 +121,19 @@ Future<String> _parseMime({
       ndk: ndk,
     );
 
-    final decryptedBytes = await decryptBlob(
-      encryptedBytes: encryptedBytes,
-      key: decryptionKey,
-      nonce: decryptionNonce,
-    );
-
-    return utf8.decode(decryptedBytes);
+    // A blob that does not decrypt or is not text is malformed for good,
+    // unlike the download above, which is worth another try.
+    try {
+      return utf8.decode(
+        await decryptBlob(
+          encryptedBytes: encryptedBytes,
+          key: decryptionKey,
+          nonce: decryptionNonce,
+        ),
+      );
+    } catch (error) {
+      throw EmailParseException('Blossom blob $blossomHash: $error');
+    }
   }
 
   return rawContent;
