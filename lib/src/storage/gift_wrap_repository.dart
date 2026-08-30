@@ -1,12 +1,19 @@
 import 'package:ndk/ndk.dart' show Nip01Event, Nip01EventModel;
 import 'package:sembast/sembast.dart';
 
+import '../models/gift_wrap_state.dart';
+
 /// Repository for raw NIP-59 gift-wrap events.
 class GiftWrapRepository {
   final Database _db;
   final _store = stringMapStoreFactory.store('gift_wraps');
 
   GiftWrapRepository(this._db);
+
+  static final _stored = GiftWrapStage.stored.name;
+
+  /// Anything short of [GiftWrapStage.stored] is still owed work.
+  static final _unfinished = Filter.notEquals('stage', _stored);
 
   /// Save a gift wrap event if new. Returns true if it was inserted.
   Future<bool> save(Nip01Event event, {required String recipientPubkey}) async {
@@ -15,7 +22,8 @@ class GiftWrapRepository {
     await _store.record(event.id).put(_db, {
       'recipientPubkey': recipientPubkey,
       'event': Nip01EventModel.fromEntity(event).toJson(),
-      'processed': false,
+      'stage': GiftWrapStage.saved.name,
+      'attempts': 0,
     });
     return true;
   }
@@ -46,13 +54,18 @@ class GiftWrapRepository {
   }) async {
     final existing = await _store.record(giftWrapId).get(_db);
     if (existing == null) return;
-    await _store.record(giftWrapId).put(_db, {
-      ...existing,
-      'seal': Nip01EventModel.fromEntity(seal).toJson(),
-      'rumor': Nip01EventModel.fromEntity(rumor).toJson(),
-      'rumorId': rumor.id,
-      'processed': true,
-    });
+    await _store
+        .record(giftWrapId)
+        .put(
+          _db,
+          {
+            ...existing,
+            'seal': Nip01EventModel.fromEntity(seal).toJson(),
+            'rumor': Nip01EventModel.fromEntity(rumor).toJson(),
+            'rumorId': rumor.id,
+            'stage': _stored,
+          }..remove('failure'),
+        );
   }
 
   /// Get gift wrap record by its decrypted rumor ID (email ID).
@@ -81,7 +94,9 @@ class GiftWrapRepository {
   Future<void> markProcessed(String eventId) async {
     final existing = await _store.record(eventId).get(_db);
     if (existing == null) return;
-    await _store.record(eventId).put(_db, {...existing, 'processed': true});
+    await _store
+        .record(eventId)
+        .put(_db, {...existing, 'stage': _stored}..remove('failure'));
   }
 
   /// Remove a gift wrap record.
@@ -151,7 +166,7 @@ class GiftWrapRepository {
     final record = recipientPubkey == null
         ? await getById(eventId)
         : await getByIdForRecipient(eventId, recipientPubkey: recipientPubkey);
-    if (record == null || record['processed'] == true) return null;
+    if (record == null || record['stage'] == _stored) return null;
     return Nip01EventModel.fromJson(record['event'] as Map);
   }
 
@@ -160,13 +175,8 @@ class GiftWrapRepository {
     String? recipientPubkey,
     int? limit,
   }) async {
-    final filters = <Filter>[
-      Filter.equals('processed', false),
-      if (recipientPubkey != null)
-        Filter.equals('recipientPubkey', recipientPubkey),
-    ];
     final finder = Finder(
-      filter: filters.length == 1 ? filters.first : Filter.and(filters),
+      filter: _unfinishedFor(recipientPubkey),
       limit: limit,
     );
     final records = await _store.find(_db, finder: finder);
@@ -177,17 +187,15 @@ class GiftWrapRepository {
   }
 
   /// Get count of unprocessed (failed) events.
-  Future<int> getFailedCount({String? recipientPubkey}) async {
-    final filters = <Filter>[
-      Filter.equals('processed', false),
-      if (recipientPubkey != null)
-        Filter.equals('recipientPubkey', recipientPubkey),
-    ];
-    return _store.count(
-      _db,
-      filter: filters.length == 1 ? filters.first : Filter.and(filters),
-    );
-  }
+  Future<int> getFailedCount({String? recipientPubkey}) =>
+      _store.count(_db, filter: _unfinishedFor(recipientPubkey));
+
+  Filter _unfinishedFor(String? recipientPubkey) => recipientPubkey == null
+      ? _unfinished
+      : Filter.and([
+          _unfinished,
+          Filter.equals('recipientPubkey', recipientPubkey),
+        ]);
 
   Future<void> clearAll({String? recipientPubkey}) async {
     if (recipientPubkey == null) {

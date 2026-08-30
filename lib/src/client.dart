@@ -25,6 +25,7 @@ import 'constants.dart';
 import 'exceptions.dart';
 import 'models/attachment_ref.dart';
 import 'models/email.dart';
+import 'models/gift_wrap_state.dart';
 import 'models/mail_event.dart';
 import 'models/private_settings.dart';
 import 'models/recipient.dart';
@@ -381,7 +382,7 @@ class NostrMailClient {
     if (record == null) return null;
 
     var rumorId = record['rumorId'] as String?;
-    if (rumorId == null && record['processed'] != true) {
+    if (rumorId == null && record['stage'] != GiftWrapStage.stored.name) {
       await _sync.retry(giftWrapId);
       record = await _giftWrapRepo.getByIdForRecipient(
         giftWrapId,

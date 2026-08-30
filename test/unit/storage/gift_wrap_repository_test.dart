@@ -56,7 +56,7 @@ void main() {
       final record = await repo.getById('event-1');
 
       expect(record, isNotNull);
-      expect(record!['processed'], isFalse);
+      expect(record!['stage'], 'saved');
       expect(record['event']['content'], 'wrapped content');
       expect(record['recipientPubkey'], 'recipient');
     });
