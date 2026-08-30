@@ -50,6 +50,14 @@ const maxInlineSize = 32768;
 /// prompt, which is what keeps this number small.
 const maxSignerAttempts = 3;
 
+/// How many cached events are turned into emails at once.
+///
+/// The decryption is not what this bounds: with a local key it runs on this
+/// isolate anyway, and a remote signer throttles itself. What it bounds is
+/// everything downstream, above all the Blossom fetch each email pays for its
+/// body and attachments.
+const maxProcessingConcurrency = 8;
+
 /// Default DM relays used when user has no relay list configured
 const recommendedDmRelays = [
   'wss://auth.nostr1.com',

@@ -236,17 +236,18 @@ class MailSync {
     final pubkey = _pubkey;
     if (pubkey == null) return;
 
-    // Gift wraps and public emails run in parallel: NDK PR #632 added
-    // configurable signer concurrency (default 100), so decryption no longer
-    // blocks sequentially. Deletions and labels stay sequential to avoid races.
-    await Future.wait((await _fromCache(emailFilter(pubkey))).map(onGiftWrap));
+    // Gift wraps and public emails run in parallel, up to
+    // [maxProcessingConcurrency] at a time. Deletions and labels stay
+    // sequential to avoid races.
+    await _throttled(await _fromCache(emailFilter(pubkey)), onGiftWrap);
 
     for (final event in await _fromCache(deletionFilter(pubkey))) {
       await onDeletion(event);
     }
 
-    await Future.wait(
-      (await _fromCache(publicEmailFilter(pubkey))).map(onPublicEmail),
+    await _throttled(
+      await _fromCache(publicEmailFilter(pubkey)),
+      onPublicEmail,
     );
 
     for (final event in await _fromCache(labelFilter(pubkey))) {
@@ -263,6 +264,36 @@ class MailSync {
         since: filter.since,
         until: filter.until,
       );
+
+  /// Runs [handle] over [events], at most [maxProcessingConcurrency] at once.
+  ///
+  /// The first error stops the round: the only one that reaches here is a
+  /// cancelled signer request, and the wraps left would each ask the user
+  /// again. Whatever was skipped stays in the cache for the next round.
+  Future<void> _throttled(
+    List<Nip01Event> events,
+    Future<void> Function(Nip01Event event) handle,
+  ) async {
+    var next = 0;
+    var stopped = false;
+
+    Future<void> worker() async {
+      while (next < events.length && !stopped) {
+        final event = events[next++];
+        try {
+          await handle(event);
+        } catch (_) {
+          stopped = true;
+          rethrow;
+        }
+      }
+    }
+
+    final workers = events.length < maxProcessingConcurrency
+        ? events.length
+        : maxProcessingConcurrency;
+    await Future.wait(List.generate(workers, (_) => worker()));
+  }
 
   /// Retry processing a single failed gift wrap.
   Future<bool> retry(String eventId) async {
