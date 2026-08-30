@@ -2,6 +2,7 @@ import 'package:ndk/ndk.dart' show Nip01Event, Nip01EventModel;
 import 'package:sembast/sembast.dart';
 
 import '../models/gift_wrap_state.dart';
+import '../models/unwrapped_gift_wrap.dart';
 
 /// Repository for raw NIP-59 gift-wrap events.
 class GiftWrapRepository {
@@ -93,6 +94,40 @@ class GiftWrapRepository {
     );
     final record = await _store.findFirst(_db, finder: finder);
     return record?.value;
+  }
+
+  /// The seal and rumor already recorded for [giftWrapId], if it got that far.
+  ///
+  /// Reading them back is what makes a retry cheap: the approvals a remote
+  /// signer needed to produce them are not asked for a second time.
+  Future<UnwrappedGiftWrap?> getUnsealed(String giftWrapId) async {
+    final record = await _store.record(giftWrapId).get(_db);
+    final seal = record?['seal'];
+    final rumor = record?['rumor'];
+    if (seal == null || rumor == null) return null;
+    return UnwrappedGiftWrap(
+      seal: Nip01EventModel.fromJson(seal as Map),
+      rumor: Nip01EventModel.fromJson(rumor as Map),
+    );
+  }
+
+  /// Where [giftWrapId] stands, or null if it is unknown.
+  Future<GiftWrapProgress?> progressOf(String giftWrapId) async {
+    final record = await _store.record(giftWrapId).get(_db);
+    if (record == null) return null;
+    final failure = record['failure'];
+    return GiftWrapProgress(
+      stage: GiftWrapStage.values.firstWhere(
+        (stage) => stage.name == record['stage'],
+        orElse: () => GiftWrapStage.saved,
+      ),
+      failure: failure == null
+          ? null
+          : GiftWrapFailure.values.firstWhere(
+              (candidate) => candidate.name == failure,
+            ),
+      attempts: record['attempts'] as int? ?? 0,
+    );
   }
 
   /// Record why the last attempt on [giftWrapId] stopped, and count it.

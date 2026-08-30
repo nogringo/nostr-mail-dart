@@ -28,3 +28,16 @@ enum GiftWrapFailure {
   /// only a bounded number of attempts tells them apart.
   signer,
 }
+
+/// Where a gift wrap stands: how far it got, and what stopped it.
+class GiftWrapProgress {
+  final GiftWrapStage stage;
+  final GiftWrapFailure? failure;
+  final int attempts;
+
+  const GiftWrapProgress({
+    required this.stage,
+    this.failure,
+    this.attempts = 0,
+  });
+}

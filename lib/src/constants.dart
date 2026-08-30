@@ -42,6 +42,14 @@ const labelNamespace = 'mail';
 /// Larger emails are stored on Blossom servers.
 const maxInlineSize = 32768;
 
+/// How many times a gift wrap whose signer answered with an error is retried
+/// on its own before it is parked and left to the user.
+///
+/// NIP-46 has no error taxonomy, so a refusal and a signer that cannot
+/// decrypt are indistinguishable; each attempt can cost the user an approval
+/// prompt, which is what keeps this number small.
+const maxSignerAttempts = 3;
+
 /// Default DM relays used when user has no relay list configured
 const recommendedDmRelays = [
   'wss://auth.nostr1.com',

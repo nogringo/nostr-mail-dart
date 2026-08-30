@@ -302,8 +302,28 @@ class MailSync {
     // Stored under the wrap's own recipient, not the active account, so one
     // arriving mid account-switch stays retryable instead of being dropped.
     final isNew = await _giftWraps.save(event, recipientPubkey: owner);
-    if (!isNew || owner != _pubkey) return;
+    if (owner != _pubkey) return;
+    if (!isNew && !await _worthAttempting(event.id)) return;
     await _processEvent(event);
+  }
+
+  /// Whether a wrap we already know is worth another attempt.
+  ///
+  /// A permanent failure never turns into a success. A signer failure might,
+  /// since a refusal and an impossible decryption reach us as the same error,
+  /// but every attempt can cost the user an approval prompt: past
+  /// [maxSignerAttempts] the wrap is parked, and only [retry] reopens it.
+  Future<bool> _worthAttempting(String giftWrapId) async {
+    final progress = await _giftWraps.progressOf(giftWrapId);
+    if (progress == null || progress.stage == GiftWrapStage.stored) {
+      return false;
+    }
+    return switch (progress.failure) {
+      GiftWrapFailure.permanent => false,
+      GiftWrapFailure.signer => progress.attempts < maxSignerAttempts,
+      GiftWrapFailure.transient => true,
+      null => true,
+    };
   }
 
   Future<bool> _processEvent(Nip01Event event) async {
@@ -314,15 +334,18 @@ class MailSync {
     if (recipientTag != myPubkey) return false;
 
     try {
-      final unwrapped = await _unwrapGiftWrap(event);
-      if (unwrapped == null) return false;
+      var unwrapped = await _giftWraps.getUnsealed(event.id);
+      if (unwrapped == null) {
+        unwrapped = await _unwrapGiftWrap(event);
+        if (unwrapped == null) return false;
+        await _giftWraps.updateUnsealed(
+          giftWrapId: event.id,
+          seal: unwrapped.seal,
+          rumor: unwrapped.rumor,
+        );
+      }
 
       final rumor = unwrapped.rumor;
-      await _giftWraps.updateUnsealed(
-        giftWrapId: event.id,
-        seal: unwrapped.seal,
-        rumor: rumor,
-      );
 
       if (rumor.kind != emailKind) {
         await _giftWraps.markStored(event.id);
