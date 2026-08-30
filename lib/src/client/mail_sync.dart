@@ -15,6 +15,8 @@ import '../storage/label_repository.dart';
 import '../storage/models/label_state.dart';
 import '../storage/tombstone_repository.dart';
 import '../utils/email_record_builder.dart';
+import '../utils/throttle.dart';
+import 'cache_window.dart';
 import 'relay_resolver.dart';
 import '../utils/event_email_parser.dart';
 import 'event_bus.dart';
@@ -26,7 +28,8 @@ import 'filters.dart';
 /// account needs; the cache is then the source of truth for raw events, and
 /// the local sembast stores are a projection of it rebuilt by
 /// [_processFromCache]. An event whose processing fails therefore stays in the
-/// cache and is retried on the next sync.
+/// cache, and is retried whenever a round covers it again: the engine walking
+/// its period a second time, or a [fetchRecent], which replays everything.
 class MailSync {
   final Ndk _ndk;
   final SyncEngine _engine;
@@ -54,6 +57,10 @@ class MailSync {
 
   Future<void>? _replaying;
   var _replayAgain = false;
+
+  /// What the queued round has to cover, once [_replayAgain] says there is
+  /// one. Null covers the whole cache.
+  CacheWindow? _queued;
 
   MailSync(
     this._ndk,
@@ -192,8 +199,8 @@ class MailSync {
       if (progress.eventCount == 0) return;
 
       // Best effort: nobody is awaiting this round, and the cache keeps what
-      // failed, so the next round retries it.
-      _replayCache().ignore();
+      // failed, so a later round retries it.
+      _replayCache(CacheWindow.of(progress)).ignore();
     });
   }
 
@@ -209,91 +216,80 @@ class MailSync {
   /// queues a single follow-up instead of racing it, so a walk landing twenty
   /// pages costs a handful of rounds rather than twenty, and two rounds never
   /// process the same event at once.
-  Future<void> _replayCache() {
+  ///
+  /// [window] is the period the round has to cover; null covers the whole
+  /// cache. A round queued behind another widens to hold both.
+  Future<void> _replayCache([CacheWindow? window]) {
     final running = _replaying;
     if (running != null) {
+      _queued = _replayAgain ? CacheWindow.union(_queued, window) : window;
       _replayAgain = true;
       return running;
     }
 
-    return _replaying = _replayRounds();
+    return _replaying = _replayRounds(window);
   }
 
-  Future<void> _replayRounds() async {
+  Future<void> _replayRounds(CacheWindow? window) async {
     try {
+      var pending = window;
       do {
         _replayAgain = false;
-        await _processFromCache();
+        await _processFromCache(pending);
+        pending = _queued;
       } while (_replayAgain);
     } finally {
       _replaying = null;
     }
   }
 
-  /// Rebuilds the local stores from the NDK cache. Every handler is idempotent,
-  /// so replaying the whole cache only costs a lookup per already-known event.
-  Future<void> _processFromCache() async {
+  /// Rebuilds the local stores from the NDK cache, over [window] or over
+  /// everything when it is null.
+  ///
+  /// Every handler is idempotent, so a round may cover ground already
+  /// projected. It should still cover as little as possible: the cache hands
+  /// back a decoded event per match, which is what a mailbox-sized replay
+  /// spends its time on.
+  Future<void> _processFromCache(CacheWindow? window) async {
     final pubkey = _pubkey;
     if (pubkey == null) return;
 
     // Gift wraps and public emails run in parallel, up to
     // [maxProcessingConcurrency] at a time. Deletions and labels stay
     // sequential to avoid races.
-    await _throttled(await _fromCache(emailFilter(pubkey)), onGiftWrap);
+    //
+    // A cancelled signer request ends the round: the only error that reaches
+    // here, and the wraps left would each ask the user again.
+    await forEachThrottled(
+      await _fromCache(emailFilter(pubkey), window),
+      maxProcessingConcurrency,
+      onGiftWrap,
+    );
 
-    for (final event in await _fromCache(deletionFilter(pubkey))) {
+    for (final event in await _fromCache(deletionFilter(pubkey), window)) {
       await onDeletion(event);
     }
 
-    await _throttled(
-      await _fromCache(publicEmailFilter(pubkey)),
+    await forEachThrottled(
+      await _fromCache(publicEmailFilter(pubkey), window),
+      maxProcessingConcurrency,
       onPublicEmail,
     );
 
-    for (final event in await _fromCache(labelFilter(pubkey))) {
+    for (final event in await _fromCache(labelFilter(pubkey), window)) {
       await onLabelAddition(event);
     }
   }
 
-  Future<List<Nip01Event>> _fromCache(Filter filter) =>
+  Future<List<Nip01Event>> _fromCache(Filter filter, CacheWindow? window) =>
       _ndk.config.cache.loadEvents(
         ids: filter.ids,
         pubKeys: filter.authors,
         kinds: filter.kinds,
         tags: filter.tags,
-        since: filter.since,
-        until: filter.until,
+        since: window?.since ?? filter.since,
+        until: window?.until ?? filter.until,
       );
-
-  /// Runs [handle] over [events], at most [maxProcessingConcurrency] at once.
-  ///
-  /// The first error stops the round: the only one that reaches here is a
-  /// cancelled signer request, and the wraps left would each ask the user
-  /// again. Whatever was skipped stays in the cache for the next round.
-  Future<void> _throttled(
-    List<Nip01Event> events,
-    Future<void> Function(Nip01Event event) handle,
-  ) async {
-    var next = 0;
-    var stopped = false;
-
-    Future<void> worker() async {
-      while (next < events.length && !stopped) {
-        final event = events[next++];
-        try {
-          await handle(event);
-        } catch (_) {
-          stopped = true;
-          rethrow;
-        }
-      }
-    }
-
-    final workers = events.length < maxProcessingConcurrency
-        ? events.length
-        : maxProcessingConcurrency;
-    await Future.wait(List.generate(workers, (_) => worker()));
-  }
 
   /// Retry processing a single failed gift wrap.
   Future<bool> retry(String eventId) async {
