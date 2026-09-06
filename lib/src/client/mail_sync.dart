@@ -18,6 +18,7 @@ import '../utils/email_record_builder.dart';
 import '../utils/throttle.dart';
 import 'cache_window.dart';
 import 'relay_resolver.dart';
+import 'replay_queue.dart';
 import '../utils/event_email_parser.dart';
 import 'event_bus.dart';
 import 'filters.dart';
@@ -56,11 +57,9 @@ class MailSync {
   final Map<SyncHandle, SyncProgress> _lastProgress = {};
 
   Future<void>? _replaying;
-  var _replayAgain = false;
 
-  /// What the queued round has to cover, once [_replayAgain] says there is
-  /// one. Null covers the whole cache.
-  CacheWindow? _queued;
+  /// What the next round has to cover.
+  final _owed = ReplayQueue();
 
   MailSync(
     this._ndk,
@@ -217,27 +216,27 @@ class MailSync {
   /// pages costs a handful of rounds rather than twenty, and two rounds never
   /// process the same event at once.
   ///
-  /// [window] is the period the round has to cover; null covers the whole
-  /// cache. A round queued behind another widens to hold both.
+  /// [window] is the period to cover; null covers the whole cache. Everything
+  /// asked for while a round runs is merged into the one that follows.
   Future<void> _replayCache([CacheWindow? window]) {
-    final running = _replaying;
-    if (running != null) {
-      _queued = _replayAgain ? CacheWindow.union(_queued, window) : window;
-      _replayAgain = true;
-      return running;
-    }
-
-    return _replaying = _replayRounds(window);
+    _owed.owe(window);
+    return _replaying ??= _replayRounds();
   }
 
-  Future<void> _replayRounds(CacheWindow? window) async {
+  Future<void> _replayRounds() async {
     try {
-      var pending = window;
-      do {
-        _replayAgain = false;
-        await _processFromCache(pending);
-        pending = _queued;
-      } while (_replayAgain);
+      while (_owed.isPending) {
+        final window = _owed.take();
+        try {
+          await _processFromCache(window);
+        } catch (_) {
+          // Nothing else covers this ground: the page that asked for it is
+          // long acknowledged, and the engine will not walk its period again
+          // until the coverage goes stale.
+          _owed.owe(window);
+          rethrow;
+        }
+      }
     } finally {
       _replaying = null;
     }
