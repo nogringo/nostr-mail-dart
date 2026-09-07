@@ -1,5 +1,32 @@
 ## Unreleased
 
+- `getSummaries()` lists a mailbox without reading or parsing any MIME. The
+  list methods return `Email`, which holds the whole message body, so drawing
+  a screenful of rows pulled every body off disk to show a subject and a
+  sender. An `EmailSummary` reads only the indexed columns a row draws:
+  sender, recipients, subject, a preview SQLite truncates itself, date,
+  folder, read and starred state, labels and attachment metadata. A row costs
+  a few hundred bytes instead of the whole message. It returns a
+  `PaginatedResult`, now exported, whose `total` and `hasMore` tell an endless
+  list when to stop asking.
+- `labels` is indexed on `(email_id, recipient_pubkey, label)`. The
+  `email_states` view resolves the folder, read and starred state of a row
+  through correlated subqueries keyed on `email_id`, and the only index on the
+  table started at `recipient_pubkey`, so every one of those subqueries
+  rescanned every label of the account. Any query filtering on a folder walked
+  the whole mailbox: on a store of 5000 emails and 2500 labels, counting the
+  inbox took 360 ms and `getUnreadCount(folder: 'inbox')`, which
+  `watchUnreadCount` re-runs on every change, took the same. Both now take
+  about 2 ms.
+- An `Email` parses its MIME on first read of `.mime` rather than in its
+  constructor. Parsing walks the entire part tree and copies every body out of
+  `lightMimeText`, and every caller paid for it, including those that only
+  wanted an id or a date.
+- The store indexes the recipients and the sender's display name. `To`, `Cc`
+  and `Bcc` lived only inside the stored MIME, and `from_address` dropped the
+  personal name, so no listing could show either without parsing the message.
+  Schema version 2: the tables are rebuilt from the NDK cache on first open,
+  without network and without a signer.
 - A schema change no longer drops the NIP-44 decryptions. What a gift wrap
   yields once opened moves to its own `unsealed` table, kept across the drop
   along with the decrypted settings, so rebuilding the tables costs no signer

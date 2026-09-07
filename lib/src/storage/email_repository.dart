@@ -1,7 +1,10 @@
 import 'package:drift/drift.dart';
 
 import '../models/attachment_ref.dart';
+import '../models/email_summary.dart';
+import '../models/paginated_result.dart';
 import 'database.dart';
+import 'mail_address_codec.dart';
 import 'models/email_query.dart';
 import 'models/email_record.dart';
 
@@ -16,6 +19,9 @@ import 'models/email_record.dart';
 /// database. A row whose [EmailRecord.recipientPubkey] does not match the
 /// caller is invisible (and unreachable, even by id).
 class EmailRepository {
+  /// Characters of body kept for a listing preview.
+  static const _previewLength = 200;
+
   final NostrMailDatabase _db;
 
   EmailRepository(this._db);
@@ -123,6 +129,85 @@ class EmailRepository {
     return PaginatedResult(items: items, total: total, offset: q.offset ?? 0);
   }
 
+  /// Query the columns a mailbox listing draws, without reading
+  /// `light_mime_text` and without parsing any MIME.
+  ///
+  /// Prefer this over [query] wherever the body is not shown: a row costs a
+  /// few hundred bytes instead of the whole message. Attachment refs and
+  /// custom labels take one batched query each for the page, never one per
+  /// row, and the preview is truncated by SQLite so no full body crosses into
+  /// Dart.
+  Future<PaginatedResult<EmailSummary>> querySummaries(EmailQuery q) async {
+    final total = await count(q);
+    final v = _db.emailStates;
+    final preview = v.bodyPlain.substr(1, _previewLength);
+    final statement = _db.selectOnly(v)
+      ..addColumns([
+        v.id,
+        v.senderPubkey,
+        v.fromAddress,
+        v.fromName,
+        v.toAddresses,
+        v.ccAddresses,
+        v.bccAddresses,
+        v.subject,
+        v.date,
+        v.folder,
+        v.isRead,
+        v.isStarred,
+        v.isPublic,
+        v.isBridged,
+        preview,
+      ])
+      ..where(_matches(v, q))
+      ..orderBy([
+        OrderingTerm(
+          expression: v.date,
+          mode: q.sort == EmailSort.dateDesc
+              ? OrderingMode.desc
+              : OrderingMode.asc,
+        ),
+      ]);
+    if (q.limit != null || q.offset != null) {
+      statement.limit(q.limit ?? -1, offset: q.offset);
+    }
+
+    final rows = await statement.get();
+    if (rows.isEmpty) {
+      return PaginatedResult(items: [], total: total, offset: q.offset ?? 0);
+    }
+
+    final ids = [for (final row in rows) row.read(v.id)!];
+    final (refs, customLabels) = await (
+      _attachmentRefs(ids),
+      _customLabels(ids, recipientPubkey: q.recipientPubkey),
+    ).wait;
+
+    final items = [
+      for (final row in rows)
+        EmailSummary(
+          id: row.read(v.id)!,
+          senderPubkey: row.read(v.senderPubkey)!,
+          from: row.read(v.fromAddress)!,
+          fromName: row.read(v.fromName),
+          to: decodeAddresses(row.read(v.toAddresses)!),
+          cc: decodeAddresses(row.read(v.ccAddresses)!),
+          bcc: decodeAddresses(row.read(v.bccAddresses)!),
+          subject: row.read(v.subject)!,
+          preview: row.read(preview) ?? '',
+          date: DateTime.fromMillisecondsSinceEpoch(row.read(v.date)! * 1000),
+          folder: row.read(v.folder)!,
+          isRead: row.read(v.isRead)!,
+          isStarred: row.read(v.isStarred)!,
+          isPublic: row.read(v.isPublic)!,
+          isBridged: row.read(v.isBridged)!,
+          attachmentRefs: refs[row.read(v.id)!] ?? const [],
+          labels: customLabels[row.read(v.id)!] ?? const [],
+        ),
+    ];
+    return PaginatedResult(items: items, total: total, offset: q.offset ?? 0);
+  }
+
   /// Get emails by a list of IDs, sorted by date descending.
   /// Rows belonging to other accounts are silently skipped.
   Future<List<EmailRecord>> getByIds(
@@ -200,38 +285,10 @@ class EmailRepository {
     if (rows.isEmpty) return [];
     final ids = rows.map((r) => r.id).toList();
 
-    final attachments =
-        await (_db.select(_db.attachments)
-              ..where((a) => a.emailId.isIn(ids))
-              ..orderBy([(a) => OrderingTerm.asc(a.position)]))
-            .get();
-    final refs = <String, List<AttachmentRef>>{};
-    for (final a in attachments) {
-      refs
-          .putIfAbsent(a.emailId, () => [])
-          .add(
-            AttachmentRef(
-              filename: a.filename,
-              contentType: a.contentType,
-              size: a.size,
-              sha256: a.sha256,
-              contentId: a.contentId,
-            ),
-          );
-    }
-
-    final labels =
-        await (_db.select(_db.labels)..where(
-              (l) =>
-                  l.emailId.isIn(ids) &
-                  l.recipientPubkey.equals(recipientPubkey),
-            ))
-            .get();
-    final customLabels = <String, List<String>>{};
-    for (final l in labels) {
-      if (_isStateLabel(l.label)) continue;
-      customLabels.putIfAbsent(l.emailId, () => []).add(l.label);
-    }
+    final (refs, customLabels) = await (
+      _attachmentRefs(ids),
+      _customLabels(ids, recipientPubkey: recipientPubkey),
+    ).wait;
 
     return [
       for (final row in rows)
@@ -249,6 +306,10 @@ class EmailRepository {
           createdAt: row.createdAt,
           date: row.date,
           from: row.fromAddress,
+          fromName: row.fromName,
+          to: decodeAddresses(row.toAddresses),
+          cc: decodeAddresses(row.ccAddresses),
+          bcc: decodeAddresses(row.bccAddresses),
           subject: row.subject,
           bodyPlain: row.bodyPlain,
           folder: row.folder,
@@ -257,6 +318,52 @@ class EmailRepository {
           labels: customLabels[row.id] ?? const [],
         ),
     ];
+  }
+
+  /// Attachment metadata for [ids], keyed by email id, in MIME tree order.
+  Future<Map<String, List<AttachmentRef>>> _attachmentRefs(
+    List<String> ids,
+  ) async {
+    final rows =
+        await (_db.select(_db.attachments)
+              ..where((a) => a.emailId.isIn(ids))
+              ..orderBy([(a) => OrderingTerm.asc(a.position)]))
+            .get();
+    final refs = <String, List<AttachmentRef>>{};
+    for (final row in rows) {
+      refs
+          .putIfAbsent(row.emailId, () => [])
+          .add(
+            AttachmentRef(
+              filename: row.filename,
+              contentType: row.contentType,
+              size: row.size,
+              sha256: row.sha256,
+              contentId: row.contentId,
+            ),
+          );
+    }
+    return refs;
+  }
+
+  /// Non-folder labels of [ids], keyed by email id.
+  Future<Map<String, List<String>>> _customLabels(
+    List<String> ids, {
+    required String recipientPubkey,
+  }) async {
+    final rows =
+        await (_db.select(_db.labels)..where(
+              (l) =>
+                  l.emailId.isIn(ids) &
+                  l.recipientPubkey.equals(recipientPubkey),
+            ))
+            .get();
+    final byEmail = <String, List<String>>{};
+    for (final row in rows) {
+      if (_isStateLabel(row.label)) continue;
+      byEmail.putIfAbsent(row.emailId, () => []).add(row.label);
+    }
+    return byEmail;
   }
 
   static bool _isStateLabel(String label) =>
@@ -277,6 +384,10 @@ class EmailRepository {
     createdAt: r.createdAt,
     date: r.date,
     fromAddress: r.from,
+    fromName: r.fromName,
+    toAddresses: encodeAddresses(r.to),
+    ccAddresses: encodeAddresses(r.cc),
+    bccAddresses: encodeAddresses(r.bcc),
     subject: r.subject,
     bodyPlain: r.bodyPlain,
   );

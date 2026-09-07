@@ -25,8 +25,10 @@ import 'constants.dart';
 import 'exceptions.dart';
 import 'models/attachment_ref.dart';
 import 'models/email.dart';
+import 'models/email_summary.dart';
 import 'models/gift_wrap_state.dart';
 import 'models/mail_event.dart';
+import 'models/paginated_result.dart';
 import 'models/private_settings.dart';
 import 'models/recipient.dart';
 import 'models/scheduled_email.dart';
@@ -318,6 +320,44 @@ class NostrMailClient {
       ),
     );
     return result.items.map((r) => r.toEmail()).toList();
+  }
+
+  /// List rows for a mailbox, without reading or parsing any MIME.
+  ///
+  /// This is what a message list should call. [getInboxEmails] and friends
+  /// return full [Email] objects, each holding the message body and, once
+  /// [Email.mime] is read, its parsed part tree: fine for one open email,
+  /// far too much for a screenful of rows.
+  ///
+  /// [folder] is `'inbox'`, `'sent'`, `'trash'`, `'archive'`, `'spam'`, or
+  /// null to span every folder. Pass [limit] and [offset] to page: without
+  /// [limit] the whole mailbox is returned. [search] matches the same indexed
+  /// text as [search].
+  ///
+  /// The result carries the matching `total` and a `hasMore`, so an endless
+  /// list knows when to stop asking. Load the full message with [getEmail]
+  /// when the user opens a row.
+  Future<PaginatedResult<EmailSummary>> getSummaries({
+    String? folder,
+    bool? isRead,
+    bool? isStarred,
+    bool? hasAttachments,
+    String? search,
+    int? limit,
+    int? offset,
+  }) {
+    return _emailRepo.querySummaries(
+      EmailQuery(
+        recipientPubkey: _requirePubkey(),
+        folder: folder,
+        isRead: isRead,
+        isStarred: isStarred,
+        hasAttachments: hasAttachments,
+        search: search,
+        limit: limit,
+        offset: offset,
+      ),
+    );
   }
 
   Future<Email?> getEmail(String id) async {

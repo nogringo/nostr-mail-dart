@@ -1,3 +1,5 @@
+import 'package:enough_mail_plus/enough_mail.dart';
+
 import '../../models/attachment_ref.dart';
 import '../../models/email.dart';
 
@@ -44,6 +46,15 @@ class EmailRecord {
   // ── Extracted from MIME, indexed for search ─────────────────────────────
 
   final String from;
+
+  /// Sender display name, when the MIME carried one. Absent for a nostr
+  /// sender addressed as `<npub>@nostr`, whose name lives in their profile.
+  final String? fromName;
+
+  final List<MailAddress> to;
+  final List<MailAddress> cc;
+  final List<MailAddress> bcc;
+
   final String subject;
 
   /// Plain-text body (HTML stripped if needed).
@@ -76,6 +87,10 @@ class EmailRecord {
     required this.bodyPlain,
     required this.folder,
     required this.isBridged,
+    this.fromName,
+    this.to = const [],
+    this.cc = const [],
+    this.bcc = const [],
     this.isRead = false,
     this.isStarred = false,
     this.labels = const [],
@@ -107,6 +122,10 @@ class EmailRecord {
       createdAt: email.createdAt.millisecondsSinceEpoch ~/ 1000,
       date: email.date.millisecondsSinceEpoch ~/ 1000,
       from: email.sender?.email ?? email.mime.fromEmail ?? '',
+      fromName: email.sender?.personalName,
+      to: email.mime.to ?? const [],
+      cc: email.mime.cc ?? const [],
+      bcc: email.mime.bcc ?? const [],
       subject: email.subject ?? '',
       bodyPlain: email.textBody ?? email.body,
       folder: naturalFolder(

@@ -126,10 +126,49 @@ client.watchInbox().listen((email) {
 });
 ```
 
+### List a mailbox
+
+`getSummaries` is what a message list should call. It reads only the indexed
+columns a row draws, so it never touches the stored MIME nor parses it.
+
+```dart
+final page = await client.getSummaries(
+  folder: 'inbox',
+  limit: 50,
+  offset: 0,
+);
+
+print('${page.items.length} of ${page.total}');
+if (page.hasMore) {
+  // fetch the next page with offset: page.offset + page.items.length
+}
+
+for (final row in page.items) {
+  print('${row.isRead ? ' ' : '*'} ${row.isStarred ? '★' : ' '} '
+      '${row.fromName ?? row.from}: ${row.subject}');
+  print('  ${row.preview}');
+  if (row.hasAttachments) {
+    print('  ${row.attachmentRefs.map((a) => a.filename).join(', ')}');
+  }
+}
+```
+
+A row also carries `to`, `cc`, `bcc`, `date`, `folder`, `labels`, `isPublic`
+and `isBridged`. For a native nostr sender, `from` is `<npub>@nostr` and the
+real name lives in the profile behind `senderPubkey`: resolve that first and
+fall back to `fromName ?? from`.
+
+Load the whole message, body and MIME included, only when a row is opened:
+
+```dart
+final email = await client.getEmail(row.id);
+```
+
 ### Manage local emails
 
 ```dart
-// Get all cached emails (sorted by date, newest first)
+// Get all cached emails (sorted by date, newest first). These carry the full
+// message: prefer getSummaries above for anything list-shaped.
 final emails = await client.getEmails(limit: 20, offset: 0);
 
 // Get a specific email by ID

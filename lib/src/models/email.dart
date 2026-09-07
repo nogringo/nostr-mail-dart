@@ -44,13 +44,22 @@ class Email {
   /// when relaying an inbound SMTP email to a nostr user).
   final bool isBridged;
 
-  late final MimeMessage _mimeMessage;
+  final MimeMessage? _providedMime;
+
+  /// Parsing walks the whole part tree and copies every body out of
+  /// [lightMimeText], so it waits until something actually reads the MIME.
+  late final MimeMessage _mimeMessage =
+      _providedMime ?? MimeMessage.parseFromText(lightMimeText);
 
   /// The parsed MIME message. Attachment parts are present in the tree
   /// (with intact headers including filename, content-type, content-id)
   /// but their bodies are empty. To get the bytes of an attachment, use
   /// the matching [AttachmentRef] from [attachmentRefs] and call
   /// `client.getAttachmentBytes(email, ref)`.
+  ///
+  /// Reading this parses [lightMimeText] on first access and holds the result
+  /// for the lifetime of this object. To list emails without paying for it,
+  /// use `client.getSummaries()` instead.
   MimeMessage get mime => _mimeMessage;
 
   Email({
@@ -66,9 +75,7 @@ class Email {
     this.decryptionNonce,
     this.isPublic = false,
     MimeMessage? mimeMessage,
-  }) {
-    _mimeMessage = mimeMessage ?? MimeMessage.parseFromText(lightMimeText);
-  }
+  }) : _providedMime = mimeMessage;
 
   /// Get the email subject.
   String? get subject => _mimeMessage.decodeSubject();

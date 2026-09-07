@@ -102,18 +102,3 @@ class EmailQuery {
 }
 
 enum EmailSort { dateDesc, dateAsc }
-
-/// Generic paginated result.
-class PaginatedResult<T> {
-  final List<T> items;
-  final int total;
-  final int offset;
-
-  const PaginatedResult({
-    required this.items,
-    required this.total,
-    this.offset = 0,
-  });
-
-  bool get hasMore => items.isNotEmpty && offset + items.length < total;
-}

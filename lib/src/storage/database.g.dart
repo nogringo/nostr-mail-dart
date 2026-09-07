@@ -136,6 +136,17 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
     requiredDuringInsert: true,
     $customConstraints: 'NOT NULL',
   );
+  static const VerificationMeta _fromNameMeta = const VerificationMeta(
+    'fromName',
+  );
+  late final GeneratedColumn<String> fromName = GeneratedColumn<String>(
+    'from_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: '',
+  );
   static const VerificationMeta _subjectMeta = const VerificationMeta(
     'subject',
   );
@@ -158,6 +169,42 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
     requiredDuringInsert: true,
     $customConstraints: 'NOT NULL',
   );
+  static const VerificationMeta _toAddressesMeta = const VerificationMeta(
+    'toAddresses',
+  );
+  late final GeneratedColumn<String> toAddresses = GeneratedColumn<String>(
+    'to_addresses',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT \'[]\'',
+    defaultValue: const CustomExpression('\'[]\''),
+  );
+  static const VerificationMeta _ccAddressesMeta = const VerificationMeta(
+    'ccAddresses',
+  );
+  late final GeneratedColumn<String> ccAddresses = GeneratedColumn<String>(
+    'cc_addresses',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT \'[]\'',
+    defaultValue: const CustomExpression('\'[]\''),
+  );
+  static const VerificationMeta _bccAddressesMeta = const VerificationMeta(
+    'bccAddresses',
+  );
+  late final GeneratedColumn<String> bccAddresses = GeneratedColumn<String>(
+    'bcc_addresses',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT \'[]\'',
+    defaultValue: const CustomExpression('\'[]\''),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -172,8 +219,12 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
     createdAt,
     date,
     fromAddress,
+    fromName,
     subject,
     bodyPlain,
+    toAddresses,
+    ccAddresses,
+    bccAddresses,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -295,6 +346,12 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
     } else if (isInserting) {
       context.missing(_fromAddressMeta);
     }
+    if (data.containsKey('from_name')) {
+      context.handle(
+        _fromNameMeta,
+        fromName.isAcceptableOrUnknown(data['from_name']!, _fromNameMeta),
+      );
+    }
     if (data.containsKey('subject')) {
       context.handle(
         _subjectMeta,
@@ -310,6 +367,33 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
       );
     } else if (isInserting) {
       context.missing(_bodyPlainMeta);
+    }
+    if (data.containsKey('to_addresses')) {
+      context.handle(
+        _toAddressesMeta,
+        toAddresses.isAcceptableOrUnknown(
+          data['to_addresses']!,
+          _toAddressesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('cc_addresses')) {
+      context.handle(
+        _ccAddressesMeta,
+        ccAddresses.isAcceptableOrUnknown(
+          data['cc_addresses']!,
+          _ccAddressesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('bcc_addresses')) {
+      context.handle(
+        _bccAddressesMeta,
+        bccAddresses.isAcceptableOrUnknown(
+          data['bcc_addresses']!,
+          _bccAddressesMeta,
+        ),
+      );
     }
     return context;
   }
@@ -368,6 +452,10 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
         DriftSqlType.string,
         data['${effectivePrefix}from_address'],
       )!,
+      fromName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}from_name'],
+      ),
       subject: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}subject'],
@@ -375,6 +463,18 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
       bodyPlain: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}body_plain'],
+      )!,
+      toAddresses: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}to_addresses'],
+      )!,
+      ccAddresses: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cc_addresses'],
+      )!,
+      bccAddresses: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}bcc_addresses'],
       )!,
     );
   }
@@ -401,8 +501,15 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
   final int createdAt;
   final int date;
   final String fromAddress;
+  final String? fromName;
   final String subject;
   final String bodyPlain;
+
+  /// JSON arrays of {name, email}, so a listing draws the header line without
+  /// reading light_mime_text.
+  final String toAddresses;
+  final String ccAddresses;
+  final String bccAddresses;
   const EmailRow({
     required this.id,
     required this.senderPubkey,
@@ -416,8 +523,12 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     required this.createdAt,
     required this.date,
     required this.fromAddress,
+    this.fromName,
     required this.subject,
     required this.bodyPlain,
+    required this.toAddresses,
+    required this.ccAddresses,
+    required this.bccAddresses,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -440,8 +551,14 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     map['created_at'] = Variable<int>(createdAt);
     map['date'] = Variable<int>(date);
     map['from_address'] = Variable<String>(fromAddress);
+    if (!nullToAbsent || fromName != null) {
+      map['from_name'] = Variable<String>(fromName);
+    }
     map['subject'] = Variable<String>(subject);
     map['body_plain'] = Variable<String>(bodyPlain);
+    map['to_addresses'] = Variable<String>(toAddresses);
+    map['cc_addresses'] = Variable<String>(ccAddresses);
+    map['bcc_addresses'] = Variable<String>(bccAddresses);
     return map;
   }
 
@@ -465,8 +582,14 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
       createdAt: Value(createdAt),
       date: Value(date),
       fromAddress: Value(fromAddress),
+      fromName: fromName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(fromName),
       subject: Value(subject),
       bodyPlain: Value(bodyPlain),
+      toAddresses: Value(toAddresses),
+      ccAddresses: Value(ccAddresses),
+      bccAddresses: Value(bccAddresses),
     );
   }
 
@@ -488,8 +611,12 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
       createdAt: serializer.fromJson<int>(json['created_at']),
       date: serializer.fromJson<int>(json['date']),
       fromAddress: serializer.fromJson<String>(json['from_address']),
+      fromName: serializer.fromJson<String?>(json['from_name']),
       subject: serializer.fromJson<String>(json['subject']),
       bodyPlain: serializer.fromJson<String>(json['body_plain']),
+      toAddresses: serializer.fromJson<String>(json['to_addresses']),
+      ccAddresses: serializer.fromJson<String>(json['cc_addresses']),
+      bccAddresses: serializer.fromJson<String>(json['bcc_addresses']),
     );
   }
   @override
@@ -508,8 +635,12 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
       'created_at': serializer.toJson<int>(createdAt),
       'date': serializer.toJson<int>(date),
       'from_address': serializer.toJson<String>(fromAddress),
+      'from_name': serializer.toJson<String?>(fromName),
       'subject': serializer.toJson<String>(subject),
       'body_plain': serializer.toJson<String>(bodyPlain),
+      'to_addresses': serializer.toJson<String>(toAddresses),
+      'cc_addresses': serializer.toJson<String>(ccAddresses),
+      'bcc_addresses': serializer.toJson<String>(bccAddresses),
     };
   }
 
@@ -526,8 +657,12 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     int? createdAt,
     int? date,
     String? fromAddress,
+    Value<String?> fromName = const Value.absent(),
     String? subject,
     String? bodyPlain,
+    String? toAddresses,
+    String? ccAddresses,
+    String? bccAddresses,
   }) => EmailRow(
     id: id ?? this.id,
     senderPubkey: senderPubkey ?? this.senderPubkey,
@@ -545,8 +680,12 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     createdAt: createdAt ?? this.createdAt,
     date: date ?? this.date,
     fromAddress: fromAddress ?? this.fromAddress,
+    fromName: fromName.present ? fromName.value : this.fromName,
     subject: subject ?? this.subject,
     bodyPlain: bodyPlain ?? this.bodyPlain,
+    toAddresses: toAddresses ?? this.toAddresses,
+    ccAddresses: ccAddresses ?? this.ccAddresses,
+    bccAddresses: bccAddresses ?? this.bccAddresses,
   );
   EmailRow copyWithCompanion(EmailsCompanion data) {
     return EmailRow(
@@ -576,8 +715,18 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
       fromAddress: data.fromAddress.present
           ? data.fromAddress.value
           : this.fromAddress,
+      fromName: data.fromName.present ? data.fromName.value : this.fromName,
       subject: data.subject.present ? data.subject.value : this.subject,
       bodyPlain: data.bodyPlain.present ? data.bodyPlain.value : this.bodyPlain,
+      toAddresses: data.toAddresses.present
+          ? data.toAddresses.value
+          : this.toAddresses,
+      ccAddresses: data.ccAddresses.present
+          ? data.ccAddresses.value
+          : this.ccAddresses,
+      bccAddresses: data.bccAddresses.present
+          ? data.bccAddresses.value
+          : this.bccAddresses,
     );
   }
 
@@ -596,8 +745,12 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
           ..write('createdAt: $createdAt, ')
           ..write('date: $date, ')
           ..write('fromAddress: $fromAddress, ')
+          ..write('fromName: $fromName, ')
           ..write('subject: $subject, ')
-          ..write('bodyPlain: $bodyPlain')
+          ..write('bodyPlain: $bodyPlain, ')
+          ..write('toAddresses: $toAddresses, ')
+          ..write('ccAddresses: $ccAddresses, ')
+          ..write('bccAddresses: $bccAddresses')
           ..write(')'))
         .toString();
   }
@@ -616,8 +769,12 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     createdAt,
     date,
     fromAddress,
+    fromName,
     subject,
     bodyPlain,
+    toAddresses,
+    ccAddresses,
+    bccAddresses,
   );
   @override
   bool operator ==(Object other) =>
@@ -635,8 +792,12 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
           other.createdAt == this.createdAt &&
           other.date == this.date &&
           other.fromAddress == this.fromAddress &&
+          other.fromName == this.fromName &&
           other.subject == this.subject &&
-          other.bodyPlain == this.bodyPlain);
+          other.bodyPlain == this.bodyPlain &&
+          other.toAddresses == this.toAddresses &&
+          other.ccAddresses == this.ccAddresses &&
+          other.bccAddresses == this.bccAddresses);
 }
 
 class EmailsCompanion extends UpdateCompanion<EmailRow> {
@@ -652,8 +813,12 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
   final Value<int> createdAt;
   final Value<int> date;
   final Value<String> fromAddress;
+  final Value<String?> fromName;
   final Value<String> subject;
   final Value<String> bodyPlain;
+  final Value<String> toAddresses;
+  final Value<String> ccAddresses;
+  final Value<String> bccAddresses;
   final Value<int> rowid;
   const EmailsCompanion({
     this.id = const Value.absent(),
@@ -668,8 +833,12 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     this.createdAt = const Value.absent(),
     this.date = const Value.absent(),
     this.fromAddress = const Value.absent(),
+    this.fromName = const Value.absent(),
     this.subject = const Value.absent(),
     this.bodyPlain = const Value.absent(),
+    this.toAddresses = const Value.absent(),
+    this.ccAddresses = const Value.absent(),
+    this.bccAddresses = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   EmailsCompanion.insert({
@@ -685,8 +854,12 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     required int createdAt,
     required int date,
     required String fromAddress,
+    this.fromName = const Value.absent(),
     required String subject,
     required String bodyPlain,
+    this.toAddresses = const Value.absent(),
+    this.ccAddresses = const Value.absent(),
+    this.bccAddresses = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        senderPubkey = Value(senderPubkey),
@@ -712,8 +885,12 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     Expression<int>? createdAt,
     Expression<int>? date,
     Expression<String>? fromAddress,
+    Expression<String>? fromName,
     Expression<String>? subject,
     Expression<String>? bodyPlain,
+    Expression<String>? toAddresses,
+    Expression<String>? ccAddresses,
+    Expression<String>? bccAddresses,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -729,8 +906,12 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
       if (createdAt != null) 'created_at': createdAt,
       if (date != null) 'date': date,
       if (fromAddress != null) 'from_address': fromAddress,
+      if (fromName != null) 'from_name': fromName,
       if (subject != null) 'subject': subject,
       if (bodyPlain != null) 'body_plain': bodyPlain,
+      if (toAddresses != null) 'to_addresses': toAddresses,
+      if (ccAddresses != null) 'cc_addresses': ccAddresses,
+      if (bccAddresses != null) 'bcc_addresses': bccAddresses,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -748,8 +929,12 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     Value<int>? createdAt,
     Value<int>? date,
     Value<String>? fromAddress,
+    Value<String?>? fromName,
     Value<String>? subject,
     Value<String>? bodyPlain,
+    Value<String>? toAddresses,
+    Value<String>? ccAddresses,
+    Value<String>? bccAddresses,
     Value<int>? rowid,
   }) {
     return EmailsCompanion(
@@ -765,8 +950,12 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
       createdAt: createdAt ?? this.createdAt,
       date: date ?? this.date,
       fromAddress: fromAddress ?? this.fromAddress,
+      fromName: fromName ?? this.fromName,
       subject: subject ?? this.subject,
       bodyPlain: bodyPlain ?? this.bodyPlain,
+      toAddresses: toAddresses ?? this.toAddresses,
+      ccAddresses: ccAddresses ?? this.ccAddresses,
+      bccAddresses: bccAddresses ?? this.bccAddresses,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -810,11 +999,23 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     if (fromAddress.present) {
       map['from_address'] = Variable<String>(fromAddress.value);
     }
+    if (fromName.present) {
+      map['from_name'] = Variable<String>(fromName.value);
+    }
     if (subject.present) {
       map['subject'] = Variable<String>(subject.value);
     }
     if (bodyPlain.present) {
       map['body_plain'] = Variable<String>(bodyPlain.value);
+    }
+    if (toAddresses.present) {
+      map['to_addresses'] = Variable<String>(toAddresses.value);
+    }
+    if (ccAddresses.present) {
+      map['cc_addresses'] = Variable<String>(ccAddresses.value);
+    }
+    if (bccAddresses.present) {
+      map['bcc_addresses'] = Variable<String>(bccAddresses.value);
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -837,8 +1038,12 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
           ..write('createdAt: $createdAt, ')
           ..write('date: $date, ')
           ..write('fromAddress: $fromAddress, ')
+          ..write('fromName: $fromName, ')
           ..write('subject: $subject, ')
           ..write('bodyPlain: $bodyPlain, ')
+          ..write('toAddresses: $toAddresses, ')
+          ..write('ccAddresses: $ccAddresses, ')
+          ..write('bccAddresses: $bccAddresses, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2983,8 +3188,12 @@ class EmailState extends DataClass {
   final int createdAt;
   final int date;
   final String fromAddress;
+  final String? fromName;
   final String subject;
   final String bodyPlain;
+  final String toAddresses;
+  final String ccAddresses;
+  final String bccAddresses;
   final String folder;
   final bool isRead;
   final bool isStarred;
@@ -3001,8 +3210,12 @@ class EmailState extends DataClass {
     required this.createdAt,
     required this.date,
     required this.fromAddress,
+    this.fromName,
     required this.subject,
     required this.bodyPlain,
+    required this.toAddresses,
+    required this.ccAddresses,
+    required this.bccAddresses,
     required this.folder,
     required this.isRead,
     required this.isStarred,
@@ -3025,8 +3238,12 @@ class EmailState extends DataClass {
       createdAt: serializer.fromJson<int>(json['created_at']),
       date: serializer.fromJson<int>(json['date']),
       fromAddress: serializer.fromJson<String>(json['from_address']),
+      fromName: serializer.fromJson<String?>(json['from_name']),
       subject: serializer.fromJson<String>(json['subject']),
       bodyPlain: serializer.fromJson<String>(json['body_plain']),
+      toAddresses: serializer.fromJson<String>(json['to_addresses']),
+      ccAddresses: serializer.fromJson<String>(json['cc_addresses']),
+      bccAddresses: serializer.fromJson<String>(json['bcc_addresses']),
       folder: serializer.fromJson<String>(json['folder']),
       isRead: serializer.fromJson<bool>(json['is_read']),
       isStarred: serializer.fromJson<bool>(json['is_starred']),
@@ -3048,8 +3265,12 @@ class EmailState extends DataClass {
       'created_at': serializer.toJson<int>(createdAt),
       'date': serializer.toJson<int>(date),
       'from_address': serializer.toJson<String>(fromAddress),
+      'from_name': serializer.toJson<String?>(fromName),
       'subject': serializer.toJson<String>(subject),
       'body_plain': serializer.toJson<String>(bodyPlain),
+      'to_addresses': serializer.toJson<String>(toAddresses),
+      'cc_addresses': serializer.toJson<String>(ccAddresses),
+      'bcc_addresses': serializer.toJson<String>(bccAddresses),
       'folder': serializer.toJson<String>(folder),
       'is_read': serializer.toJson<bool>(isRead),
       'is_starred': serializer.toJson<bool>(isStarred),
@@ -3069,8 +3290,12 @@ class EmailState extends DataClass {
     int? createdAt,
     int? date,
     String? fromAddress,
+    Value<String?> fromName = const Value.absent(),
     String? subject,
     String? bodyPlain,
+    String? toAddresses,
+    String? ccAddresses,
+    String? bccAddresses,
     String? folder,
     bool? isRead,
     bool? isStarred,
@@ -3091,8 +3316,12 @@ class EmailState extends DataClass {
     createdAt: createdAt ?? this.createdAt,
     date: date ?? this.date,
     fromAddress: fromAddress ?? this.fromAddress,
+    fromName: fromName.present ? fromName.value : this.fromName,
     subject: subject ?? this.subject,
     bodyPlain: bodyPlain ?? this.bodyPlain,
+    toAddresses: toAddresses ?? this.toAddresses,
+    ccAddresses: ccAddresses ?? this.ccAddresses,
+    bccAddresses: bccAddresses ?? this.bccAddresses,
     folder: folder ?? this.folder,
     isRead: isRead ?? this.isRead,
     isStarred: isStarred ?? this.isStarred,
@@ -3112,8 +3341,12 @@ class EmailState extends DataClass {
           ..write('createdAt: $createdAt, ')
           ..write('date: $date, ')
           ..write('fromAddress: $fromAddress, ')
+          ..write('fromName: $fromName, ')
           ..write('subject: $subject, ')
           ..write('bodyPlain: $bodyPlain, ')
+          ..write('toAddresses: $toAddresses, ')
+          ..write('ccAddresses: $ccAddresses, ')
+          ..write('bccAddresses: $bccAddresses, ')
           ..write('folder: $folder, ')
           ..write('isRead: $isRead, ')
           ..write('isStarred: $isStarred')
@@ -3122,7 +3355,7 @@ class EmailState extends DataClass {
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     id,
     senderPubkey,
     recipientPubkey,
@@ -3135,12 +3368,16 @@ class EmailState extends DataClass {
     createdAt,
     date,
     fromAddress,
+    fromName,
     subject,
     bodyPlain,
+    toAddresses,
+    ccAddresses,
+    bccAddresses,
     folder,
     isRead,
     isStarred,
-  );
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -3157,8 +3394,12 @@ class EmailState extends DataClass {
           other.createdAt == this.createdAt &&
           other.date == this.date &&
           other.fromAddress == this.fromAddress &&
+          other.fromName == this.fromName &&
           other.subject == this.subject &&
           other.bodyPlain == this.bodyPlain &&
+          other.toAddresses == this.toAddresses &&
+          other.ccAddresses == this.ccAddresses &&
+          other.bccAddresses == this.bccAddresses &&
           other.folder == this.folder &&
           other.isRead == this.isRead &&
           other.isStarred == this.isStarred);
@@ -3184,8 +3425,12 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
     createdAt,
     date,
     fromAddress,
+    fromName,
     subject,
     bodyPlain,
+    toAddresses,
+    ccAddresses,
+    bccAddresses,
     folder,
     isRead,
     isStarred,
@@ -3253,6 +3498,10 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
         DriftSqlType.string,
         data['${effectivePrefix}from_address'],
       )!,
+      fromName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}from_name'],
+      ),
       subject: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}subject'],
@@ -3260,6 +3509,18 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
       bodyPlain: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}body_plain'],
+      )!,
+      toAddresses: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}to_addresses'],
+      )!,
+      ccAddresses: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cc_addresses'],
+      )!,
+      bccAddresses: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}bcc_addresses'],
       )!,
       folder: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -3354,6 +3615,12 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
     false,
     type: DriftSqlType.string,
   );
+  late final GeneratedColumn<String> fromName = GeneratedColumn<String>(
+    'from_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+  );
   late final GeneratedColumn<String> subject = GeneratedColumn<String>(
     'subject',
     aliasedName,
@@ -3362,6 +3629,24 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
   );
   late final GeneratedColumn<String> bodyPlain = GeneratedColumn<String>(
     'body_plain',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+  );
+  late final GeneratedColumn<String> toAddresses = GeneratedColumn<String>(
+    'to_addresses',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+  );
+  late final GeneratedColumn<String> ccAddresses = GeneratedColumn<String>(
+    'cc_addresses',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+  );
+  late final GeneratedColumn<String> bccAddresses = GeneratedColumn<String>(
+    'bcc_addresses',
     aliasedName,
     false,
     type: DriftSqlType.string,
@@ -3697,6 +3982,10 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
     'labels_recipient_label',
     'CREATE INDEX labels_recipient_label ON labels (recipient_pubkey, label)',
   );
+  late final Index labelsEmailRecipient = Index(
+    'labels_email_recipient',
+    'CREATE INDEX labels_email_recipient ON labels (email_id, recipient_pubkey, label)',
+  );
   late final GiftWraps giftWraps = GiftWraps(this);
   late final Index giftWrapsRecipientStage = Index(
     'gift_wraps_recipient_stage',
@@ -3733,6 +4022,7 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
     attachments,
     labels,
     labelsRecipientLabel,
+    labelsEmailRecipient,
     giftWraps,
     giftWrapsRecipientStage,
     unsealed,
@@ -3792,8 +4082,12 @@ typedef $EmailsCreateCompanionBuilder =
       required int createdAt,
       required int date,
       required String fromAddress,
+      Value<String?> fromName,
       required String subject,
       required String bodyPlain,
+      Value<String> toAddresses,
+      Value<String> ccAddresses,
+      Value<String> bccAddresses,
       Value<int> rowid,
     });
 typedef $EmailsUpdateCompanionBuilder =
@@ -3810,8 +4104,12 @@ typedef $EmailsUpdateCompanionBuilder =
       Value<int> createdAt,
       Value<int> date,
       Value<String> fromAddress,
+      Value<String?> fromName,
       Value<String> subject,
       Value<String> bodyPlain,
+      Value<String> toAddresses,
+      Value<String> ccAddresses,
+      Value<String> bccAddresses,
       Value<int> rowid,
     });
 
@@ -3907,6 +4205,11 @@ class $EmailsFilterComposer extends Composer<_$NostrMailDatabase, Emails> {
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get fromName => $composableBuilder(
+    column: $table.fromName,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get subject => $composableBuilder(
     column: $table.subject,
     builder: (column) => ColumnFilters(column),
@@ -3914,6 +4217,21 @@ class $EmailsFilterComposer extends Composer<_$NostrMailDatabase, Emails> {
 
   ColumnFilters<String> get bodyPlain => $composableBuilder(
     column: $table.bodyPlain,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get toAddresses => $composableBuilder(
+    column: $table.toAddresses,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ccAddresses => $composableBuilder(
+    column: $table.ccAddresses,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get bccAddresses => $composableBuilder(
+    column: $table.bccAddresses,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4011,6 +4329,11 @@ class $EmailsOrderingComposer extends Composer<_$NostrMailDatabase, Emails> {
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get fromName => $composableBuilder(
+    column: $table.fromName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get subject => $composableBuilder(
     column: $table.subject,
     builder: (column) => ColumnOrderings(column),
@@ -4018,6 +4341,21 @@ class $EmailsOrderingComposer extends Composer<_$NostrMailDatabase, Emails> {
 
   ColumnOrderings<String> get bodyPlain => $composableBuilder(
     column: $table.bodyPlain,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get toAddresses => $composableBuilder(
+    column: $table.toAddresses,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get ccAddresses => $composableBuilder(
+    column: $table.ccAddresses,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get bccAddresses => $composableBuilder(
+    column: $table.bccAddresses,
     builder: (column) => ColumnOrderings(column),
   );
 }
@@ -4080,11 +4418,29 @@ class $EmailsAnnotationComposer extends Composer<_$NostrMailDatabase, Emails> {
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get fromName =>
+      $composableBuilder(column: $table.fromName, builder: (column) => column);
+
   GeneratedColumn<String> get subject =>
       $composableBuilder(column: $table.subject, builder: (column) => column);
 
   GeneratedColumn<String> get bodyPlain =>
       $composableBuilder(column: $table.bodyPlain, builder: (column) => column);
+
+  GeneratedColumn<String> get toAddresses => $composableBuilder(
+    column: $table.toAddresses,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get ccAddresses => $composableBuilder(
+    column: $table.ccAddresses,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get bccAddresses => $composableBuilder(
+    column: $table.bccAddresses,
+    builder: (column) => column,
+  );
 
   Expression<T> attachmentsRefs<T extends Object>(
     Expression<T> Function($AttachmentsAnnotationComposer a) f,
@@ -4152,8 +4508,12 @@ class $EmailsTableManager
                 Value<int> createdAt = const Value.absent(),
                 Value<int> date = const Value.absent(),
                 Value<String> fromAddress = const Value.absent(),
+                Value<String?> fromName = const Value.absent(),
                 Value<String> subject = const Value.absent(),
                 Value<String> bodyPlain = const Value.absent(),
+                Value<String> toAddresses = const Value.absent(),
+                Value<String> ccAddresses = const Value.absent(),
+                Value<String> bccAddresses = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => EmailsCompanion(
                 id: id,
@@ -4168,8 +4528,12 @@ class $EmailsTableManager
                 createdAt: createdAt,
                 date: date,
                 fromAddress: fromAddress,
+                fromName: fromName,
                 subject: subject,
                 bodyPlain: bodyPlain,
+                toAddresses: toAddresses,
+                ccAddresses: ccAddresses,
+                bccAddresses: bccAddresses,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -4186,8 +4550,12 @@ class $EmailsTableManager
                 required int createdAt,
                 required int date,
                 required String fromAddress,
+                Value<String?> fromName = const Value.absent(),
                 required String subject,
                 required String bodyPlain,
+                Value<String> toAddresses = const Value.absent(),
+                Value<String> ccAddresses = const Value.absent(),
+                Value<String> bccAddresses = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => EmailsCompanion.insert(
                 id: id,
@@ -4202,8 +4570,12 @@ class $EmailsTableManager
                 createdAt: createdAt,
                 date: date,
                 fromAddress: fromAddress,
+                fromName: fromName,
                 subject: subject,
                 bodyPlain: bodyPlain,
+                toAddresses: toAddresses,
+                ccAddresses: ccAddresses,
+                bccAddresses: bccAddresses,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

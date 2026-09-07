@@ -20,7 +20,7 @@ class NostrMailDatabase extends _$NostrMailDatabase {
   /// recreates it instead of migrating. Indexes are dropped either way: they
   /// hold nothing of their own, and `createAll` would trip over one it finds.
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   bool _droppedProjection = false;
 

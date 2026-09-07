@@ -11,8 +11,14 @@ CREATE TABLE emails (
   created_at INTEGER NOT NULL,
   date INTEGER NOT NULL,
   from_address TEXT NOT NULL,
+  from_name TEXT,
   subject TEXT NOT NULL,
-  body_plain TEXT NOT NULL
+  body_plain TEXT NOT NULL,
+  -- JSON arrays of {name, email}, so a listing draws the header line without
+  -- reading light_mime_text.
+  to_addresses TEXT NOT NULL DEFAULT '[]',
+  cc_addresses TEXT NOT NULL DEFAULT '[]',
+  bcc_addresses TEXT NOT NULL DEFAULT '[]'
 ) AS EmailRow;
 CREATE INDEX emails_recipient_date ON emails (recipient_pubkey, date);
 
@@ -37,6 +43,11 @@ CREATE TABLE labels (
   PRIMARY KEY (email_id, label)
 ) AS LabelRow;
 CREATE INDEX labels_recipient_label ON labels (recipient_pubkey, label);
+-- email_states resolves the folder, read and starred state per row through
+-- correlated subqueries keyed on email_id. Without this, each one rescans
+-- every label of the account and any query filtering on folder walks the
+-- whole mailbox.
+CREATE INDEX labels_email_recipient ON labels (email_id, recipient_pubkey, label);
 
 CREATE TABLE gift_wraps (
   id TEXT NOT NULL PRIMARY KEY,
