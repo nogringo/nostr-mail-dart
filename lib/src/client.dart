@@ -100,7 +100,8 @@ class NostrMailClient {
   /// [database] is the mail store, a drift database the caller opens
   /// (`NativeDatabase` on native, `WasmDatabase.open(...).resolvedExecutor` on
   /// web) and closes after [dispose]. A schema bump drops and rebuilds its
-  /// tables from the NDK cache when it is opened, without network.
+  /// computed tables from the NDK cache when it is opened, without network and
+  /// without a signer: the NIP-44 output a wrap already yielded is kept.
   ///
   /// [db] is the sembast database shared with the broadcast queue, the
   /// Blossom upload queue, the event scheduler and the sync engine. Versions
@@ -150,6 +151,7 @@ class NostrMailClient {
     List<String>? schedulerDvmReadRelays,
   }) async {
     await dropLegacySembastStores(db);
+    final rebuildOwed = await database.openAndReportDrop();
     syncEngine.start();
     final emailRepo = EmailRepository(database);
     final labelRepo = LabelRepository(database);
@@ -217,6 +219,7 @@ class NostrMailClient {
     // and revisit it, so it happens here rather than on a first call the
     // caller has to remember. The relay lookups it needs are not worth
     // delaying `create()` for: the engine walks on once they land.
+    if (rebuildOwed) mailSync.oweRebuild();
     mailSync.followActiveAccount();
     mailSync.declare().ignore();
 

@@ -1737,35 +1737,6 @@ class GiftWraps extends Table with TableInfo<GiftWraps, GiftWrapRow> {
     requiredDuringInsert: true,
     $customConstraints: 'NOT NULL',
   );
-  static const VerificationMeta _sealMeta = const VerificationMeta('seal');
-  late final GeneratedColumn<String> seal = GeneratedColumn<String>(
-    'seal',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-    $customConstraints: '',
-  );
-  static const VerificationMeta _rumorMeta = const VerificationMeta('rumor');
-  late final GeneratedColumn<String> rumor = GeneratedColumn<String>(
-    'rumor',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-    $customConstraints: '',
-  );
-  static const VerificationMeta _rumorIdMeta = const VerificationMeta(
-    'rumorId',
-  );
-  late final GeneratedColumn<String> rumorId = GeneratedColumn<String>(
-    'rumor_id',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-    $customConstraints: '',
-  );
   static const VerificationMeta _stageMeta = const VerificationMeta('stage');
   late final GeneratedColumn<String> stage = GeneratedColumn<String>(
     'stage',
@@ -1803,9 +1774,6 @@ class GiftWraps extends Table with TableInfo<GiftWraps, GiftWrapRow> {
     id,
     recipientPubkey,
     event,
-    seal,
-    rumor,
-    rumorId,
     stage,
     attempts,
     failure,
@@ -1845,24 +1813,6 @@ class GiftWraps extends Table with TableInfo<GiftWraps, GiftWrapRow> {
       );
     } else if (isInserting) {
       context.missing(_eventMeta);
-    }
-    if (data.containsKey('seal')) {
-      context.handle(
-        _sealMeta,
-        seal.isAcceptableOrUnknown(data['seal']!, _sealMeta),
-      );
-    }
-    if (data.containsKey('rumor')) {
-      context.handle(
-        _rumorMeta,
-        rumor.isAcceptableOrUnknown(data['rumor']!, _rumorMeta),
-      );
-    }
-    if (data.containsKey('rumor_id')) {
-      context.handle(
-        _rumorIdMeta,
-        rumorId.isAcceptableOrUnknown(data['rumor_id']!, _rumorIdMeta),
-      );
     }
     if (data.containsKey('stage')) {
       context.handle(
@@ -1905,18 +1855,6 @@ class GiftWraps extends Table with TableInfo<GiftWraps, GiftWrapRow> {
         DriftSqlType.string,
         data['${effectivePrefix}event'],
       )!,
-      seal: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}seal'],
-      ),
-      rumor: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}rumor'],
-      ),
-      rumorId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}rumor_id'],
-      ),
       stage: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}stage'],
@@ -1945,9 +1883,6 @@ class GiftWrapRow extends DataClass implements Insertable<GiftWrapRow> {
   final String id;
   final String recipientPubkey;
   final String event;
-  final String? seal;
-  final String? rumor;
-  final String? rumorId;
   final String stage;
   final int attempts;
   final String? failure;
@@ -1955,9 +1890,6 @@ class GiftWrapRow extends DataClass implements Insertable<GiftWrapRow> {
     required this.id,
     required this.recipientPubkey,
     required this.event,
-    this.seal,
-    this.rumor,
-    this.rumorId,
     required this.stage,
     required this.attempts,
     this.failure,
@@ -1968,15 +1900,6 @@ class GiftWrapRow extends DataClass implements Insertable<GiftWrapRow> {
     map['id'] = Variable<String>(id);
     map['recipient_pubkey'] = Variable<String>(recipientPubkey);
     map['event'] = Variable<String>(event);
-    if (!nullToAbsent || seal != null) {
-      map['seal'] = Variable<String>(seal);
-    }
-    if (!nullToAbsent || rumor != null) {
-      map['rumor'] = Variable<String>(rumor);
-    }
-    if (!nullToAbsent || rumorId != null) {
-      map['rumor_id'] = Variable<String>(rumorId);
-    }
     map['stage'] = Variable<String>(stage);
     map['attempts'] = Variable<int>(attempts);
     if (!nullToAbsent || failure != null) {
@@ -1990,13 +1913,6 @@ class GiftWrapRow extends DataClass implements Insertable<GiftWrapRow> {
       id: Value(id),
       recipientPubkey: Value(recipientPubkey),
       event: Value(event),
-      seal: seal == null && nullToAbsent ? const Value.absent() : Value(seal),
-      rumor: rumor == null && nullToAbsent
-          ? const Value.absent()
-          : Value(rumor),
-      rumorId: rumorId == null && nullToAbsent
-          ? const Value.absent()
-          : Value(rumorId),
       stage: Value(stage),
       attempts: Value(attempts),
       failure: failure == null && nullToAbsent
@@ -2014,9 +1930,6 @@ class GiftWrapRow extends DataClass implements Insertable<GiftWrapRow> {
       id: serializer.fromJson<String>(json['id']),
       recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
       event: serializer.fromJson<String>(json['event']),
-      seal: serializer.fromJson<String?>(json['seal']),
-      rumor: serializer.fromJson<String?>(json['rumor']),
-      rumorId: serializer.fromJson<String?>(json['rumor_id']),
       stage: serializer.fromJson<String>(json['stage']),
       attempts: serializer.fromJson<int>(json['attempts']),
       failure: serializer.fromJson<String?>(json['failure']),
@@ -2029,9 +1942,6 @@ class GiftWrapRow extends DataClass implements Insertable<GiftWrapRow> {
       'id': serializer.toJson<String>(id),
       'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
       'event': serializer.toJson<String>(event),
-      'seal': serializer.toJson<String?>(seal),
-      'rumor': serializer.toJson<String?>(rumor),
-      'rumor_id': serializer.toJson<String?>(rumorId),
       'stage': serializer.toJson<String>(stage),
       'attempts': serializer.toJson<int>(attempts),
       'failure': serializer.toJson<String?>(failure),
@@ -2042,9 +1952,6 @@ class GiftWrapRow extends DataClass implements Insertable<GiftWrapRow> {
     String? id,
     String? recipientPubkey,
     String? event,
-    Value<String?> seal = const Value.absent(),
-    Value<String?> rumor = const Value.absent(),
-    Value<String?> rumorId = const Value.absent(),
     String? stage,
     int? attempts,
     Value<String?> failure = const Value.absent(),
@@ -2052,9 +1959,6 @@ class GiftWrapRow extends DataClass implements Insertable<GiftWrapRow> {
     id: id ?? this.id,
     recipientPubkey: recipientPubkey ?? this.recipientPubkey,
     event: event ?? this.event,
-    seal: seal.present ? seal.value : this.seal,
-    rumor: rumor.present ? rumor.value : this.rumor,
-    rumorId: rumorId.present ? rumorId.value : this.rumorId,
     stage: stage ?? this.stage,
     attempts: attempts ?? this.attempts,
     failure: failure.present ? failure.value : this.failure,
@@ -2066,9 +1970,6 @@ class GiftWrapRow extends DataClass implements Insertable<GiftWrapRow> {
           ? data.recipientPubkey.value
           : this.recipientPubkey,
       event: data.event.present ? data.event.value : this.event,
-      seal: data.seal.present ? data.seal.value : this.seal,
-      rumor: data.rumor.present ? data.rumor.value : this.rumor,
-      rumorId: data.rumorId.present ? data.rumorId.value : this.rumorId,
       stage: data.stage.present ? data.stage.value : this.stage,
       attempts: data.attempts.present ? data.attempts.value : this.attempts,
       failure: data.failure.present ? data.failure.value : this.failure,
@@ -2081,9 +1982,6 @@ class GiftWrapRow extends DataClass implements Insertable<GiftWrapRow> {
           ..write('id: $id, ')
           ..write('recipientPubkey: $recipientPubkey, ')
           ..write('event: $event, ')
-          ..write('seal: $seal, ')
-          ..write('rumor: $rumor, ')
-          ..write('rumorId: $rumorId, ')
           ..write('stage: $stage, ')
           ..write('attempts: $attempts, ')
           ..write('failure: $failure')
@@ -2092,17 +1990,8 @@ class GiftWrapRow extends DataClass implements Insertable<GiftWrapRow> {
   }
 
   @override
-  int get hashCode => Object.hash(
-    id,
-    recipientPubkey,
-    event,
-    seal,
-    rumor,
-    rumorId,
-    stage,
-    attempts,
-    failure,
-  );
+  int get hashCode =>
+      Object.hash(id, recipientPubkey, event, stage, attempts, failure);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2110,9 +1999,6 @@ class GiftWrapRow extends DataClass implements Insertable<GiftWrapRow> {
           other.id == this.id &&
           other.recipientPubkey == this.recipientPubkey &&
           other.event == this.event &&
-          other.seal == this.seal &&
-          other.rumor == this.rumor &&
-          other.rumorId == this.rumorId &&
           other.stage == this.stage &&
           other.attempts == this.attempts &&
           other.failure == this.failure);
@@ -2122,9 +2008,6 @@ class GiftWrapsCompanion extends UpdateCompanion<GiftWrapRow> {
   final Value<String> id;
   final Value<String> recipientPubkey;
   final Value<String> event;
-  final Value<String?> seal;
-  final Value<String?> rumor;
-  final Value<String?> rumorId;
   final Value<String> stage;
   final Value<int> attempts;
   final Value<String?> failure;
@@ -2133,9 +2016,6 @@ class GiftWrapsCompanion extends UpdateCompanion<GiftWrapRow> {
     this.id = const Value.absent(),
     this.recipientPubkey = const Value.absent(),
     this.event = const Value.absent(),
-    this.seal = const Value.absent(),
-    this.rumor = const Value.absent(),
-    this.rumorId = const Value.absent(),
     this.stage = const Value.absent(),
     this.attempts = const Value.absent(),
     this.failure = const Value.absent(),
@@ -2145,9 +2025,6 @@ class GiftWrapsCompanion extends UpdateCompanion<GiftWrapRow> {
     required String id,
     required String recipientPubkey,
     required String event,
-    this.seal = const Value.absent(),
-    this.rumor = const Value.absent(),
-    this.rumorId = const Value.absent(),
     required String stage,
     this.attempts = const Value.absent(),
     this.failure = const Value.absent(),
@@ -2160,9 +2037,6 @@ class GiftWrapsCompanion extends UpdateCompanion<GiftWrapRow> {
     Expression<String>? id,
     Expression<String>? recipientPubkey,
     Expression<String>? event,
-    Expression<String>? seal,
-    Expression<String>? rumor,
-    Expression<String>? rumorId,
     Expression<String>? stage,
     Expression<int>? attempts,
     Expression<String>? failure,
@@ -2172,9 +2046,6 @@ class GiftWrapsCompanion extends UpdateCompanion<GiftWrapRow> {
       if (id != null) 'id': id,
       if (recipientPubkey != null) 'recipient_pubkey': recipientPubkey,
       if (event != null) 'event': event,
-      if (seal != null) 'seal': seal,
-      if (rumor != null) 'rumor': rumor,
-      if (rumorId != null) 'rumor_id': rumorId,
       if (stage != null) 'stage': stage,
       if (attempts != null) 'attempts': attempts,
       if (failure != null) 'failure': failure,
@@ -2186,9 +2057,6 @@ class GiftWrapsCompanion extends UpdateCompanion<GiftWrapRow> {
     Value<String>? id,
     Value<String>? recipientPubkey,
     Value<String>? event,
-    Value<String?>? seal,
-    Value<String?>? rumor,
-    Value<String?>? rumorId,
     Value<String>? stage,
     Value<int>? attempts,
     Value<String?>? failure,
@@ -2198,9 +2066,6 @@ class GiftWrapsCompanion extends UpdateCompanion<GiftWrapRow> {
       id: id ?? this.id,
       recipientPubkey: recipientPubkey ?? this.recipientPubkey,
       event: event ?? this.event,
-      seal: seal ?? this.seal,
-      rumor: rumor ?? this.rumor,
-      rumorId: rumorId ?? this.rumorId,
       stage: stage ?? this.stage,
       attempts: attempts ?? this.attempts,
       failure: failure ?? this.failure,
@@ -2219,15 +2084,6 @@ class GiftWrapsCompanion extends UpdateCompanion<GiftWrapRow> {
     }
     if (event.present) {
       map['event'] = Variable<String>(event.value);
-    }
-    if (seal.present) {
-      map['seal'] = Variable<String>(seal.value);
-    }
-    if (rumor.present) {
-      map['rumor'] = Variable<String>(rumor.value);
-    }
-    if (rumorId.present) {
-      map['rumor_id'] = Variable<String>(rumorId.value);
     }
     if (stage.present) {
       map['stage'] = Variable<String>(stage.value);
@@ -2250,12 +2106,378 @@ class GiftWrapsCompanion extends UpdateCompanion<GiftWrapRow> {
           ..write('id: $id, ')
           ..write('recipientPubkey: $recipientPubkey, ')
           ..write('event: $event, ')
-          ..write('seal: $seal, ')
-          ..write('rumor: $rumor, ')
-          ..write('rumorId: $rumorId, ')
           ..write('stage: $stage, ')
           ..write('attempts: $attempts, ')
           ..write('failure: $failure, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class Unsealed extends Table with TableInfo<Unsealed, UnsealedRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  Unsealed(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _wrapIdMeta = const VerificationMeta('wrapId');
+  late final GeneratedColumn<String> wrapId = GeneratedColumn<String>(
+    'wrap_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL PRIMARY KEY',
+  );
+  static const VerificationMeta _recipientPubkeyMeta = const VerificationMeta(
+    'recipientPubkey',
+  );
+  late final GeneratedColumn<String> recipientPubkey = GeneratedColumn<String>(
+    'recipient_pubkey',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _sealMeta = const VerificationMeta('seal');
+  late final GeneratedColumn<String> seal = GeneratedColumn<String>(
+    'seal',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _rumorMeta = const VerificationMeta('rumor');
+  late final GeneratedColumn<String> rumor = GeneratedColumn<String>(
+    'rumor',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _rumorIdMeta = const VerificationMeta(
+    'rumorId',
+  );
+  late final GeneratedColumn<String> rumorId = GeneratedColumn<String>(
+    'rumor_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    wrapId,
+    recipientPubkey,
+    seal,
+    rumor,
+    rumorId,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'unsealed';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<UnsealedRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('wrap_id')) {
+      context.handle(
+        _wrapIdMeta,
+        wrapId.isAcceptableOrUnknown(data['wrap_id']!, _wrapIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_wrapIdMeta);
+    }
+    if (data.containsKey('recipient_pubkey')) {
+      context.handle(
+        _recipientPubkeyMeta,
+        recipientPubkey.isAcceptableOrUnknown(
+          data['recipient_pubkey']!,
+          _recipientPubkeyMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_recipientPubkeyMeta);
+    }
+    if (data.containsKey('seal')) {
+      context.handle(
+        _sealMeta,
+        seal.isAcceptableOrUnknown(data['seal']!, _sealMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sealMeta);
+    }
+    if (data.containsKey('rumor')) {
+      context.handle(
+        _rumorMeta,
+        rumor.isAcceptableOrUnknown(data['rumor']!, _rumorMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_rumorMeta);
+    }
+    if (data.containsKey('rumor_id')) {
+      context.handle(
+        _rumorIdMeta,
+        rumorId.isAcceptableOrUnknown(data['rumor_id']!, _rumorIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_rumorIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {wrapId};
+  @override
+  UnsealedRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return UnsealedRow(
+      wrapId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}wrap_id'],
+      )!,
+      recipientPubkey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recipient_pubkey'],
+      )!,
+      seal: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}seal'],
+      )!,
+      rumor: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}rumor'],
+      )!,
+      rumorId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}rumor_id'],
+      )!,
+    );
+  }
+
+  @override
+  Unsealed createAlias(String alias) {
+    return Unsealed(attachedDatabase, alias);
+  }
+
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class UnsealedRow extends DataClass implements Insertable<UnsealedRow> {
+  final String wrapId;
+  final String recipientPubkey;
+  final String seal;
+  final String rumor;
+  final String rumorId;
+  const UnsealedRow({
+    required this.wrapId,
+    required this.recipientPubkey,
+    required this.seal,
+    required this.rumor,
+    required this.rumorId,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['wrap_id'] = Variable<String>(wrapId);
+    map['recipient_pubkey'] = Variable<String>(recipientPubkey);
+    map['seal'] = Variable<String>(seal);
+    map['rumor'] = Variable<String>(rumor);
+    map['rumor_id'] = Variable<String>(rumorId);
+    return map;
+  }
+
+  UnsealedCompanion toCompanion(bool nullToAbsent) {
+    return UnsealedCompanion(
+      wrapId: Value(wrapId),
+      recipientPubkey: Value(recipientPubkey),
+      seal: Value(seal),
+      rumor: Value(rumor),
+      rumorId: Value(rumorId),
+    );
+  }
+
+  factory UnsealedRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return UnsealedRow(
+      wrapId: serializer.fromJson<String>(json['wrap_id']),
+      recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
+      seal: serializer.fromJson<String>(json['seal']),
+      rumor: serializer.fromJson<String>(json['rumor']),
+      rumorId: serializer.fromJson<String>(json['rumor_id']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'wrap_id': serializer.toJson<String>(wrapId),
+      'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
+      'seal': serializer.toJson<String>(seal),
+      'rumor': serializer.toJson<String>(rumor),
+      'rumor_id': serializer.toJson<String>(rumorId),
+    };
+  }
+
+  UnsealedRow copyWith({
+    String? wrapId,
+    String? recipientPubkey,
+    String? seal,
+    String? rumor,
+    String? rumorId,
+  }) => UnsealedRow(
+    wrapId: wrapId ?? this.wrapId,
+    recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+    seal: seal ?? this.seal,
+    rumor: rumor ?? this.rumor,
+    rumorId: rumorId ?? this.rumorId,
+  );
+  UnsealedRow copyWithCompanion(UnsealedCompanion data) {
+    return UnsealedRow(
+      wrapId: data.wrapId.present ? data.wrapId.value : this.wrapId,
+      recipientPubkey: data.recipientPubkey.present
+          ? data.recipientPubkey.value
+          : this.recipientPubkey,
+      seal: data.seal.present ? data.seal.value : this.seal,
+      rumor: data.rumor.present ? data.rumor.value : this.rumor,
+      rumorId: data.rumorId.present ? data.rumorId.value : this.rumorId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UnsealedRow(')
+          ..write('wrapId: $wrapId, ')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('seal: $seal, ')
+          ..write('rumor: $rumor, ')
+          ..write('rumorId: $rumorId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(wrapId, recipientPubkey, seal, rumor, rumorId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is UnsealedRow &&
+          other.wrapId == this.wrapId &&
+          other.recipientPubkey == this.recipientPubkey &&
+          other.seal == this.seal &&
+          other.rumor == this.rumor &&
+          other.rumorId == this.rumorId);
+}
+
+class UnsealedCompanion extends UpdateCompanion<UnsealedRow> {
+  final Value<String> wrapId;
+  final Value<String> recipientPubkey;
+  final Value<String> seal;
+  final Value<String> rumor;
+  final Value<String> rumorId;
+  final Value<int> rowid;
+  const UnsealedCompanion({
+    this.wrapId = const Value.absent(),
+    this.recipientPubkey = const Value.absent(),
+    this.seal = const Value.absent(),
+    this.rumor = const Value.absent(),
+    this.rumorId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  UnsealedCompanion.insert({
+    required String wrapId,
+    required String recipientPubkey,
+    required String seal,
+    required String rumor,
+    required String rumorId,
+    this.rowid = const Value.absent(),
+  }) : wrapId = Value(wrapId),
+       recipientPubkey = Value(recipientPubkey),
+       seal = Value(seal),
+       rumor = Value(rumor),
+       rumorId = Value(rumorId);
+  static Insertable<UnsealedRow> custom({
+    Expression<String>? wrapId,
+    Expression<String>? recipientPubkey,
+    Expression<String>? seal,
+    Expression<String>? rumor,
+    Expression<String>? rumorId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (wrapId != null) 'wrap_id': wrapId,
+      if (recipientPubkey != null) 'recipient_pubkey': recipientPubkey,
+      if (seal != null) 'seal': seal,
+      if (rumor != null) 'rumor': rumor,
+      if (rumorId != null) 'rumor_id': rumorId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  UnsealedCompanion copyWith({
+    Value<String>? wrapId,
+    Value<String>? recipientPubkey,
+    Value<String>? seal,
+    Value<String>? rumor,
+    Value<String>? rumorId,
+    Value<int>? rowid,
+  }) {
+    return UnsealedCompanion(
+      wrapId: wrapId ?? this.wrapId,
+      recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+      seal: seal ?? this.seal,
+      rumor: rumor ?? this.rumor,
+      rumorId: rumorId ?? this.rumorId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (wrapId.present) {
+      map['wrap_id'] = Variable<String>(wrapId.value);
+    }
+    if (recipientPubkey.present) {
+      map['recipient_pubkey'] = Variable<String>(recipientPubkey.value);
+    }
+    if (seal.present) {
+      map['seal'] = Variable<String>(seal.value);
+    }
+    if (rumor.present) {
+      map['rumor'] = Variable<String>(rumor.value);
+    }
+    if (rumorId.present) {
+      map['rumor_id'] = Variable<String>(rumorId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UnsealedCompanion(')
+          ..write('wrapId: $wrapId, ')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('seal: $seal, ')
+          ..write('rumor: $rumor, ')
+          ..write('rumorId: $rumorId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3476,13 +3698,14 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
     'CREATE INDEX labels_recipient_label ON labels (recipient_pubkey, label)',
   );
   late final GiftWraps giftWraps = GiftWraps(this);
-  late final Index giftWrapsRumorId = Index(
-    'gift_wraps_rumor_id',
-    'CREATE INDEX gift_wraps_rumor_id ON gift_wraps (rumor_id)',
-  );
   late final Index giftWrapsRecipientStage = Index(
     'gift_wraps_recipient_stage',
     'CREATE INDEX gift_wraps_recipient_stage ON gift_wraps (recipient_pubkey, stage)',
+  );
+  late final Unsealed unsealed = Unsealed(this);
+  late final Index unsealedRumorId = Index(
+    'unsealed_rumor_id',
+    'CREATE INDEX unsealed_rumor_id ON unsealed (rumor_id)',
   );
   late final Tombstones tombstones = Tombstones(this);
   late final Settings settings = Settings(this);
@@ -3511,8 +3734,9 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
     labels,
     labelsRecipientLabel,
     giftWraps,
-    giftWrapsRumorId,
     giftWrapsRecipientStage,
+    unsealed,
+    unsealedRumorId,
     tombstones,
     settings,
     emailStates,
@@ -4597,9 +4821,6 @@ typedef $GiftWrapsCreateCompanionBuilder =
       required String id,
       required String recipientPubkey,
       required String event,
-      Value<String?> seal,
-      Value<String?> rumor,
-      Value<String?> rumorId,
       required String stage,
       Value<int> attempts,
       Value<String?> failure,
@@ -4610,9 +4831,6 @@ typedef $GiftWrapsUpdateCompanionBuilder =
       Value<String> id,
       Value<String> recipientPubkey,
       Value<String> event,
-      Value<String?> seal,
-      Value<String?> rumor,
-      Value<String?> rumorId,
       Value<String> stage,
       Value<int> attempts,
       Value<String?> failure,
@@ -4640,21 +4858,6 @@ class $GiftWrapsFilterComposer
 
   ColumnFilters<String> get event => $composableBuilder(
     column: $table.event,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get seal => $composableBuilder(
-    column: $table.seal,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get rumor => $composableBuilder(
-    column: $table.rumor,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get rumorId => $composableBuilder(
-    column: $table.rumorId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4698,21 +4901,6 @@ class $GiftWrapsOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get seal => $composableBuilder(
-    column: $table.seal,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get rumor => $composableBuilder(
-    column: $table.rumor,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get rumorId => $composableBuilder(
-    column: $table.rumorId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<String> get stage => $composableBuilder(
     column: $table.stage,
     builder: (column) => ColumnOrderings(column),
@@ -4748,15 +4936,6 @@ class $GiftWrapsAnnotationComposer
 
   GeneratedColumn<String> get event =>
       $composableBuilder(column: $table.event, builder: (column) => column);
-
-  GeneratedColumn<String> get seal =>
-      $composableBuilder(column: $table.seal, builder: (column) => column);
-
-  GeneratedColumn<String> get rumor =>
-      $composableBuilder(column: $table.rumor, builder: (column) => column);
-
-  GeneratedColumn<String> get rumorId =>
-      $composableBuilder(column: $table.rumorId, builder: (column) => column);
 
   GeneratedColumn<String> get stage =>
       $composableBuilder(column: $table.stage, builder: (column) => column);
@@ -4802,9 +4981,6 @@ class $GiftWrapsTableManager
                 Value<String> id = const Value.absent(),
                 Value<String> recipientPubkey = const Value.absent(),
                 Value<String> event = const Value.absent(),
-                Value<String?> seal = const Value.absent(),
-                Value<String?> rumor = const Value.absent(),
-                Value<String?> rumorId = const Value.absent(),
                 Value<String> stage = const Value.absent(),
                 Value<int> attempts = const Value.absent(),
                 Value<String?> failure = const Value.absent(),
@@ -4813,9 +4989,6 @@ class $GiftWrapsTableManager
                 id: id,
                 recipientPubkey: recipientPubkey,
                 event: event,
-                seal: seal,
-                rumor: rumor,
-                rumorId: rumorId,
                 stage: stage,
                 attempts: attempts,
                 failure: failure,
@@ -4826,9 +4999,6 @@ class $GiftWrapsTableManager
                 required String id,
                 required String recipientPubkey,
                 required String event,
-                Value<String?> seal = const Value.absent(),
-                Value<String?> rumor = const Value.absent(),
-                Value<String?> rumorId = const Value.absent(),
                 required String stage,
                 Value<int> attempts = const Value.absent(),
                 Value<String?> failure = const Value.absent(),
@@ -4837,9 +5007,6 @@ class $GiftWrapsTableManager
                 id: id,
                 recipientPubkey: recipientPubkey,
                 event: event,
-                seal: seal,
-                rumor: rumor,
-                rumorId: rumorId,
                 stage: stage,
                 attempts: attempts,
                 failure: failure,
@@ -4877,6 +5044,213 @@ typedef $GiftWrapsProcessedTableManager =
         BaseReferences<_$NostrMailDatabase, GiftWraps, GiftWrapRow>,
       ),
       GiftWrapRow,
+      PrefetchHooks Function()
+    >;
+typedef $UnsealedCreateCompanionBuilder =
+    UnsealedCompanion Function({
+      required String wrapId,
+      required String recipientPubkey,
+      required String seal,
+      required String rumor,
+      required String rumorId,
+      Value<int> rowid,
+    });
+typedef $UnsealedUpdateCompanionBuilder =
+    UnsealedCompanion Function({
+      Value<String> wrapId,
+      Value<String> recipientPubkey,
+      Value<String> seal,
+      Value<String> rumor,
+      Value<String> rumorId,
+      Value<int> rowid,
+    });
+
+class $UnsealedFilterComposer extends Composer<_$NostrMailDatabase, Unsealed> {
+  $UnsealedFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get wrapId => $composableBuilder(
+    column: $table.wrapId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get seal => $composableBuilder(
+    column: $table.seal,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get rumor => $composableBuilder(
+    column: $table.rumor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get rumorId => $composableBuilder(
+    column: $table.rumorId,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $UnsealedOrderingComposer
+    extends Composer<_$NostrMailDatabase, Unsealed> {
+  $UnsealedOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get wrapId => $composableBuilder(
+    column: $table.wrapId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get seal => $composableBuilder(
+    column: $table.seal,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get rumor => $composableBuilder(
+    column: $table.rumor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get rumorId => $composableBuilder(
+    column: $table.rumorId,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $UnsealedAnnotationComposer
+    extends Composer<_$NostrMailDatabase, Unsealed> {
+  $UnsealedAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get wrapId =>
+      $composableBuilder(column: $table.wrapId, builder: (column) => column);
+
+  GeneratedColumn<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get seal =>
+      $composableBuilder(column: $table.seal, builder: (column) => column);
+
+  GeneratedColumn<String> get rumor =>
+      $composableBuilder(column: $table.rumor, builder: (column) => column);
+
+  GeneratedColumn<String> get rumorId =>
+      $composableBuilder(column: $table.rumorId, builder: (column) => column);
+}
+
+class $UnsealedTableManager
+    extends
+        RootTableManager<
+          _$NostrMailDatabase,
+          Unsealed,
+          UnsealedRow,
+          $UnsealedFilterComposer,
+          $UnsealedOrderingComposer,
+          $UnsealedAnnotationComposer,
+          $UnsealedCreateCompanionBuilder,
+          $UnsealedUpdateCompanionBuilder,
+          (
+            UnsealedRow,
+            BaseReferences<_$NostrMailDatabase, Unsealed, UnsealedRow>,
+          ),
+          UnsealedRow,
+          PrefetchHooks Function()
+        > {
+  $UnsealedTableManager(_$NostrMailDatabase db, Unsealed table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $UnsealedFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $UnsealedOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $UnsealedAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> wrapId = const Value.absent(),
+                Value<String> recipientPubkey = const Value.absent(),
+                Value<String> seal = const Value.absent(),
+                Value<String> rumor = const Value.absent(),
+                Value<String> rumorId = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => UnsealedCompanion(
+                wrapId: wrapId,
+                recipientPubkey: recipientPubkey,
+                seal: seal,
+                rumor: rumor,
+                rumorId: rumorId,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String wrapId,
+                required String recipientPubkey,
+                required String seal,
+                required String rumor,
+                required String rumorId,
+                Value<int> rowid = const Value.absent(),
+              }) => UnsealedCompanion.insert(
+                wrapId: wrapId,
+                recipientPubkey: recipientPubkey,
+                seal: seal,
+                rumor: rumor,
+                rumorId: rumorId,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<Unsealed, UnsealedRow>(table),
+                  BaseReferences<_$NostrMailDatabase, Unsealed, UnsealedRow>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $UnsealedProcessedTableManager =
+    ProcessedTableManager<
+      _$NostrMailDatabase,
+      Unsealed,
+      UnsealedRow,
+      $UnsealedFilterComposer,
+      $UnsealedOrderingComposer,
+      $UnsealedAnnotationComposer,
+      $UnsealedCreateCompanionBuilder,
+      $UnsealedUpdateCompanionBuilder,
+      (UnsealedRow, BaseReferences<_$NostrMailDatabase, Unsealed, UnsealedRow>),
+      UnsealedRow,
       PrefetchHooks Function()
     >;
 typedef $TombstonesCreateCompanionBuilder =
@@ -5379,6 +5753,8 @@ class $NostrMailDatabaseManager {
   $LabelsTableManager get labels => $LabelsTableManager(_db, _db.labels);
   $GiftWrapsTableManager get giftWraps =>
       $GiftWrapsTableManager(_db, _db.giftWraps);
+  $UnsealedTableManager get unsealed =>
+      $UnsealedTableManager(_db, _db.unsealed);
   $TombstonesTableManager get tombstones =>
       $TombstonesTableManager(_db, _db.tombstones);
   $SettingsTableManager get settings =>

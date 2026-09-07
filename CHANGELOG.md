@@ -1,3 +1,15 @@
+## Unreleased
+
+- A schema change no longer drops the NIP-44 decryptions. What a gift wrap
+  yields once opened moves to its own `unsealed` table, kept across the drop
+  along with the decrypted settings, so rebuilding the tables costs no signer
+  approval. Everything else stays a projection of the NDK cache and of those
+  two tables. A wipe the user asks for still takes all of it.
+- The client asks for the full replay that refills a dropped projection.
+  Nothing else would: the sync engine's coverage does not move across a schema
+  change, so its rounds bring no page, and the mailbox stayed empty until a
+  `fetchRecent()`.
+
 ## 3.0.0
 
 - **Breaking**: the mail store moves from sembast to drift (SQLite).

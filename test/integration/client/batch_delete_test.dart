@@ -138,6 +138,7 @@ void main() {
       );
       await giftWraps.updateUnsealed(
         giftWrapId: 'wrap-1',
+        recipientPubkey: user.keyPair.publicKey,
         seal: Nip01Event(
           id: 'seal-1',
           pubKey: 'sender-pubkey',

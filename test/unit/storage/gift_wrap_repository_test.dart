@@ -44,9 +44,11 @@ void main() {
       required String giftWrapId,
       required Nip01Event seal,
       required Nip01Event rumor,
+      String recipientPubkey = 'recipient',
     }) async {
       await repo.updateUnsealed(
         giftWrapId: giftWrapId,
+        recipientPubkey: recipientPubkey,
         seal: seal,
         rumor: rumor,
       );
@@ -196,11 +198,13 @@ void main() {
       await save(makeEvent('bob-wrap'), recipientPubkey: 'bob');
       await store(
         giftWrapId: 'alice-wrap',
+        recipientPubkey: 'alice',
         seal: makeEvent('alice-seal', kind: 13),
         rumor: makeEvent('same-email-id', kind: 1301),
       );
       await store(
         giftWrapId: 'bob-wrap',
+        recipientPubkey: 'bob',
         seal: makeEvent('bob-seal', kind: 13),
         rumor: makeEvent('same-email-id', kind: 1301),
       );
@@ -235,11 +239,13 @@ void main() {
       await save(makeEvent('bob-1'), recipientPubkey: 'bob');
       await store(
         giftWrapId: 'alice-1',
+        recipientPubkey: 'alice',
         seal: makeEvent('alice-seal', kind: 13),
         rumor: makeEvent('alice-email', kind: 1301),
       );
       await store(
         giftWrapId: 'bob-1',
+        recipientPubkey: 'bob',
         seal: makeEvent('bob-seal', kind: 13),
         rumor: makeEvent('bob-email', kind: 1301),
       );

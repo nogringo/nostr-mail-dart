@@ -36,19 +36,14 @@ class GiftWrapRepository {
   }
 
   /// Get a gift wrap record by its globally unique outer event ID.
-  Future<Map<String, dynamic>?> getById(String giftWrapId) async {
-    final row = await _row(giftWrapId);
-    return row == null ? null : _toMap(row);
-  }
+  Future<Map<String, dynamic>?> getById(String giftWrapId) async =>
+      _record(await _row(giftWrapId));
 
   /// Get a gift wrap by ID only if it belongs to [recipientPubkey].
   Future<Map<String, dynamic>?> getByIdForRecipient(
     String giftWrapId, {
     required String recipientPubkey,
-  }) async {
-    final row = await _row(giftWrapId, recipientPubkey: recipientPubkey);
-    return row == null ? null : _toMap(row);
-  }
+  }) async => _record(await _row(giftWrapId, recipientPubkey: recipientPubkey));
 
   /// Record the seal and rumor a gift wrap yielded, before the email itself
   /// is built.
@@ -58,59 +53,55 @@ class GiftWrapRepository {
   /// remote signer would have to ask its user for them again.
   Future<void> updateUnsealed({
     required String giftWrapId,
+    required String recipientPubkey,
     required Nip01Event seal,
     required Nip01Event rumor,
   }) async {
-    await (_db.update(
-      _db.giftWraps,
-    )..where((w) => w.id.equals(giftWrapId))).write(
-      GiftWrapsCompanion(
-        seal: Value(_encode(seal)),
-        rumor: Value(_encode(rumor)),
-        rumorId: Value(rumor.id),
-        stage: Value(GiftWrapStage.unsealed.name),
-        failure: const Value(null),
-      ),
-    );
+    await _db.transaction(() async {
+      await _db
+          .into(_db.unsealed)
+          .insertOnConflictUpdate(
+            UnsealedRow(
+              wrapId: giftWrapId,
+              recipientPubkey: recipientPubkey,
+              seal: _encode(seal),
+              rumor: _encode(rumor),
+              rumorId: rumor.id,
+            ),
+          );
+      await (_db.update(
+        _db.giftWraps,
+      )..where((w) => w.id.equals(giftWrapId))).write(
+        GiftWrapsCompanion(
+          stage: Value(GiftWrapStage.unsealed.name),
+          failure: const Value(null),
+        ),
+      );
+    });
   }
 
   /// Get gift wrap record by its decrypted rumor ID (email ID).
-  Future<Map<String, dynamic>?> getByRumorId(String rumorId) async {
-    final row =
-        await (_db.select(_db.giftWraps)
-              ..where((w) => w.rumorId.equals(rumorId))
-              ..limit(1))
-            .getSingleOrNull();
-    return row == null ? null : _toMap(row);
-  }
+  Future<Map<String, dynamic>?> getByRumorId(String rumorId) =>
+      _recordByRumorId(rumorId);
 
   /// Get a gift wrap by rumor ID only if it belongs to [recipientPubkey].
   Future<Map<String, dynamic>?> getByRumorIdForRecipient(
     String rumorId, {
     required String recipientPubkey,
-  }) async {
-    final row =
-        await (_db.select(_db.giftWraps)
-              ..where(
-                (w) =>
-                    w.rumorId.equals(rumorId) &
-                    w.recipientPubkey.equals(recipientPubkey),
-              )
-              ..limit(1))
-            .getSingleOrNull();
-    return row == null ? null : _toMap(row);
-  }
+  }) => _recordByRumorId(rumorId, recipientPubkey: recipientPubkey);
 
   /// The seal and rumor already recorded for [giftWrapId], if it got that far.
   ///
   /// Reading them back is what makes a retry cheap: the approvals a remote
-  /// signer needed to produce them are not asked for a second time.
+  /// signer needed to produce them are not asked for a second time. They
+  /// outlive the wrap's own row, so a rebuilt projection costs nothing either.
   Future<UnwrappedGiftWrap?> getUnsealed(String giftWrapId) async {
-    final row = await _row(giftWrapId);
-    final seal = row?.seal;
-    final rumor = row?.rumor;
-    if (seal == null || rumor == null) return null;
-    return UnwrappedGiftWrap(seal: _decode(seal), rumor: _decode(rumor));
+    final row = await _unsealedRow(giftWrapId);
+    if (row == null) return null;
+    return UnwrappedGiftWrap(
+      seal: _decode(row.seal),
+      rumor: _decode(row.rumor),
+    );
   }
 
   /// Record why the last attempt on [giftWrapId] stopped, and count it.
@@ -138,18 +129,17 @@ class GiftWrapRepository {
   }
 
   /// Remove a gift wrap record.
-  Future<void> remove(String eventId) async {
-    await (_db.delete(_db.giftWraps)..where((w) => w.id.equals(eventId))).go();
-  }
+  Future<void> remove(String eventId) => _remove([eventId]);
 
-  /// Remove gift wrap records by their decrypted rumor ids.
+  /// Remove gift wrap records by their decrypted rumor ids, or by their own.
   Future<void> removeByRumorIds(Iterable<String> rumorIds) async {
-    final uniqueIds = rumorIds.toSet().toList();
+    final uniqueIds = rumorIds.toSet();
     if (uniqueIds.isEmpty) return;
 
-    await (_db.delete(
-      _db.giftWraps,
-    )..where((w) => w.id.isIn(uniqueIds) | w.rumorId.isIn(uniqueIds))).go();
+    await _remove([
+      ...uniqueIds,
+      ...await _wrapIdsByRumorIds(uniqueIds.toList()),
+    ]);
   }
 
   /// Outer event ids of [recipientPubkey]'s wraps carrying [rumorIds].
@@ -159,35 +149,35 @@ class GiftWrapRepository {
   Future<List<String>> getIdsByRumorIdsForRecipient(
     Iterable<String> rumorIds, {
     required String recipientPubkey,
-  }) async {
-    final uniqueIds = rumorIds.toSet().toList();
-    if (uniqueIds.isEmpty) return [];
-
-    final rows =
-        await (_db.selectOnly(_db.giftWraps)
-              ..addColumns([_db.giftWraps.id])
-              ..where(
-                _db.giftWraps.rumorId.isIn(uniqueIds) &
-                    _db.giftWraps.recipientPubkey.equals(recipientPubkey),
-              ))
-            .get();
-    return rows.map((r) => r.read(_db.giftWraps.id)!).toList();
-  }
+  }) => _wrapIdsByRumorIds(
+    rumorIds.toSet().toList(),
+    recipientPubkey: recipientPubkey,
+  );
 
   /// Remove gift wrap records by rumor id only if they belong to [recipientPubkey].
   Future<void> removeByRumorIdsForRecipient(
     Iterable<String> rumorIds, {
     required String recipientPubkey,
   }) async {
-    final uniqueIds = rumorIds.toSet().toList();
-    if (uniqueIds.isEmpty) return;
+    await _remove(
+      await _wrapIdsByRumorIds(
+        rumorIds.toSet().toList(),
+        recipientPubkey: recipientPubkey,
+      ),
+    );
+  }
 
-    await (_db.delete(_db.giftWraps)..where(
-          (w) =>
-              w.rumorId.isIn(uniqueIds) &
-              w.recipientPubkey.equals(recipientPubkey),
-        ))
-        .go();
+  /// Drops [wrapIds] whole, decryption included: the mail they carried is
+  /// gone, so what opened them is no longer worth keeping.
+  Future<void> _remove(List<String> wrapIds) async {
+    if (wrapIds.isEmpty) return;
+
+    await _db.transaction(() async {
+      await (_db.delete(_db.giftWraps)..where((w) => w.id.isIn(wrapIds))).go();
+      await (_db.delete(
+        _db.unsealed,
+      )..where((u) => u.wrapId.isIn(wrapIds))).go();
+    });
   }
 
   /// Get a single unprocessed gift wrap event by ID.
@@ -236,12 +226,19 @@ class GiftWrapRepository {
     return row.read(total)!;
   }
 
+  /// Wipes the wraps and what they yielded. Asked for by the user, unlike the
+  /// drop a schema change performs, so the decryptions go too.
   Future<void> clearAll({String? recipientPubkey}) async {
-    final statement = _db.delete(_db.giftWraps);
-    if (recipientPubkey != null) {
-      statement.where((w) => w.recipientPubkey.equals(recipientPubkey));
-    }
-    await statement.go();
+    await _db.transaction(() async {
+      final wraps = _db.delete(_db.giftWraps);
+      final unsealed = _db.delete(_db.unsealed);
+      if (recipientPubkey != null) {
+        wraps.where((w) => w.recipientPubkey.equals(recipientPubkey));
+        unsealed.where((u) => u.recipientPubkey.equals(recipientPubkey));
+      }
+      await wraps.go();
+      await unsealed.go();
+    });
   }
 
   /// Anything short of [GiftWrapStage.stored] is still owed work.
@@ -260,6 +257,57 @@ class GiftWrapRepository {
         .getSingleOrNull();
   }
 
+  Future<Map<String, dynamic>?> _record(GiftWrapRow? row) async {
+    if (row == null) return null;
+    return _toMap(row, await _unsealedRow(row.id));
+  }
+
+  /// A rumor id only exists once a wrap is open, so the lookup starts there.
+  /// Without the wrap's own row there is no record to hand back: the mail is
+  /// still owed the pass that rebuilds it.
+  Future<Map<String, dynamic>?> _recordByRumorId(
+    String rumorId, {
+    String? recipientPubkey,
+  }) async {
+    final unsealed =
+        await (_db.select(_db.unsealed)
+              ..where((u) {
+                final byRumor = u.rumorId.equals(rumorId);
+                if (recipientPubkey == null) return byRumor;
+                return byRumor & u.recipientPubkey.equals(recipientPubkey);
+              })
+              ..limit(1))
+            .getSingleOrNull();
+    if (unsealed == null) return null;
+
+    final row = await _row(unsealed.wrapId, recipientPubkey: recipientPubkey);
+    return row == null ? null : _toMap(row, unsealed);
+  }
+
+  Future<UnsealedRow?> _unsealedRow(String wrapId) => (_db.select(
+    _db.unsealed,
+  )..where((u) => u.wrapId.equals(wrapId))).getSingleOrNull();
+
+  Future<List<String>> _wrapIdsByRumorIds(
+    List<String> rumorIds, {
+    String? recipientPubkey,
+  }) async {
+    if (rumorIds.isEmpty) return [];
+
+    final u = _db.unsealed;
+    final byRumor = u.rumorId.isIn(rumorIds);
+    final rows =
+        await (_db.selectOnly(u)
+              ..addColumns([u.wrapId])
+              ..where(
+                recipientPubkey == null
+                    ? byRumor
+                    : byRumor & u.recipientPubkey.equals(recipientPubkey),
+              ))
+            .get();
+    return rows.map((r) => r.read(u.wrapId)!).toList();
+  }
+
   GiftWrapProgress _progressOf(GiftWrapRow row) {
     final failure = row.failure;
     return GiftWrapProgress(
@@ -276,16 +324,19 @@ class GiftWrapRepository {
     );
   }
 
-  static Map<String, dynamic> _toMap(GiftWrapRow row) => {
-    'recipientPubkey': row.recipientPubkey,
-    'event': jsonDecode(row.event),
-    if (row.seal != null) 'seal': jsonDecode(row.seal!),
-    if (row.rumor != null) 'rumor': jsonDecode(row.rumor!),
-    if (row.rumorId != null) 'rumorId': row.rumorId,
-    'stage': row.stage,
-    'attempts': row.attempts,
-    if (row.failure != null) 'failure': row.failure,
-  };
+  static Map<String, dynamic> _toMap(GiftWrapRow row, UnsealedRow? unsealed) =>
+      {
+        'recipientPubkey': row.recipientPubkey,
+        'event': jsonDecode(row.event),
+        if (unsealed != null) ...{
+          'seal': jsonDecode(unsealed.seal),
+          'rumor': jsonDecode(unsealed.rumor),
+          'rumorId': unsealed.rumorId,
+        },
+        'stage': row.stage,
+        'attempts': row.attempts,
+        if (row.failure != null) 'failure': row.failure,
+      };
 
   static String _encode(Nip01Event event) =>
       jsonEncode(Nip01EventModel.fromEntity(event).toJson());

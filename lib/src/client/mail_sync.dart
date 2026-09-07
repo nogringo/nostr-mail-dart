@@ -102,7 +102,22 @@ class MailSync {
       return;
     }
     await _ensureHandles();
+
+    if (_rebuildOwed) {
+      _rebuildOwed = false;
+      _replayCache().ignore();
+    }
   }
+
+  /// Says the local stores were dropped and have to be rebuilt whole.
+  ///
+  /// Nothing else would ask: the engine's coverage did not move, so its rounds
+  /// bring no page, and without this the mailbox stays empty until a
+  /// [fetchRecent]. The pass itself needs no network, and no signer for a wrap
+  /// whose decryption survived the drop.
+  void oweRebuild() => _rebuildOwed = true;
+
+  bool _rebuildOwed = false;
 
   /// Drops this client's interest in its sync requests, which stops the engine
   /// revisiting them. The coverage it persisted survives; the engine itself
@@ -362,6 +377,7 @@ class MailSync {
         if (unwrapped == null) return false;
         await _giftWraps.updateUnsealed(
           giftWrapId: event.id,
+          recipientPubkey: myPubkey,
           seal: unwrapped.seal,
           rumor: unwrapped.rumor,
         );
