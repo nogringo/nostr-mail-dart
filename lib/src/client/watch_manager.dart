@@ -74,42 +74,49 @@ class WatchManager {
     final emailSub = _ndk.requests.subscription(
       filter: emailFilter(pubkey)..limit = 0,
       explicitRelays: dmRelays,
+      cacheWrite: true,
     );
 
     // Public emails
     final publicSub = _ndk.requests.subscription(
       filter: publicEmailFilter(pubkey)..limit = 0,
       explicitRelays: writeRelays,
+      cacheWrite: true,
     );
 
     // Label additions
     final labelSub = _ndk.requests.subscription(
       filter: labelFilter(pubkey)..limit = 0,
       explicitRelays: writeRelays,
+      cacheWrite: true,
     );
 
     // Unified deletions (emails, labels, reposts)
     final deletionSub = _ndk.requests.subscription(
       filter: deletionFilter(pubkey)..limit = 0,
       explicitRelays: allRelays,
+      cacheWrite: true,
     );
 
     // Reposts
     final repostSub = _ndk.requests.subscription(
       filter: repostFilter(pubkey)..limit = 0,
       explicitRelays: writeRelays,
+      cacheWrite: true,
     );
 
     // Private settings
     final settingsSub = _ndk.requests.subscription(
       filter: settingsFilter(pubkey)..limit = 0,
       explicitRelays: writeRelays,
+      cacheWrite: true,
     );
 
     // Metadata & relay lists
     final metadataSub = _ndk.requests.subscription(
       filter: metadataFilter(pubkey)..limit = 0,
       explicitRelays: writeRelays,
+      cacheWrite: true,
     );
 
     emailSub.stream.listen(_sync.onGiftWrap);

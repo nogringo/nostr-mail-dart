@@ -9,6 +9,12 @@
   Nothing else would: the sync engine's coverage does not move across a schema
   change, so its rounds bring no page, and the mailbox stayed empty until a
   `fetchRecent()`.
+- Live subscriptions write what they receive to the NDK cache. They wrote
+  nothing before (`subscription()` defaults to `cacheWrite: false`), so an
+  event seen only in real time was projected and then lost: a rebuild of the
+  tables replayed the cache without it, until the sync engine walked its
+  period again. The reposts, settings and metadata subscriptions, which
+  process nothing themselves, now serve their purpose.
 
 ## 3.0.0
 
