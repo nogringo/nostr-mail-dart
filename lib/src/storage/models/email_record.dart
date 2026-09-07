@@ -1,15 +1,15 @@
 import '../../models/attachment_ref.dart';
 import '../../models/email.dart';
 
-/// Internal denormalized record for fast local queries.
-///
-/// This is the shape stored in Sembast. It contains every field needed for
-/// filtering, sorting and searching without joins.
+/// An email as the local store sees it.
 ///
 /// Heavy attachment payloads live in [BlossomCache], not here. This record
 /// only carries [attachmentRefs] (filename, size, sha256) and a light MIME
 /// envelope whose attachment parts have empty bodies, so list queries never
 /// pull megabytes off disk.
+///
+/// [folder], [isRead], [isStarred] and [labels] are derived from the labels
+/// table: filled when a record is read, ignored when one is saved.
 class EmailRecord {
   final String id;
   final String senderPubkey;
@@ -41,26 +41,15 @@ class EmailRecord {
   /// MIME date or fallback to createdAt (epoch seconds).
   final int date;
 
-  // ── Derived fields for querying ─────────────────────────────────────────
+  // ── Extracted from MIME, indexed for search ─────────────────────────────
 
-  /// Sender email address (extracted from MIME).
   final String from;
-
-  /// Email subject (extracted from MIME).
   final String subject;
 
-  /// Plain-text body (extracted from MIME, HTML stripped if needed).
+  /// Plain-text body (HTML stripped if needed).
   final String bodyPlain;
 
-  /// Lower-case concatenation of from + subject + body for text search.
-  final String searchText;
-
-  /// Number of attachments. Always equals `attachmentRefs.length`, kept as a
-  /// denormalized column so `hasAttachments` queries don't need to decode
-  /// the refs list.
-  final int attachmentCount;
-
-  // ── Denormalized labels (source of truth for fast queries) ──────────────
+  // ── Derived from the labels table ───────────────────────────────────────
 
   /// Current folder. Mutually exclusive: inbox, sent, trash, archive, spam.
   final String folder;
@@ -85,82 +74,26 @@ class EmailRecord {
     required this.from,
     required this.subject,
     required this.bodyPlain,
-    required this.searchText,
-    required this.attachmentCount,
     required this.folder,
-    required this.isRead,
-    required this.isStarred,
-    required this.labels,
     required this.isBridged,
+    this.isRead = false,
+    this.isStarred = false,
+    this.labels = const [],
     this.blossomHash,
     this.decryptionKey,
     this.decryptionNonce,
   });
 
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'senderPubkey': senderPubkey,
-    'recipientPubkey': recipientPubkey,
-    'lightMimeText': lightMimeText,
-    'attachmentRefs': attachmentRefs.map((r) => r.toJson()).toList(),
-    if (blossomHash != null) 'blossomHash': blossomHash,
-    if (decryptionKey != null) 'decryptionKey': decryptionKey,
-    if (decryptionNonce != null) 'decryptionNonce': decryptionNonce,
-    'isPublic': isPublic,
-    'createdAt': createdAt,
-    'date': date,
-    'from': from,
-    'subject': subject,
-    'bodyPlain': bodyPlain,
-    'searchText': searchText,
-    'attachmentCount': attachmentCount,
-    'folder': folder,
-    'isRead': isRead,
-    'isStarred': isStarred,
-    'labels': labels,
-    'isBridged': isBridged,
-  };
-
-  factory EmailRecord.fromJson(Map<String, dynamic> json) => EmailRecord(
-    id: json['id'] as String,
-    senderPubkey: json['senderPubkey'] as String,
-    recipientPubkey: json['recipientPubkey'] as String,
-    lightMimeText: json['lightMimeText'] as String,
-    attachmentRefs:
-        (json['attachmentRefs'] as List<dynamic>?)
-            ?.map((e) => AttachmentRef.fromJson(e as Map<String, dynamic>))
-            .toList() ??
-        const [],
-    blossomHash: json['blossomHash'] as String?,
-    decryptionKey: json['decryptionKey'] as String?,
-    decryptionNonce: json['decryptionNonce'] as String?,
-    isPublic: json['isPublic'] as bool? ?? false,
-    createdAt: json['createdAt'] as int,
-    date: json['date'] as int,
-    from: json['from'] as String,
-    subject: json['subject'] as String,
-    bodyPlain: json['bodyPlain'] as String,
-    searchText: json['searchText'] as String,
-    attachmentCount: json['attachmentCount'] as int? ?? 0,
-    folder: json['folder'] as String,
-    isRead: json['isRead'] as bool? ?? false,
-    isStarred: json['isStarred'] as bool? ?? false,
-    labels: (json['labels'] as List<dynamic>?)?.cast<String>() ?? const [],
-    isBridged: json['isBridged'] as bool? ?? false,
-  );
+  /// The mailbox an email lands in before any folder label: sent for a
+  /// self-copy, inbox otherwise.
+  static String naturalFolder({
+    required String senderPubkey,
+    required String recipientPubkey,
+  }) => senderPubkey == recipientPubkey ? 'sent' : 'inbox';
 
   /// Build an [EmailRecord] from a public [Email] model that has already
   /// gone through attachment extraction.
-  ///
-  /// [folder] must be provided by the caller (inbox / sent).
-  factory EmailRecord.fromEmail(
-    Email email, {
-    required String folder,
-    required String searchText,
-    List<String> labels = const [],
-    bool isRead = false,
-    bool isStarred = false,
-  }) {
+  factory EmailRecord.fromEmail(Email email) {
     return EmailRecord(
       id: email.id,
       senderPubkey: email.senderPubkey,
@@ -176,12 +109,10 @@ class EmailRecord {
       from: email.sender?.email ?? email.mime.fromEmail ?? '',
       subject: email.subject ?? '',
       bodyPlain: email.textBody ?? email.body,
-      searchText: searchText,
-      attachmentCount: email.attachmentRefs.length,
-      folder: folder,
-      isRead: isRead,
-      isStarred: isStarred,
-      labels: labels,
+      folder: naturalFolder(
+        senderPubkey: email.senderPubkey,
+        recipientPubkey: email.recipientPubkey,
+      ),
       isBridged: email.isBridged,
     );
   }
@@ -199,35 +130,4 @@ class EmailRecord {
     isPublic: isPublic,
     isBridged: isBridged,
   );
-
-  EmailRecord copyWith({
-    String? folder,
-    bool? isRead,
-    bool? isStarred,
-    List<String>? labels,
-  }) {
-    return EmailRecord(
-      id: id,
-      senderPubkey: senderPubkey,
-      recipientPubkey: recipientPubkey,
-      lightMimeText: lightMimeText,
-      attachmentRefs: attachmentRefs,
-      blossomHash: blossomHash,
-      decryptionKey: decryptionKey,
-      decryptionNonce: decryptionNonce,
-      isPublic: isPublic,
-      createdAt: createdAt,
-      date: date,
-      from: from,
-      subject: subject,
-      bodyPlain: bodyPlain,
-      searchText: searchText,
-      attachmentCount: attachmentCount,
-      folder: folder ?? this.folder,
-      isRead: isRead ?? this.isRead,
-      isStarred: isStarred ?? this.isStarred,
-      labels: labels ?? this.labels,
-      isBridged: isBridged,
-    );
-  }
 }

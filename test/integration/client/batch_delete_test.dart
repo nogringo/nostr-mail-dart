@@ -24,8 +24,8 @@ void main() {
         'batch-delete-${DateTime.now().microsecondsSinceEpoch}',
         defaultDmRelays: [relay.url],
       ).create();
-      emails = EmailRepository(user.db);
-      labels = LabelRepository(user.db);
+      emails = EmailRepository(user.database);
+      labels = LabelRepository(user.database);
     });
 
     tearDown(() async {
@@ -47,12 +47,7 @@ void main() {
         from: 'from@test.com',
         subject: 'Test $id',
         bodyPlain: 'Test Body',
-        searchText: 'from@test.com test $id test body',
-        attachmentCount: 0,
         folder: 'inbox',
-        isRead: false,
-        isStarred: false,
-        labels: const [],
         isBridged: false,
       );
     }
@@ -126,7 +121,7 @@ void main() {
     test('names the gift wrap carrying the email', () async {
       await emails.save(makeRecord('email-1'));
 
-      final giftWraps = GiftWrapRepository(user.db);
+      final giftWraps = GiftWrapRepository(user.database);
       await giftWraps.save(
         Nip01Event(
           id: 'wrap-1',

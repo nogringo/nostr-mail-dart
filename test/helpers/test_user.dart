@@ -1,9 +1,12 @@
 import 'package:blossom_cache/blossom_cache.dart';
+import 'package:drift/drift.dart';
+import 'package:drift/native.dart';
 import 'package:idb_shim/idb_client_memory.dart' hide Database;
 import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:ndk/shared/nips/nip01/key_pair.dart';
 import 'package:nostr_mail/src/client.dart';
+import 'package:nostr_mail/src/storage/database.dart';
 import 'package:sembast/sembast_memory.dart' hide Filter;
 import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 
@@ -17,6 +20,7 @@ class TestUser {
 
   late KeyPair keyPair;
   late Ndk ndk;
+  late NostrMailDatabase database;
   late Database db;
   late BlossomCache blossomCache;
   late SyncEngine syncEngine;
@@ -46,6 +50,8 @@ class TestUser {
       privkey: keyPair.privateKey!,
     );
 
+    driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+    database = NostrMailDatabase(NativeDatabase.memory());
     db = await databaseFactoryMemory.openDatabase(id);
     blossomCache = await IdbBlossomCache.open(
       factory: newIdbFactoryMemory(),
@@ -56,6 +62,7 @@ class TestUser {
 
     client = await NostrMailClient.create(
       ndk: ndk,
+      database: database,
       db: db,
       blossomCache: blossomCache,
       syncEngine: syncEngine,
@@ -73,6 +80,7 @@ class TestUser {
     await client.dispose();
     await syncEngine.dispose();
     await ndk.destroy();
+    await database.close();
     await db.close();
   }
 }

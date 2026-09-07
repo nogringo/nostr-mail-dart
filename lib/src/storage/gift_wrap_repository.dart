@@ -1,47 +1,44 @@
+import 'dart:convert';
+
+import 'package:drift/drift.dart';
 import 'package:ndk/ndk.dart' show Nip01Event, Nip01EventModel;
-import 'package:sembast/sembast.dart';
 
 import '../models/gift_wrap_state.dart';
 import '../models/unwrapped_gift_wrap.dart';
+import 'database.dart';
 
 /// Repository for raw NIP-59 gift-wrap events.
 class GiftWrapRepository {
-  final Database _db;
-  final _store = stringMapStoreFactory.store('gift_wraps');
+  final NostrMailDatabase _db;
 
   GiftWrapRepository(this._db);
 
   static final _stored = GiftWrapStage.stored.name;
 
-  /// Anything short of [GiftWrapStage.stored] is still owed work.
-  static final _unfinished = Filter.notEquals('stage', _stored);
-
   /// Save a gift wrap event if new, and report where it stands.
-  ///
-  /// Both answers come from one read: sembast copies a record's whole value on
-  /// every get, and a wrap that got anywhere carries its seal and rumor, so
-  /// asking twice meant copying an entire email out of the store to learn a
-  /// stage.
   Future<GiftWrapProgress> save(
     Nip01Event event, {
     required String recipientPubkey,
   }) async {
-    final existing = await _store.record(event.id).get(_db);
+    final existing = await _row(event.id);
     if (existing != null) return _progressOf(existing);
-    await _store.record(event.id).put(_db, {
-      'recipientPubkey': recipientPubkey,
-      'event': Nip01EventModel.fromEntity(event).toJson(),
-      'stage': GiftWrapStage.saved.name,
-      'attempts': 0,
-    });
+    await _db
+        .into(_db.giftWraps)
+        .insert(
+          GiftWrapsCompanion.insert(
+            id: event.id,
+            recipientPubkey: recipientPubkey,
+            event: _encode(event),
+            stage: GiftWrapStage.saved.name,
+          ),
+        );
     return const GiftWrapProgress(stage: GiftWrapStage.saved);
   }
 
   /// Get a gift wrap record by its globally unique outer event ID.
   Future<Map<String, dynamic>?> getById(String giftWrapId) async {
-    final record = await _store.record(giftWrapId).get(_db);
-    if (record == null) return null;
-    return record.cast<String, dynamic>();
+    final row = await _row(giftWrapId);
+    return row == null ? null : _toMap(row);
   }
 
   /// Get a gift wrap by ID only if it belongs to [recipientPubkey].
@@ -49,10 +46,8 @@ class GiftWrapRepository {
     String giftWrapId, {
     required String recipientPubkey,
   }) async {
-    final record = await getById(giftWrapId);
-    if (record == null) return null;
-    if (record['recipientPubkey'] != recipientPubkey) return null;
-    return record;
+    final row = await _row(giftWrapId, recipientPubkey: recipientPubkey);
+    return row == null ? null : _toMap(row);
   }
 
   /// Record the seal and rumor a gift wrap yielded, before the email itself
@@ -66,27 +61,27 @@ class GiftWrapRepository {
     required Nip01Event seal,
     required Nip01Event rumor,
   }) async {
-    final existing = await _store.record(giftWrapId).get(_db);
-    if (existing == null) return;
-    await _store
-        .record(giftWrapId)
-        .put(
-          _db,
-          {
-            ...existing,
-            'seal': Nip01EventModel.fromEntity(seal).toJson(),
-            'rumor': Nip01EventModel.fromEntity(rumor).toJson(),
-            'rumorId': rumor.id,
-            'stage': GiftWrapStage.unsealed.name,
-          }..remove('failure'),
-        );
+    await (_db.update(
+      _db.giftWraps,
+    )..where((w) => w.id.equals(giftWrapId))).write(
+      GiftWrapsCompanion(
+        seal: Value(_encode(seal)),
+        rumor: Value(_encode(rumor)),
+        rumorId: Value(rumor.id),
+        stage: Value(GiftWrapStage.unsealed.name),
+        failure: const Value(null),
+      ),
+    );
   }
 
   /// Get gift wrap record by its decrypted rumor ID (email ID).
   Future<Map<String, dynamic>?> getByRumorId(String rumorId) async {
-    final finder = Finder(filter: Filter.equals('rumorId', rumorId));
-    final record = await _store.findFirst(_db, finder: finder);
-    return record?.value;
+    final row =
+        await (_db.select(_db.giftWraps)
+              ..where((w) => w.rumorId.equals(rumorId))
+              ..limit(1))
+            .getSingleOrNull();
+    return row == null ? null : _toMap(row);
   }
 
   /// Get a gift wrap by rumor ID only if it belongs to [recipientPubkey].
@@ -94,14 +89,16 @@ class GiftWrapRepository {
     String rumorId, {
     required String recipientPubkey,
   }) async {
-    final finder = Finder(
-      filter: Filter.and([
-        Filter.equals('rumorId', rumorId),
-        Filter.equals('recipientPubkey', recipientPubkey),
-      ]),
-    );
-    final record = await _store.findFirst(_db, finder: finder);
-    return record?.value;
+    final row =
+        await (_db.select(_db.giftWraps)
+              ..where(
+                (w) =>
+                    w.rumorId.equals(rumorId) &
+                    w.recipientPubkey.equals(recipientPubkey),
+              )
+              ..limit(1))
+            .getSingleOrNull();
+    return row == null ? null : _toMap(row);
   }
 
   /// The seal and rumor already recorded for [giftWrapId], if it got that far.
@@ -109,30 +106,11 @@ class GiftWrapRepository {
   /// Reading them back is what makes a retry cheap: the approvals a remote
   /// signer needed to produce them are not asked for a second time.
   Future<UnwrappedGiftWrap?> getUnsealed(String giftWrapId) async {
-    final record = await _store.record(giftWrapId).get(_db);
-    final seal = record?['seal'];
-    final rumor = record?['rumor'];
+    final row = await _row(giftWrapId);
+    final seal = row?.seal;
+    final rumor = row?.rumor;
     if (seal == null || rumor == null) return null;
-    return UnwrappedGiftWrap(
-      seal: Nip01EventModel.fromJson(seal as Map),
-      rumor: Nip01EventModel.fromJson(rumor as Map),
-    );
-  }
-
-  GiftWrapProgress _progressOf(Map<String, Object?> record) {
-    final failure = record['failure'];
-    return GiftWrapProgress(
-      stage: GiftWrapStage.values.firstWhere(
-        (stage) => stage.name == record['stage'],
-        orElse: () => GiftWrapStage.saved,
-      ),
-      failure: failure == null
-          ? null
-          : GiftWrapFailure.values.firstWhere(
-              (candidate) => candidate.name == failure,
-            ),
-      attempts: record['attempts'] as int? ?? 0,
-    );
+    return UnwrappedGiftWrap(seal: _decode(seal), rumor: _decode(rumor));
   }
 
   /// Record why the last attempt on [giftWrapId] stopped, and count it.
@@ -142,27 +120,26 @@ class GiftWrapRepository {
     required String giftWrapId,
     required GiftWrapFailure failure,
   }) async {
-    final existing = await _store.record(giftWrapId).get(_db);
-    if (existing == null) return;
-    await _store.record(giftWrapId).put(_db, {
-      ...existing,
-      'failure': failure.name,
-      'attempts': (existing['attempts'] as int? ?? 0) + 1,
-    });
+    await (_db.update(
+      _db.giftWraps,
+    )..where((w) => w.id.equals(giftWrapId))).write(
+      GiftWrapsCompanion.custom(
+        failure: Constant(failure.name),
+        attempts: _db.giftWraps.attempts + const Constant(1),
+      ),
+    );
   }
 
   /// Mark a gift wrap as fully processed. Terminal: nothing reopens it.
   Future<void> markStored(String eventId) async {
-    final existing = await _store.record(eventId).get(_db);
-    if (existing == null) return;
-    await _store
-        .record(eventId)
-        .put(_db, {...existing, 'stage': _stored}..remove('failure'));
+    await (_db.update(_db.giftWraps)..where((w) => w.id.equals(eventId))).write(
+      GiftWrapsCompanion(stage: Value(_stored), failure: const Value(null)),
+    );
   }
 
   /// Remove a gift wrap record.
   Future<void> remove(String eventId) async {
-    await _store.record(eventId).delete(_db);
+    await (_db.delete(_db.giftWraps)..where((w) => w.id.equals(eventId))).go();
   }
 
   /// Remove gift wrap records by their decrypted rumor ids.
@@ -170,12 +147,9 @@ class GiftWrapRepository {
     final uniqueIds = rumorIds.toSet().toList();
     if (uniqueIds.isEmpty) return;
 
-    final finder = Finder(filter: Filter.inList('rumorId', uniqueIds));
-    final keys = await _store.findKeys(_db, finder: finder);
-    final recordsToDelete = {...keys, ...uniqueIds};
-    for (final key in recordsToDelete) {
-      await _store.record(key).delete(_db);
-    }
+    await (_db.delete(
+      _db.giftWraps,
+    )..where((w) => w.id.isIn(uniqueIds) | w.rumorId.isIn(uniqueIds))).go();
   }
 
   /// Outer event ids of [recipientPubkey]'s wraps carrying [rumorIds].
@@ -189,14 +163,15 @@ class GiftWrapRepository {
     final uniqueIds = rumorIds.toSet().toList();
     if (uniqueIds.isEmpty) return [];
 
-    final finder = Finder(
-      filter: Filter.and([
-        Filter.inList('rumorId', uniqueIds),
-        Filter.equals('recipientPubkey', recipientPubkey),
-      ]),
-    );
-    final keys = await _store.findKeys(_db, finder: finder);
-    return keys.cast<String>();
+    final rows =
+        await (_db.selectOnly(_db.giftWraps)
+              ..addColumns([_db.giftWraps.id])
+              ..where(
+                _db.giftWraps.rumorId.isIn(uniqueIds) &
+                    _db.giftWraps.recipientPubkey.equals(recipientPubkey),
+              ))
+            .get();
+    return rows.map((r) => r.read(_db.giftWraps.id)!).toList();
   }
 
   /// Remove gift wrap records by rumor id only if they belong to [recipientPubkey].
@@ -207,16 +182,12 @@ class GiftWrapRepository {
     final uniqueIds = rumorIds.toSet().toList();
     if (uniqueIds.isEmpty) return;
 
-    final finder = Finder(
-      filter: Filter.and([
-        Filter.inList('rumorId', uniqueIds),
-        Filter.equals('recipientPubkey', recipientPubkey),
-      ]),
-    );
-    final recordsToDelete = await _store.findKeys(_db, finder: finder);
-    for (final key in recordsToDelete) {
-      await _store.record(key).delete(_db);
-    }
+    await (_db.delete(_db.giftWraps)..where(
+          (w) =>
+              w.rumorId.isIn(uniqueIds) &
+              w.recipientPubkey.equals(recipientPubkey),
+        ))
+        .go();
   }
 
   /// Get a single unprocessed gift wrap event by ID.
@@ -224,11 +195,9 @@ class GiftWrapRepository {
     String eventId, {
     String? recipientPubkey,
   }) async {
-    final record = recipientPubkey == null
-        ? await getById(eventId)
-        : await getByIdForRecipient(eventId, recipientPubkey: recipientPubkey);
-    if (record == null || record['stage'] == _stored) return null;
-    return Nip01EventModel.fromJson(record['event'] as Map);
+    final row = await _row(eventId, recipientPubkey: recipientPubkey);
+    if (row == null || row.stage == _stored) return null;
+    return _decode(row.event);
   }
 
   /// Every gift wrap still owed work, with what stopped it.
@@ -236,17 +205,14 @@ class GiftWrapRepository {
     String? recipientPubkey,
     int? limit,
   }) async {
-    final finder = Finder(
-      filter: _unfinishedFor(recipientPubkey),
-      limit: limit,
-    );
-    final records = await _store.find(_db, finder: finder);
-    return records
+    final statement = _db.select(_db.giftWraps)
+      ..where((w) => _unfinishedFor(w, recipientPubkey));
+    if (limit != null) statement.limit(limit);
+    final rows = await statement.get();
+    return rows
         .map(
-          (r) => FailedGiftWrap(
-            event: Nip01EventModel.fromJson(r.value['event'] as Map),
-            progress: _progressOf(r.value),
-          ),
+          (r) =>
+              FailedGiftWrap(event: _decode(r.event), progress: _progressOf(r)),
         )
         .toList();
   }
@@ -255,29 +221,75 @@ class GiftWrapRepository {
   ///
   /// Permanent failures are left out: anyone can address a malformed wrap to
   /// an account, so a count a stranger inflates is not worth showing.
-  Future<int> getFailedCount({String? recipientPubkey}) => _store.count(
-    _db,
-    filter: Filter.and([
-      _unfinishedFor(recipientPubkey),
-      Filter.notEquals('failure', GiftWrapFailure.permanent.name),
-    ]),
-  );
-
-  Filter _unfinishedFor(String? recipientPubkey) => recipientPubkey == null
-      ? _unfinished
-      : Filter.and([
-          _unfinished,
-          Filter.equals('recipientPubkey', recipientPubkey),
-        ]);
+  Future<int> getFailedCount({String? recipientPubkey}) async {
+    final w = _db.giftWraps;
+    final total = countAll();
+    final row =
+        await (_db.selectOnly(w)
+              ..addColumns([total])
+              ..where(
+                _unfinishedFor(w, recipientPubkey) &
+                    (w.failure.isNull() |
+                        w.failure.isNotValue(GiftWrapFailure.permanent.name)),
+              ))
+            .getSingle();
+    return row.read(total)!;
+  }
 
   Future<void> clearAll({String? recipientPubkey}) async {
-    if (recipientPubkey == null) {
-      await _store.delete(_db);
-      return;
+    final statement = _db.delete(_db.giftWraps);
+    if (recipientPubkey != null) {
+      statement.where((w) => w.recipientPubkey.equals(recipientPubkey));
     }
-    await _store.delete(
-      _db,
-      finder: Finder(filter: Filter.equals('recipientPubkey', recipientPubkey)),
+    await statement.go();
+  }
+
+  /// Anything short of [GiftWrapStage.stored] is still owed work.
+  Expression<bool> _unfinishedFor(GiftWraps w, String? recipientPubkey) {
+    final unfinished = w.stage.isNotValue(_stored);
+    if (recipientPubkey == null) return unfinished;
+    return unfinished & w.recipientPubkey.equals(recipientPubkey);
+  }
+
+  Future<GiftWrapRow?> _row(String giftWrapId, {String? recipientPubkey}) {
+    return (_db.select(_db.giftWraps)..where((w) {
+          final byId = w.id.equals(giftWrapId);
+          if (recipientPubkey == null) return byId;
+          return byId & w.recipientPubkey.equals(recipientPubkey);
+        }))
+        .getSingleOrNull();
+  }
+
+  GiftWrapProgress _progressOf(GiftWrapRow row) {
+    final failure = row.failure;
+    return GiftWrapProgress(
+      stage: GiftWrapStage.values.firstWhere(
+        (stage) => stage.name == row.stage,
+        orElse: () => GiftWrapStage.saved,
+      ),
+      failure: failure == null
+          ? null
+          : GiftWrapFailure.values.firstWhere(
+              (candidate) => candidate.name == failure,
+            ),
+      attempts: row.attempts,
     );
   }
+
+  static Map<String, dynamic> _toMap(GiftWrapRow row) => {
+    'recipientPubkey': row.recipientPubkey,
+    'event': jsonDecode(row.event),
+    if (row.seal != null) 'seal': jsonDecode(row.seal!),
+    if (row.rumor != null) 'rumor': jsonDecode(row.rumor!),
+    if (row.rumorId != null) 'rumorId': row.rumorId,
+    'stage': row.stage,
+    'attempts': row.attempts,
+    if (row.failure != null) 'failure': row.failure,
+  };
+
+  static String _encode(Nip01Event event) =>
+      jsonEncode(Nip01EventModel.fromEntity(event).toJson());
+
+  static Nip01Event _decode(String json) =>
+      Nip01EventModel.fromJson(jsonDecode(json) as Map);
 }

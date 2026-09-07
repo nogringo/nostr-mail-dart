@@ -15,8 +15,8 @@ import '../models/recipient.dart';
 import '../services/bridge_resolver.dart';
 import '../services/email_parser.dart';
 import '../storage/email_repository.dart';
+import '../storage/models/email_record.dart';
 import '../utils/attachment_extractor.dart';
-import '../utils/email_record_builder.dart';
 import '../utils/encrypt_blob.dart';
 import '../utils/mime_message_cleaner.dart';
 import 'settings_manager.dart';
@@ -571,8 +571,7 @@ class EmailSender {
       isBridged: rumor.getFirstTag('mail-from') != null,
       mimeMessage: mimeMessage,
     );
-    final record = buildEmailRecord(email: email, folder: 'sent');
-    await _emailRepo.save(record);
+    await _emailRepo.save(EmailRecord.fromEmail(email));
   }
 
   Future<OutgoingEvent> _buildGiftWrap(

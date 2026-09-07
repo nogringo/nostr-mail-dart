@@ -1,16 +1,14 @@
 import 'package:nostr_mail/src/storage/settings_repository.dart';
-import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
+
+import '../../helpers/test_database.dart';
 
 void main() {
   group('SettingsRepository', () {
     late SettingsRepository repo;
 
-    setUp(() async {
-      final db = await databaseFactoryMemoryFs.openDatabase(
-        'test_settings_${DateTime.now().microsecondsSinceEpoch}',
-      );
-      repo = SettingsRepository(db);
+    setUp(() {
+      repo = SettingsRepository(testDatabase());
     });
 
     test('save and load roundtrip', () async {

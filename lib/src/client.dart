@@ -31,10 +31,11 @@ import 'models/private_settings.dart';
 import 'models/recipient.dart';
 import 'models/scheduled_email.dart';
 
+import 'storage/database.dart';
 import 'storage/email_repository.dart';
 import 'storage/gift_wrap_repository.dart';
 import 'storage/label_repository.dart';
-import 'storage/schema_migrator.dart';
+import 'storage/legacy_sembast_cleanup.dart';
 import 'storage/settings_repository.dart';
 import 'storage/tombstone_repository.dart';
 import 'storage/models/email_query.dart';
@@ -94,12 +95,16 @@ class NostrMailClient {
 
   final Map<String, String>? nip05Overrides;
 
-  /// Build a [NostrMailClient] after running any pending schema migration.
+  /// Build a [NostrMailClient]. This is the only supported entry point.
   ///
-  /// This is the only supported entry point. The migration is fast (a single
-  /// drop per store) and runs automatically on every version mismatch so the
-  /// caller cannot accidentally read records in a stale format. The dropped
-  /// stores are rebuilt from the NDK cache, without network.
+  /// [database] is the mail store, a drift database the caller opens
+  /// (`NativeDatabase` on native, `WasmDatabase.open(...).resolvedExecutor` on
+  /// web) and closes after [dispose]. A schema bump drops and rebuilds its
+  /// tables from the NDK cache when it is opened, without network.
+  ///
+  /// [db] is the sembast database shared with the broadcast queue, the
+  /// Blossom upload queue, the event scheduler and the sync engine. Versions
+  /// before 3.0.0 kept the mail store in it too; [create] drops those stores.
   ///
   /// [syncEngine] keeps the NDK cache filled with everything the account needs
   /// (`sync_engine_shim_for_ndk`), and revisits it every `maxStaleness` of its
@@ -132,6 +137,7 @@ class NostrMailClient {
   /// disposes it as part of [dispose].
   static Future<NostrMailClient> create({
     required Ndk ndk,
+    required NostrMailDatabase database,
     required Database db,
     required BlossomCache blossomCache,
     required SyncEngine syncEngine,
@@ -143,13 +149,13 @@ class NostrMailClient {
     String? schedulerDvm,
     List<String>? schedulerDvmReadRelays,
   }) async {
-    await migrateSchemaIfNeeded(db: db);
+    await dropLegacySembastStores(db);
     syncEngine.start();
-    final emailRepo = EmailRepository(db);
-    final labelRepo = LabelRepository(db);
-    final giftWrapRepo = GiftWrapRepository(db);
-    final settingsRepo = SettingsRepository(db);
-    final tombstoneRepo = TombstoneRepository(db);
+    final emailRepo = EmailRepository(database);
+    final labelRepo = LabelRepository(database);
+    final giftWrapRepo = GiftWrapRepository(database);
+    final settingsRepo = SettingsRepository(database);
+    final tombstoneRepo = TombstoneRepository(database);
     final bus = EventBus();
 
     final relayResolver = RelayResolver(ndk, defaultDmRelays: defaultDmRelays);
@@ -1142,8 +1148,8 @@ class NostrMailClient {
 
   /// Stops background workers and, if this client owns either of the
   /// internal queues, disposes them and waits for any in-flight attempt
-  /// to finish. Call before closing the underlying sembast database and
-  /// Blossom cache.
+  /// to finish. Call before closing the drift database, the sembast database
+  /// and the Blossom cache.
   ///
   /// When a queue was passed to [create] explicitly, the caller owns its
   /// lifecycle and must dispose it themselves. The Blossom cache and the sync

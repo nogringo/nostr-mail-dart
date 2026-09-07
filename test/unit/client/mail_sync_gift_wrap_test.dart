@@ -8,6 +8,7 @@ import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:nostr_mail/src/client/event_bus.dart';
 import 'package:nostr_mail/src/client/relay_resolver.dart';
 import 'package:nostr_mail/src/client/mail_sync.dart';
+import 'package:nostr_mail/src/storage/database.dart';
 import 'package:nostr_mail/src/storage/email_repository.dart';
 import 'package:nostr_mail/src/storage/gift_wrap_repository.dart';
 import 'package:nostr_mail/src/storage/label_repository.dart';
@@ -17,9 +18,11 @@ import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_blossom_cache.dart';
+import '../../helpers/test_database.dart';
 
 void main() {
   group('MailSync.onGiftWrap account attribution', () {
+    late NostrMailDatabase database;
     late Database db;
     late Ndk ndk;
     late GiftWrapRepository giftWraps;
@@ -53,14 +56,15 @@ void main() {
       );
       ndk.accounts.loginPrivateKey(pubkey: bob, privkey: bobKeys.privateKey!);
 
-      giftWraps = GiftWrapRepository(db);
-      tombstones = TombstoneRepository(db);
+      database = testDatabase();
+      giftWraps = GiftWrapRepository(database);
+      tombstones = TombstoneRepository(database);
       engine = SyncEngine(ndk, db: db);
       sync = MailSync(
         ndk,
         engine,
-        EmailRepository(db),
-        LabelRepository(db),
+        EmailRepository(database),
+        LabelRepository(database),
         giftWraps,
         tombstones,
         EventBus(),

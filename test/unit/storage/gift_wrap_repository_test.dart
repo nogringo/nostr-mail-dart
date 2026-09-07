@@ -1,8 +1,9 @@
 import 'package:ndk/ndk.dart';
 import 'package:nostr_mail/src/models/gift_wrap_state.dart';
 import 'package:nostr_mail/src/storage/gift_wrap_repository.dart';
-import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
+
+import '../../helpers/test_database.dart';
 
 void main() {
   group('GiftWrapRepository', () {
@@ -28,11 +29,8 @@ void main() {
       );
     }
 
-    setUp(() async {
-      final db = await databaseFactoryMemory.openDatabase(
-        'test_gw_${DateTime.now().microsecondsSinceEpoch}',
-      );
-      repo = GiftWrapRepository(db);
+    setUp(() {
+      repo = GiftWrapRepository(testDatabase());
     });
 
     Future<GiftWrapProgress> save(

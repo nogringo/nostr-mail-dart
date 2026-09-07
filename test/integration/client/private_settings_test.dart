@@ -7,6 +7,7 @@ import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_blossom_cache.dart';
+import '../../helpers/test_database.dart';
 import '../../mocks/mock_relay.dart';
 import '../../helpers/test_sync_engine.dart';
 
@@ -41,6 +42,7 @@ void main() {
 
         final clientA = await NostrMailClient.create(
           ndk: ndk,
+          database: testDatabase(),
           db: db,
           syncEngine: testSyncEngine(ndk, db),
           blossomCache: await openTestBlossomCache('private_settings_a'),
@@ -62,6 +64,7 @@ void main() {
         );
         final clientB = await NostrMailClient.create(
           ndk: ndk,
+          database: testDatabase(),
           db: db2,
           syncEngine: testSyncEngine(ndk, db2),
           blossomCache: await openTestBlossomCache('private_settings_b'),
@@ -84,6 +87,7 @@ void main() {
     late Ndk ndk;
     late NostrMailClient client;
     late MockRelay relay;
+    late NostrMailDatabase database;
     late Database db;
     late BlossomCache blossomCache;
 
@@ -91,6 +95,7 @@ void main() {
       relay = MockRelay(name: 'relay', explicitPort: 19012);
       await relay.startServer();
 
+      database = testDatabase();
       db = await databaseFactoryMemory.openDatabase(
         'test_private_settings_${DateTime.now().microsecondsSinceEpoch}',
       );
@@ -111,6 +116,7 @@ void main() {
       blossomCache = await openTestBlossomCache('private_settings_c');
       client = await NostrMailClient.create(
         ndk: ndk,
+        database: database,
         db: db,
         syncEngine: testSyncEngine(ndk, db),
         blossomCache: blossomCache,
@@ -142,6 +148,7 @@ void main() {
         // the app reads the cached signature right after initClient().
         final reopened = await NostrMailClient.create(
           ndk: ndk,
+          database: database,
           db: db,
           syncEngine: testSyncEngine(ndk, db),
           blossomCache: blossomCache,

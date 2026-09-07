@@ -1,7 +1,7 @@
 // Regression test for nostr-mail-client issue #22:
 // "Cache stores every account's emails"
 //
-// When two accounts share a single sembast database (the documented
+// When two accounts share a single database (the documented
 // initialization pattern in README.md), reads must scope to the active
 // account's recipientPubkey. Each test simulates Alice reading the store
 // and asserts that none of Bob's data is reachable.
@@ -21,6 +21,7 @@ import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_blossom_cache.dart';
+import '../../helpers/test_database.dart';
 import '../../mocks/mock_relay.dart';
 import '../../helpers/test_sync_engine.dart';
 
@@ -51,12 +52,7 @@ void main() {
       from: 'sender@example.com',
       subject: subject,
       bodyPlain: body,
-      searchText: '$subject $body',
-      attachmentCount: 0,
       folder: folder,
-      isRead: false,
-      isStarred: false,
-      labels: const [],
       isBridged: false,
     );
   }
@@ -65,12 +61,10 @@ void main() {
     late EmailRepository emails;
     late LabelRepository labels;
 
-    setUp(() async {
-      final db = await databaseFactoryMemoryFs.openDatabase(
-        'iso_${DateTime.now().microsecondsSinceEpoch}',
-      );
-      emails = EmailRepository(db);
-      labels = LabelRepository(db);
+    setUp(() {
+      final database = testDatabase();
+      emails = EmailRepository(database);
+      labels = LabelRepository(database);
     });
 
     test("inbox query for Alice does not leak Bob's emails", () async {
@@ -146,7 +140,7 @@ void main() {
       );
 
       final all = await labels.getAllLabels(recipientPubkey: alice);
-      expect(all.map((r) => r['emailId']).toSet(), {
+      expect(all.map((r) => r.emailId).toSet(), {
         'a1',
       }, reason: 'Alice should only see labels attached to her own emails');
     });
@@ -157,6 +151,7 @@ void main() {
   // must be re-read from NDK on every call, not cached at construction.
   group('NDK account switch on a single client', () {
     late MockRelay relay;
+    late NostrMailDatabase database;
     late Database db;
     late Ndk ndk;
     late NostrMailClient client;
@@ -167,6 +162,7 @@ void main() {
       relay = MockRelay(name: 'relay', explicitPort: 19020);
       await relay.startServer();
 
+      database = testDatabase();
       db = await databaseFactoryMemory.openDatabase(
         'switch_${DateTime.now().microsecondsSinceEpoch}',
       );
@@ -189,6 +185,7 @@ void main() {
 
       client = await NostrMailClient.create(
         ndk: ndk,
+        database: database,
         db: db,
         syncEngine: testSyncEngine(ndk, db),
         blossomCache: await openTestBlossomCache('account_isolation_test'),
@@ -217,7 +214,7 @@ void main() {
     /// the goal here is to test the read path under an account switch,
     /// not the relay round-trip.
     Future<void> seedEmailFor(String recipient, String id) async {
-      final repo = EmailRepository(db);
+      final repo = EmailRepository(database);
       await repo.save(
         EmailRecord(
           id: id,
@@ -231,12 +228,7 @@ void main() {
           from: 'a@b.com',
           subject: 'sub',
           bodyPlain: 'body',
-          searchText: 'a@b.com sub body',
-          attachmentCount: 0,
           folder: 'inbox',
-          isRead: false,
-          isStarred: false,
-          labels: const [],
           isBridged: false,
         ),
       );
@@ -311,11 +303,11 @@ void main() {
     );
 
     test('clearLocalAccountData removes only the targeted account', () async {
-      final emails = EmailRepository(db);
-      final labels = LabelRepository(db);
-      final giftWraps = GiftWrapRepository(db);
-      final settings = SettingsRepository(db);
-      final tombstones = TombstoneRepository(db);
+      final emails = EmailRepository(database);
+      final labels = LabelRepository(database);
+      final giftWraps = GiftWrapRepository(database);
+      final settings = SettingsRepository(database);
+      final tombstones = TombstoneRepository(database);
 
       await seedEmailFor(aliceAccount.publicKey, 'alice-email');
       await seedEmailFor(bobAccount.publicKey, 'bob-email');

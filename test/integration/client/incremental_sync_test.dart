@@ -6,6 +6,7 @@ import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_blossom_cache.dart';
+import '../../helpers/test_database.dart';
 import '../../helpers/test_user.dart';
 import '../../mocks/mock_relay.dart';
 
@@ -53,6 +54,7 @@ void main() {
     );
     final bob = await NostrMailClient.create(
       ndk: ndk,
+      database: testDatabase(),
       db: db,
       blossomCache: await openTestBlossomCache('page_bob'),
       syncEngine: engine,

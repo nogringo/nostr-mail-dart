@@ -12,9 +12,8 @@ import '../models/unwrapped_gift_wrap.dart';
 import '../storage/email_repository.dart';
 import '../storage/gift_wrap_repository.dart';
 import '../storage/label_repository.dart';
-import '../storage/models/label_state.dart';
+import '../storage/models/email_record.dart';
 import '../storage/tombstone_repository.dart';
-import '../utils/email_record_builder.dart';
 import '../utils/throttle.dart';
 import 'cache_window.dart';
 import 'relay_resolver.dart';
@@ -27,7 +26,7 @@ import 'filters.dart';
 ///
 /// The [SyncEngine] shim keeps the NDK cache filled with everything this
 /// account needs; the cache is then the source of truth for raw events, and
-/// the local sembast stores are a projection of it rebuilt by
+/// the local tables are a projection of it rebuilt by
 /// [_processFromCache]. An event whose processing fails therefore stays in the
 /// cache, and is retried whenever a round covers it again: the engine walking
 /// its period a second time, or a [fetchRecent], which replays everything.
@@ -399,32 +398,7 @@ class MailSync {
         blossomCache: _blossomCache,
       );
 
-      // A sent copy is stored the moment it is sent, but its gift wrap is
-      // addressed to us too and comes back through the sync. Labels are
-      // denormalized onto the row, so rebuilding it from the wrap would put a
-      // trashed, starred or read email back to square one.
-      final existing = await _emails.getById(
-        email.id,
-        recipientPubkey: myPubkey,
-      );
-      // Labels can land before the wrap they point at, in which case they are
-      // in the label store but were never denormalized onto a row.
-      final state = existing != null
-          ? LabelState.of(existing)
-          : await _labels.getStateForEmail(
-              email.id,
-              recipientPubkey: myPubkey,
-              defaultFolder: email.senderPubkey == myPubkey ? 'sent' : 'inbox',
-            );
-      final record = buildEmailRecord(
-        email: email,
-        folder: state.folder,
-        labels: state.labels,
-        isRead: state.isRead,
-        isStarred: state.isStarred,
-      );
-
-      await _emails.save(record);
+      await _emails.save(EmailRecord.fromEmail(email));
       await _giftWraps.markStored(event.id);
 
       _bus.emit(EmailReceived(email: email, timestamp: email.date));
@@ -473,20 +447,7 @@ class MailSync {
         blossomCache: _blossomCache,
       );
 
-      final state = await _labels.getStateForEmail(
-        email.id,
-        recipientPubkey: recipientPubkey,
-        defaultFolder: email.senderPubkey == recipientPubkey ? 'sent' : 'inbox',
-      );
-      final record = buildEmailRecord(
-        email: email,
-        folder: state.folder,
-        labels: state.labels,
-        isRead: state.isRead,
-        isStarred: state.isStarred,
-      );
-
-      await _emails.save(record);
+      await _emails.save(EmailRecord.fromEmail(email));
       _bus.emit(EmailReceived(email: email, timestamp: email.date));
     } catch (_) {
       // Silently ignore malformed public emails
@@ -547,9 +508,9 @@ class MailSync {
         final allLabels = await _labels.getAllLabels(recipientPubkey: pubkey);
         var foundLabel = false;
         for (final labelRecord in allLabels) {
-          if (labelRecord['labelEventId'] == deletedEventId) {
-            final emailId = labelRecord['emailId'] as String;
-            final label = labelRecord['label'] as String;
+          if (labelRecord.labelEventId == deletedEventId) {
+            final emailId = labelRecord.emailId;
+            final label = labelRecord.label;
             await _labels.removeLabel(emailId, label, recipientPubkey: pubkey);
             _bus.emit(
               LabelRemoved(

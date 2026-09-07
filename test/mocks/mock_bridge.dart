@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:drift/drift.dart';
+import 'package:drift/native.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
@@ -6,6 +8,7 @@ import 'package:ndk/shared/nips/nip01/key_pair.dart';
 import 'package:nostr_mail/src/client.dart';
 import 'package:nostr_mail/src/models/email.dart';
 import 'package:nostr_mail/src/models/recipient.dart';
+import 'package:nostr_mail/src/storage/database.dart';
 import 'package:nostr_mail/src/utils/recipient_resolver.dart';
 
 import 'package:sembast/sembast_memory.dart' hide Filter;
@@ -21,6 +24,7 @@ class MockBridge {
 
   late KeyPair keyPair;
   late Ndk ndk;
+  late NostrMailDatabase database;
   late Database db;
   late SyncEngine syncEngine;
   late NostrMailClient client;
@@ -61,12 +65,15 @@ class MockBridge {
       privkey: keyPair.privateKey!,
     );
 
+    driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+    database = NostrMailDatabase(NativeDatabase.memory());
     db = await databaseFactoryMemory.openDatabase('bridge_$domain');
 
     syncEngine = SyncEngine(ndk, db: db);
 
     client = await NostrMailClient.create(
       ndk: ndk,
+      database: database,
       db: db,
       syncEngine: syncEngine,
       blossomCache: await openTestBlossomCache('bridge_$domain'),
@@ -101,6 +108,7 @@ class MockBridge {
     await _emailSubscription?.cancel();
     await syncEngine.dispose();
     await ndk.destroy();
+    await database.close();
     await db.close();
   }
 

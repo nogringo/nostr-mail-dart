@@ -1,0 +1,100 @@
+CREATE TABLE emails (
+  id TEXT NOT NULL PRIMARY KEY,
+  sender_pubkey TEXT NOT NULL,
+  recipient_pubkey TEXT NOT NULL,
+  is_public BOOLEAN NOT NULL,
+  is_bridged BOOLEAN NOT NULL,
+  light_mime_text TEXT NOT NULL,
+  blossom_hash TEXT,
+  decryption_key TEXT,
+  decryption_nonce TEXT,
+  created_at INTEGER NOT NULL,
+  date INTEGER NOT NULL,
+  from_address TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  body_plain TEXT NOT NULL
+) AS EmailRow;
+CREATE INDEX emails_recipient_date ON emails (recipient_pubkey, date);
+
+CREATE TABLE attachments (
+  email_id TEXT NOT NULL REFERENCES emails (id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  filename TEXT,
+  content_type TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  sha256 TEXT NOT NULL,
+  content_id TEXT,
+  PRIMARY KEY (email_id, position)
+) AS AttachmentRow;
+
+-- No foreign key to emails: a label can land before the email it points at.
+CREATE TABLE labels (
+  email_id TEXT NOT NULL,
+  label TEXT NOT NULL,
+  label_event_id TEXT NOT NULL,
+  timestamp INTEGER NOT NULL,
+  recipient_pubkey TEXT NOT NULL,
+  PRIMARY KEY (email_id, label)
+) AS LabelRow;
+CREATE INDEX labels_recipient_label ON labels (recipient_pubkey, label);
+
+CREATE TABLE gift_wraps (
+  id TEXT NOT NULL PRIMARY KEY,
+  recipient_pubkey TEXT NOT NULL,
+  event TEXT NOT NULL,
+  seal TEXT,
+  rumor TEXT,
+  rumor_id TEXT,
+  stage TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  failure TEXT
+) AS GiftWrapRow;
+CREATE INDEX gift_wraps_rumor_id ON gift_wraps (rumor_id);
+CREATE INDEX gift_wraps_recipient_stage ON gift_wraps (recipient_pubkey, stage);
+
+CREATE TABLE tombstones (
+  event_id TEXT NOT NULL PRIMARY KEY,
+  recipient_pubkey TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+) AS TombstoneRow;
+
+CREATE TABLE settings (
+  pubkey TEXT NOT NULL PRIMARY KEY,
+  json TEXT NOT NULL
+) AS SettingsRow;
+
+-- The folder is the most recent folder label, else the natural mailbox.
+CREATE VIEW email_states AS
+SELECT e.*,
+  COALESCE(
+    (SELECT substr(l.label, 8) FROM labels l
+      WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey
+        AND l.label LIKE 'folder:%'
+      ORDER BY l.timestamp DESC LIMIT 1),
+    CASE WHEN e.sender_pubkey = e.recipient_pubkey THEN 'sent' ELSE 'inbox' END
+  ) AS folder,
+  EXISTS(SELECT 1 FROM labels l WHERE l.email_id = e.id
+    AND l.recipient_pubkey = e.recipient_pubkey AND l.label = 'state:read') AS is_read,
+  EXISTS(SELECT 1 FROM labels l WHERE l.email_id = e.id
+    AND l.recipient_pubkey = e.recipient_pubkey AND l.label = 'flag:starred') AS is_starred
+FROM emails e;
+
+-- External-content index: the text stays in emails, only tokens are stored.
+CREATE VIRTUAL TABLE email_search USING fts5(
+  from_address, subject, body_plain,
+  content='emails', content_rowid='rowid', tokenize='unicode61'
+);
+CREATE TRIGGER emails_ai AFTER INSERT ON emails BEGIN
+  INSERT INTO email_search(rowid, from_address, subject, body_plain)
+    VALUES (new.rowid, new.from_address, new.subject, new.body_plain);
+END;
+CREATE TRIGGER emails_ad AFTER DELETE ON emails BEGIN
+  INSERT INTO email_search(email_search, rowid, from_address, subject, body_plain)
+    VALUES ('delete', old.rowid, old.from_address, old.subject, old.body_plain);
+END;
+CREATE TRIGGER emails_au AFTER UPDATE ON emails BEGIN
+  INSERT INTO email_search(email_search, rowid, from_address, subject, body_plain)
+    VALUES ('delete', old.rowid, old.from_address, old.subject, old.body_plain);
+  INSERT INTO email_search(rowid, from_address, subject, body_plain)
+    VALUES (new.rowid, new.from_address, new.subject, new.body_plain);
+END;

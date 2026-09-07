@@ -1,26 +1,20 @@
-import 'package:sembast/sembast.dart';
+import 'package:drift/drift.dart';
 
-import 'models/email_record.dart';
-import 'models/label_state.dart';
+import 'database.dart';
 
-/// Repository for NIP-32 labels with denormalized email updates.
+/// Repository for NIP-32 labels.
 ///
-/// Every label mutation is applied atomically to both the label store and
-/// the denormalized email record so queries never need joins.
+/// Labels are the source of truth for an email's folder, read and starred
+/// state: the `email_states` view derives them, so nothing is copied onto
+/// the email row.
 ///
-/// Label records carry their owner's [recipientPubkey] (denormalized from
-/// the associated email) so reads can be scoped per account without a
-/// join.
+/// Label records carry their owner's [recipientPubkey] so reads can be
+/// scoped per account.
 class LabelRepository {
-  final Database _db;
-  final _labelsStore = stringMapStoreFactory.store('labels');
-  final _emailsStore = stringMapStoreFactory.store('emails');
+  final NostrMailDatabase _db;
 
   LabelRepository(this._db);
 
-  String _makeKey(String emailId, String label) => '$emailId:$label';
-
-  /// Save a label and update the denormalized email record atomically.
   Future<void> saveLabel({
     required String emailId,
     required String label,
@@ -28,40 +22,28 @@ class LabelRepository {
     required int timestamp,
     required String recipientPubkey,
   }) async {
-    final key = _makeKey(emailId, label);
-    await _db.transaction((txn) async {
-      await _labelsStore.record(key).put(txn, {
-        'emailId': emailId,
-        'label': label,
-        'labelEventId': labelEventId,
-        'timestamp': timestamp,
-        'recipientPubkey': recipientPubkey,
-      });
-      await _applyLabelToEmail(txn, emailId, label, recipientPubkey, add: true);
-    });
+    await _db
+        .into(_db.labels)
+        .insertOnConflictUpdate(
+          LabelRow(
+            emailId: emailId,
+            label: label,
+            labelEventId: labelEventId,
+            timestamp: timestamp,
+            recipientPubkey: recipientPubkey,
+          ),
+        );
   }
 
-  /// Remove a label and revert the denormalized email record atomically.
-  /// No-op if the label belongs to another account.
+  /// Remove a label. No-op if the label belongs to another account.
   Future<void> removeLabel(
     String emailId,
     String label, {
     required String recipientPubkey,
   }) async {
-    final key = _makeKey(emailId, label);
-    await _db.transaction((txn) async {
-      final existing = await _labelsStore.record(key).get(txn);
-      if (existing == null) return;
-      if (existing['recipientPubkey'] != recipientPubkey) return;
-      await _labelsStore.record(key).delete(txn);
-      await _applyLabelToEmail(
-        txn,
-        emailId,
-        label,
-        recipientPubkey,
-        add: false,
-      );
-    });
+    await (_db.delete(
+      _db.labels,
+    )..where((l) => _isLabel(l, emailId, label, recipientPubkey))).go();
   }
 
   /// Get the label event ID for a specific email/label combination
@@ -71,11 +53,11 @@ class LabelRepository {
     String label, {
     required String recipientPubkey,
   }) async {
-    final key = _makeKey(emailId, label);
-    final record = await _labelsStore.record(key).get(_db);
-    if (record == null) return null;
-    if (record['recipientPubkey'] != recipientPubkey) return null;
-    return record['labelEventId'] as String?;
+    final row =
+        await (_db.select(_db.labels)
+              ..where((l) => _isLabel(l, emailId, label, recipientPubkey)))
+            .getSingleOrNull();
+    return row?.labelEventId;
   }
 
   /// Get all labels for an email belonging to [recipientPubkey].
@@ -83,31 +65,14 @@ class LabelRepository {
     String emailId, {
     required String recipientPubkey,
   }) async {
-    final finder = Finder(
-      filter: Filter.and([
-        Filter.equals('emailId', emailId),
-        Filter.equals('recipientPubkey', recipientPubkey),
-      ]),
-    );
-    final records = await _labelsStore.find(_db, finder: finder);
-    return records.map((r) => r.value['label'] as String).toList();
-  }
-
-  /// The denormalized state [emailId]'s stored labels imply.
-  ///
-  /// Labels can be saved before the email they point at exists, in which case
-  /// [saveLabel] had nothing to denormalize onto; this rebuilds that state
-  /// when the email finally lands.
-  Future<LabelState> getStateForEmail(
-    String emailId, {
-    required String recipientPubkey,
-    required String defaultFolder,
-  }) async {
-    final labels = await getLabelsForEmail(
-      emailId,
-      recipientPubkey: recipientPubkey,
-    );
-    return LabelState.fromLabels(labels, defaultFolder: defaultFolder);
+    final rows =
+        await (_db.select(_db.labels)..where(
+              (l) =>
+                  l.emailId.equals(emailId) &
+                  l.recipientPubkey.equals(recipientPubkey),
+            ))
+            .get();
+    return rows.map((r) => r.label).toList();
   }
 
   /// Check if [recipientPubkey]'s [emailId] has [label].
@@ -116,10 +81,11 @@ class LabelRepository {
     String label, {
     required String recipientPubkey,
   }) async {
-    final key = _makeKey(emailId, label);
-    final record = await _labelsStore.record(key).get(_db);
-    if (record == null) return false;
-    return record['recipientPubkey'] == recipientPubkey;
+    final row =
+        await (_db.select(_db.labels)
+              ..where((l) => _isLabel(l, emailId, label, recipientPubkey)))
+            .getSingleOrNull();
+    return row != null;
   }
 
   /// Get all email IDs with [label] belonging to [recipientPubkey].
@@ -127,14 +93,14 @@ class LabelRepository {
     String label, {
     required String recipientPubkey,
   }) async {
-    final finder = Finder(
-      filter: Filter.and([
-        Filter.equals('label', label),
-        Filter.equals('recipientPubkey', recipientPubkey),
-      ]),
-    );
-    final records = await _labelsStore.find(_db, finder: finder);
-    return records.map((r) => r.value['emailId'] as String).toList();
+    final rows =
+        await (_db.select(_db.labels)..where(
+              (l) =>
+                  l.label.equals(label) &
+                  l.recipientPubkey.equals(recipientPubkey),
+            ))
+            .get();
+    return rows.map((r) => r.emailId).toList();
   }
 
   /// Get email IDs with a label older than [before], scoped by account.
@@ -144,18 +110,15 @@ class LabelRepository {
     required String recipientPubkey,
   }) async {
     final cutoff = before.millisecondsSinceEpoch ~/ 1000;
-    final finder = Finder(
-      filter: Filter.and([
-        Filter.equals('label', label),
-        Filter.equals('recipientPubkey', recipientPubkey),
-        Filter.or([
-          Filter.isNull('timestamp'),
-          Filter.lessThanOrEquals('timestamp', cutoff),
-        ]),
-      ]),
-    );
-    final records = await _labelsStore.find(_db, finder: finder);
-    return records.map((r) => r.value['emailId'] as String).toList();
+    final rows =
+        await (_db.select(_db.labels)..where(
+              (l) =>
+                  l.label.equals(label) &
+                  l.recipientPubkey.equals(recipientPubkey) &
+                  l.timestamp.isSmallerOrEqualValue(cutoff),
+            ))
+            .get();
+    return rows.map((r) => r.emailId).toList();
   }
 
   /// Get label event IDs attached to any email in [emailIds].
@@ -166,18 +129,14 @@ class LabelRepository {
     final uniqueIds = emailIds.toSet().toList();
     if (uniqueIds.isEmpty) return [];
 
-    final finder = Finder(
-      filter: Filter.and([
-        Filter.inList('emailId', uniqueIds),
-        Filter.equals('recipientPubkey', recipientPubkey),
-      ]),
-    );
-    final records = await _labelsStore.find(_db, finder: finder);
-    return records
-        .map((r) => r.value['labelEventId'] as String?)
-        .nonNulls
-        .toSet()
-        .toList();
+    final rows =
+        await (_db.select(_db.labels)..where(
+              (l) =>
+                  l.emailId.isIn(uniqueIds) &
+                  l.recipientPubkey.equals(recipientPubkey),
+            ))
+            .get();
+    return rows.map((r) => r.labelEventId).toSet().toList();
   }
 
   /// Delete all labels for an email belonging to [recipientPubkey].
@@ -197,85 +156,39 @@ class LabelRepository {
     final uniqueIds = emailIds.toSet().toList();
     if (uniqueIds.isEmpty) return;
 
-    final finder = Finder(
-      filter: Filter.and([
-        Filter.inList('emailId', uniqueIds),
-        Filter.equals('recipientPubkey', recipientPubkey),
-      ]),
-    );
-    await _labelsStore.delete(_db, finder: finder);
+    await (_db.delete(_db.labels)..where(
+          (l) =>
+              l.emailId.isIn(uniqueIds) &
+              l.recipientPubkey.equals(recipientPubkey),
+        ))
+        .go();
   }
 
   /// Get all label records for [recipientPubkey] (used by sync to find
   /// labels by event id when processing label deletions).
-  Future<List<Map<String, dynamic>>> getAllLabels({
-    required String recipientPubkey,
-  }) async {
-    final finder = Finder(
-      filter: Filter.equals('recipientPubkey', recipientPubkey),
-    );
-    final records = await _labelsStore.find(_db, finder: finder);
-    return records.map((r) => Map<String, dynamic>.from(r.value)).toList();
+  Future<List<LabelRow>> getAllLabels({required String recipientPubkey}) {
+    return (_db.select(
+      _db.labels,
+    )..where((l) => l.recipientPubkey.equals(recipientPubkey))).get();
   }
 
   /// Delete every label for [recipientPubkey], or pass `null` to wipe the
   /// entire store across all accounts.
   Future<void> clearAll({String? recipientPubkey}) async {
-    if (recipientPubkey == null) {
-      await _labelsStore.delete(_db);
-      return;
+    final statement = _db.delete(_db.labels);
+    if (recipientPubkey != null) {
+      statement.where((l) => l.recipientPubkey.equals(recipientPubkey));
     }
-    await _labelsStore.delete(
-      _db,
-      finder: Finder(filter: Filter.equals('recipientPubkey', recipientPubkey)),
-    );
+    await statement.go();
   }
 
-  // ── Denormalization helper ──────────────────────────────────────────────
-
-  Future<void> _applyLabelToEmail(
-    Transaction txn,
+  static Expression<bool> _isLabel(
+    Labels l,
     String emailId,
     String label,
-    String recipientPubkey, {
-    required bool add,
-  }) async {
-    final record = await _emailsStore.record(emailId).get(txn);
-    if (record == null) return;
-    final email = EmailRecord.fromJson(record as Map<String, dynamic>);
-    if (email.recipientPubkey != recipientPubkey) return;
-
-    String? newFolder;
-    bool? newIsRead;
-    bool? newIsStarred;
-    final newLabels = List<String>.of(email.labels);
-
-    if (label.startsWith('folder:')) {
-      final folderName = label.substring(7);
-      newFolder = add ? folderName : _defaultFolder(email);
-    } else if (label == 'state:read') {
-      newIsRead = add;
-    } else if (label == 'flag:starred') {
-      newIsStarred = add;
-    } else {
-      if (add) {
-        if (!newLabels.contains(label)) newLabels.add(label);
-      } else {
-        newLabels.remove(label);
-      }
-    }
-
-    final updated = email.copyWith(
-      folder: newFolder,
-      isRead: newIsRead,
-      isStarred: newIsStarred,
-      labels: newLabels,
-    );
-    await _emailsStore.record(emailId).put(txn, updated.toJson());
-  }
-
-  /// Restore folder labels to the email's natural mailbox.
-  String _defaultFolder(EmailRecord email) {
-    return email.senderPubkey == email.recipientPubkey ? 'sent' : 'inbox';
-  }
+    String recipientPubkey,
+  ) =>
+      l.emailId.equals(emailId) &
+      l.label.equals(label) &
+      l.recipientPubkey.equals(recipientPubkey);
 }

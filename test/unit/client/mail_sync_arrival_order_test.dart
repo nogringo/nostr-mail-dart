@@ -18,9 +18,11 @@ import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_blossom_cache.dart';
+import '../../helpers/test_database.dart';
 
 void main() {
   group('MailSync arrival order', () {
+    late NostrMailDatabase database;
     late Database db;
     late Ndk ndk;
     late EmailRepository emails;
@@ -51,16 +53,17 @@ void main() {
         privkey: aliceKeys.privateKey!,
       );
 
-      emails = EmailRepository(db);
-      labels = LabelRepository(db);
+      database = testDatabase();
+      emails = EmailRepository(database);
+      labels = LabelRepository(database);
       engine = SyncEngine(ndk, db: db);
       sync = MailSync(
         ndk,
         engine,
         emails,
         labels,
-        GiftWrapRepository(db),
-        TombstoneRepository(db),
+        GiftWrapRepository(database),
+        TombstoneRepository(database),
         EventBus(),
         RelayResolver(ndk),
         blossomCache: await openTestBlossomCache('arrival_order_test'),

@@ -1,4 +1,5 @@
 import 'package:blossom_cache/blossom_cache.dart';
+import 'package:drift/native.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:idb_shim/idb_client_memory.dart';
 import 'package:ndk/ndk.dart';
@@ -37,9 +38,13 @@ void main() async {
   // never stops nor disposes it: share it with your other ndk-based SDKs.
   final syncEngine = SyncEngine(ndk, db: db);
 
-  // Create the mail client (runs any pending schema migration first)
+  // The mail store. A real app opens `NativeDatabase(File(...))` on native
+  // and `WasmDatabase.open(...)` on web, and closes it after `dispose()`.
+  final database = NostrMailDatabase(NativeDatabase.memory());
+
   final client = await NostrMailClient.create(
     ndk: ndk,
+    database: database,
     db: db,
     blossomCache: blossomCache,
     syncEngine: syncEngine,

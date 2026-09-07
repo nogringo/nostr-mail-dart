@@ -8,6 +8,7 @@ import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_blossom_cache.dart';
+import '../../helpers/test_database.dart';
 import '../../mocks/mock_relay.dart';
 import '../../helpers/test_sync_engine.dart';
 
@@ -24,6 +25,7 @@ void main() {
       relay = MockRelay(name: 'relay', explicitPort: 19015);
       await relay.startServer();
 
+      final database = testDatabase();
       final db = await databaseFactoryMemory.openDatabase(
         'test_db_${DateTime.now().microsecondsSinceEpoch}',
       );
@@ -42,10 +44,11 @@ void main() {
         privkey: keyPair.privateKey!,
       );
 
-      emailRepo = EmailRepository(db);
-      labelRepo = LabelRepository(db);
+      emailRepo = EmailRepository(database);
+      labelRepo = LabelRepository(database);
       client = await NostrMailClient.create(
         ndk: ndk,
+        database: database,
         db: db,
         syncEngine: testSyncEngine(ndk, db),
         blossomCache: await openTestBlossomCache('trashed_emails_test'),
@@ -72,12 +75,7 @@ void main() {
         from: 'from@test.com',
         subject: 'Test',
         bodyPlain: 'Test Body',
-        searchText: 'from@test.com test test body',
-        attachmentCount: 0,
         folder: 'inbox',
-        isRead: false,
-        isStarred: false,
-        labels: const [],
         isBridged: false,
       );
     }

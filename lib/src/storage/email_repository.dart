@@ -1,89 +1,125 @@
-import 'package:sembast/sembast.dart';
+import 'package:drift/drift.dart';
 
+import '../models/attachment_ref.dart';
+import 'database.dart';
 import 'models/email_query.dart';
 import 'models/email_record.dart';
 
-/// Repository for denormalized email records.
+/// Repository for stored emails.
 ///
-/// All queries run against a single Sembast store so filtering, sorting and
-/// pagination are native and fast.
+/// Reads go through the `email_states` view, which derives the folder, read
+/// and starred state from the labels table, and through the FTS5 index for
+/// free-text search.
 ///
-/// Every read takes a [recipientPubkey] and filters on it — this is what
-/// keeps multi-account data isolated when several accounts share one DB.
-/// A row whose [EmailRecord.recipientPubkey] does not match the caller is
-/// invisible (and unreachable, even by id).
+/// Every read takes a [recipientPubkey] and filters on it: this is what
+/// keeps multi-account data isolated when several accounts share one
+/// database. A row whose [EmailRecord.recipientPubkey] does not match the
+/// caller is invisible (and unreachable, even by id).
 class EmailRepository {
-  final Database _db;
-  final _store = stringMapStoreFactory.store('emails');
+  final NostrMailDatabase _db;
 
   EmailRepository(this._db);
 
-  Future<void> save(EmailRecord record) async {
-    await _store.record(record.id).put(_db, record.toJson());
-  }
+  /// Insert or replace the email and its attachment refs. The state fields
+  /// of [record] are not written: labels own them.
+  Future<void> save(EmailRecord record) => _db.transaction(() async {
+    await _db.into(_db.emails).insertOnConflictUpdate(_toRow(record));
+    await (_db.delete(
+      _db.attachments,
+    )..where((a) => a.emailId.equals(record.id))).go();
+    await _db.batch(
+      (b) => b.insertAll(_db.attachments, [
+        for (final (i, ref) in record.attachmentRefs.indexed)
+          AttachmentRow(
+            emailId: record.id,
+            position: i,
+            filename: ref.filename,
+            contentType: ref.contentType,
+            size: ref.size,
+            sha256: ref.sha256,
+            contentId: ref.contentId,
+          ),
+      ]),
+    );
+  });
 
   /// Returns the email iff it belongs to [recipientPubkey].
   Future<EmailRecord?> getById(
     String id, {
     required String recipientPubkey,
   }) async {
-    final record = await _store.record(id).get(_db);
-    if (record == null) return null;
-    final email = EmailRecord.fromJson(record as Map<String, dynamic>);
-    if (email.recipientPubkey != recipientPubkey) return null;
-    return email;
+    final row =
+        await (_db.select(_db.emailStates)..where(
+              (v) =>
+                  v.id.equals(id) & v.recipientPubkey.equals(recipientPubkey),
+            ))
+            .getSingleOrNull();
+    if (row == null) return null;
+    final records = await _load([row], recipientPubkey: recipientPubkey);
+    return records.single;
   }
 
-  Filter _buildFilter(EmailQuery q) {
-    final filters = <Filter>[
-      Filter.equals('recipientPubkey', q.recipientPubkey),
-      if (q.folder != null) Filter.equals('folder', q.folder),
-      if (q.isRead != null) Filter.equals('isRead', q.isRead),
-      if (q.isStarred != null) Filter.equals('isStarred', q.isStarred),
-      if (q.hasAttachments != null)
-        q.hasAttachments!
-            ? Filter.greaterThan('attachmentCount', 0)
-            : Filter.equals('attachmentCount', 0),
-      if (q.search != null && q.search!.trim().isNotEmpty)
-        Filter.matchesRegExp(
-          'searchText',
-          RegExp(
-            RegExp.escape(q.search!.trim().toLowerCase()),
-            caseSensitive: false,
-          ),
-        ),
-    ];
-    return filters.length == 1 ? filters.first : Filter.and(filters);
+  Expression<bool> _matches(EmailStates v, EmailQuery q) {
+    var expr = v.recipientPubkey.equals(q.recipientPubkey);
+    if (q.folder != null) expr = expr & v.folder.equals(q.folder!);
+    if (q.isRead != null) expr = expr & v.isRead.equals(q.isRead!);
+    if (q.isStarred != null) expr = expr & v.isStarred.equals(q.isStarred!);
+    if (q.hasAttachments != null) {
+      final hasAttachments = existsQuery(
+        _db.select(_db.attachments)..where((a) => a.emailId.equalsExp(v.id)),
+      );
+      expr = expr & (q.hasAttachments! ? hasAttachments : hasAttachments.not());
+    }
+    final pattern = _ftsPattern(q.search);
+    if (pattern != null) {
+      final matching =
+          _db.selectOnly(_db.emails).join([
+              innerJoin(
+                _db.emailSearch,
+                const CustomExpression<int>(
+                  'email_search.rowid',
+                ).equalsExp(_db.emails.rowId),
+              ),
+            ])
+            ..addColumns([_db.emails.id])
+            ..where(_Fts5Match(pattern));
+      expr = expr & v.id.isInQuery(matching);
+    }
+    return expr;
   }
 
   /// Count emails matching [q] without loading any records.
   /// Use this for badge counters where the records themselves aren't needed.
-  Future<int> count(EmailQuery q) {
-    return _store.count(_db, filter: _buildFilter(q));
+  Future<int> count(EmailQuery q) async {
+    final total = countAll();
+    final row =
+        await (_db.selectOnly(_db.emailStates)
+              ..addColumns([total])
+              ..where(_matches(_db.emailStates, q)))
+            .getSingle();
+    return row.read(total)!;
   }
 
   /// Query emails with filters, sorting and pagination.
   Future<PaginatedResult<EmailRecord>> query(EmailQuery q) async {
-    final filter = _buildFilter(q);
+    final total = await count(q);
 
-    final sortOrder = q.sort == EmailSort.dateDesc
-        ? SortOrder('date', false)
-        : SortOrder('date', true);
+    final statement = _db.select(_db.emailStates)
+      ..where((v) => _matches(v, q))
+      ..orderBy([
+        (v) => OrderingTerm(
+          expression: v.date,
+          mode: q.sort == EmailSort.dateDesc
+              ? OrderingMode.desc
+              : OrderingMode.asc,
+        ),
+      ]);
+    if (q.limit != null || q.offset != null) {
+      statement.limit(q.limit ?? -1, offset: q.offset);
+    }
 
-    final total = await _store.count(_db, filter: filter);
-
-    final finder = Finder(
-      filter: filter,
-      sortOrders: [sortOrder],
-      limit: q.limit,
-      offset: q.offset,
-    );
-
-    final records = await _store.find(_db, finder: finder);
-    final items = records
-        .map((r) => EmailRecord.fromJson(r.value as Map<String, dynamic>))
-        .toList();
-
+    final rows = await statement.get();
+    final items = await _load(rows, recipientPubkey: q.recipientPubkey);
     return PaginatedResult(items: items, total: total, offset: q.offset ?? 0);
   }
 
@@ -94,20 +130,18 @@ class EmailRepository {
     required String recipientPubkey,
   }) async {
     if (ids.isEmpty) return [];
-    final finder = Finder(
-      filter: Filter.and([
-        Filter.equals('recipientPubkey', recipientPubkey),
-        Filter.inList('id', ids),
-      ]),
-      sortOrders: [SortOrder('date', false)],
-    );
-    final records = await _store.find(_db, finder: finder);
-    return records
-        .map((r) => EmailRecord.fromJson(r.value as Map<String, dynamic>))
-        .toList();
+    final rows =
+        await (_db.select(_db.emailStates)
+              ..where(
+                (v) =>
+                    v.recipientPubkey.equals(recipientPubkey) & v.id.isIn(ids),
+              )
+              ..orderBy([(v) => OrderingTerm.desc(v.date)]))
+            .get();
+    return _load(rows, recipientPubkey: recipientPubkey);
   }
 
-  /// Search emails by free text across from, subject and body.
+  /// Search emails by words or word prefixes across from, subject and body.
   ///
   /// Prefer [query] with the [search] field for combined filters.
   Future<List<EmailRecord>> search(
@@ -126,32 +160,12 @@ class EmailRepository {
     ).then((r) => r.items);
   }
 
-  /// Update denormalized label fields on an email record.
-  /// Used by [LabelRepository] to keep the email store consistent.
-  Future<void> updateLabels(
-    String emailId, {
-    required String recipientPubkey,
-    String? folder,
-    bool? isRead,
-    bool? isStarred,
-    List<String>? labels,
-  }) async {
-    final existing = await getById(emailId, recipientPubkey: recipientPubkey);
-    if (existing == null) return;
-    final updated = existing.copyWith(
-      folder: folder,
-      isRead: isRead,
-      isStarred: isStarred,
-      labels: labels,
-    );
-    await save(updated);
-  }
-
   /// Delete the email iff it belongs to [recipientPubkey].
   Future<void> delete(String id, {required String recipientPubkey}) async {
-    final existing = await getById(id, recipientPubkey: recipientPubkey);
-    if (existing == null) return;
-    await _store.record(id).delete(_db);
+    await (_db.delete(_db.emails)..where(
+          (e) => e.id.equals(id) & e.recipientPubkey.equals(recipientPubkey),
+        ))
+        .go();
   }
 
   /// Delete emails whose ids are in [ids], scoped to [recipientPubkey].
@@ -161,28 +175,133 @@ class EmailRepository {
   }) async {
     final uniqueIds = ids.toSet().toList();
     if (uniqueIds.isEmpty) return;
-
-    await _store.delete(
-      _db,
-      finder: Finder(
-        filter: Filter.and([
-          Filter.equals('recipientPubkey', recipientPubkey),
-          Filter.inList('id', uniqueIds),
-        ]),
-      ),
-    );
+    await (_db.delete(_db.emails)..where(
+          (e) =>
+              e.recipientPubkey.equals(recipientPubkey) & e.id.isIn(uniqueIds),
+        ))
+        .go();
   }
 
   /// Delete every email belonging to [recipientPubkey].
   /// Pass `null` to wipe the entire store across all accounts.
   Future<void> clearAll({String? recipientPubkey}) async {
-    if (recipientPubkey == null) {
-      await _store.delete(_db);
-      return;
+    final statement = _db.delete(_db.emails);
+    if (recipientPubkey != null) {
+      statement.where((e) => e.recipientPubkey.equals(recipientPubkey));
     }
-    await _store.delete(
-      _db,
-      finder: Finder(filter: Filter.equals('recipientPubkey', recipientPubkey)),
-    );
+    await statement.go();
+  }
+
+  /// Attach the refs and custom labels of [rows], in one query each.
+  Future<List<EmailRecord>> _load(
+    List<EmailState> rows, {
+    required String recipientPubkey,
+  }) async {
+    if (rows.isEmpty) return [];
+    final ids = rows.map((r) => r.id).toList();
+
+    final attachments =
+        await (_db.select(_db.attachments)
+              ..where((a) => a.emailId.isIn(ids))
+              ..orderBy([(a) => OrderingTerm.asc(a.position)]))
+            .get();
+    final refs = <String, List<AttachmentRef>>{};
+    for (final a in attachments) {
+      refs
+          .putIfAbsent(a.emailId, () => [])
+          .add(
+            AttachmentRef(
+              filename: a.filename,
+              contentType: a.contentType,
+              size: a.size,
+              sha256: a.sha256,
+              contentId: a.contentId,
+            ),
+          );
+    }
+
+    final labels =
+        await (_db.select(_db.labels)..where(
+              (l) =>
+                  l.emailId.isIn(ids) &
+                  l.recipientPubkey.equals(recipientPubkey),
+            ))
+            .get();
+    final customLabels = <String, List<String>>{};
+    for (final l in labels) {
+      if (_isStateLabel(l.label)) continue;
+      customLabels.putIfAbsent(l.emailId, () => []).add(l.label);
+    }
+
+    return [
+      for (final row in rows)
+        EmailRecord(
+          id: row.id,
+          senderPubkey: row.senderPubkey,
+          recipientPubkey: row.recipientPubkey,
+          isPublic: row.isPublic,
+          isBridged: row.isBridged,
+          lightMimeText: row.lightMimeText,
+          attachmentRefs: refs[row.id] ?? const [],
+          blossomHash: row.blossomHash,
+          decryptionKey: row.decryptionKey,
+          decryptionNonce: row.decryptionNonce,
+          createdAt: row.createdAt,
+          date: row.date,
+          from: row.fromAddress,
+          subject: row.subject,
+          bodyPlain: row.bodyPlain,
+          folder: row.folder,
+          isRead: row.isRead,
+          isStarred: row.isStarred,
+          labels: customLabels[row.id] ?? const [],
+        ),
+    ];
+  }
+
+  static bool _isStateLabel(String label) =>
+      label.startsWith('folder:') ||
+      label == 'state:read' ||
+      label == 'flag:starred';
+
+  static EmailRow _toRow(EmailRecord r) => EmailRow(
+    id: r.id,
+    senderPubkey: r.senderPubkey,
+    recipientPubkey: r.recipientPubkey,
+    isPublic: r.isPublic,
+    isBridged: r.isBridged,
+    lightMimeText: r.lightMimeText,
+    blossomHash: r.blossomHash,
+    decryptionKey: r.decryptionKey,
+    decryptionNonce: r.decryptionNonce,
+    createdAt: r.createdAt,
+    date: r.date,
+    fromAddress: r.from,
+    subject: r.subject,
+    bodyPlain: r.bodyPlain,
+  );
+
+  /// Every word of [search] as a quoted prefix term, so user input never
+  /// reaches the FTS5 query parser as syntax.
+  static String? _ftsPattern(String? search) {
+    if (search == null) return null;
+    final words = search
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty);
+    if (words.isEmpty) return null;
+    return words.map((w) => '"${w.replaceAll('"', '""')}"*').join(' ');
+  }
+}
+
+class _Fts5Match extends Expression<bool> {
+  final String pattern;
+
+  const _Fts5Match(this.pattern);
+
+  @override
+  void writeInto(GenerationContext context) {
+    context.buffer.write('email_search MATCH ');
+    Variable<String>(pattern).writeInto(context);
   }
 }

@@ -7,7 +7,7 @@ A Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59
 - Send emails to Nostr users (via npub, hex pubkey, or NIP-05 identifier)
 - Send emails to legacy email addresses via SMTP bridges
 - Receive and decrypt gift-wrapped email messages
-- Local email storage with sembast
+- Local email storage with drift (SQLite), full-text search with FTS5
 - RFC 2822 email format support
 - NIP-05 identity resolution
 - Automatic relay discovery (NIP-65)
@@ -17,7 +17,8 @@ A Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59
 ### Prerequisites
 
 - A configured [ndk](https://pub.dev/packages/ndk) instance with a logged-in account
-- A sembast database instance for local storage
+- A `NostrMailDatabase` (drift) for the mail store, opened with `NativeDatabase` on native or `WasmDatabase` on web
+- A sembast database instance, shared by the broadcast queue, the Blossom upload queue, the event scheduler and the sync engine
 - A [sync_engine_shim_for_ndk](https://pub.dev/packages/sync_engine_shim_for_ndk) `SyncEngine`, which keeps the ndk cache filled from the relays
 - A [blossom_cache](https://pub.dev/packages/blossom_cache) instance for large-email blobs
 
@@ -26,6 +27,9 @@ A Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59
 ### Initialize the client
 
 ```dart
+import 'dart:io';
+
+import 'package:drift/native.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:ndk/ndk.dart';
 import 'package:sembast/sembast_io.dart' hide Filter;
@@ -44,7 +48,10 @@ ndk.accounts.loginPrivateKey(
   privkey: keyPair.privateKey!,
 );
 
-// Open a database for local storage
+// The mail store. Yours to close, after `client.dispose()`.
+final database = NostrMailDatabase(NativeDatabase(File('nostr_mail.sqlite')));
+
+// The sembast database the queues, the scheduler and the sync engine share.
 final db = await databaseFactoryIo.openDatabase('emails.db');
 
 // Local blob store for large emails on their way to Blossom. Use
@@ -59,11 +66,31 @@ final syncEngine = SyncEngine(ndk, db: db);
 // Create the client
 final client = await NostrMailClient.create(
   ndk: ndk,
+  database: database,
   db: db,
   blossomCache: blossomCache,
   syncEngine: syncEngine,
 );
 ```
+
+#### On the web
+
+Copy `sqlite3.wasm` (from the [sqlite3.dart](https://github.com/simolus3/sqlite3.dart/releases) release matching your resolved `sqlite3` version) and `drift_worker.js` (from the [drift](https://github.com/simolus3/drift/releases) release matching `drift`) into your `web/` folder, then open the store through a worker:
+
+```dart
+import 'package:drift/wasm.dart';
+
+final result = await WasmDatabase.open(
+  databaseName: 'nostr_mail',
+  sqlite3Uri: Uri.parse('sqlite3.wasm'),
+  driftWorkerUri: Uri.parse('drift_worker.js'),
+);
+final database = NostrMailDatabase(result.resolvedExecutor);
+```
+
+Check `result.chosenImplementation`: drift stores the file in OPFS when the browser allows it (`opfsShared` needs no headers on Chrome and Firefox; `opfsLocks` needs the page to be cross-origin isolated, which is what Safari falls back to). Otherwise it falls back to IndexedDB, which works but keeps the file image in memory.
+
+Note that a `SembastCacheManager` given to ndk holds every raw event in memory too. With a large mailbox that cache, not the mail store, is where the memory goes.
 
 ### Send an email
 

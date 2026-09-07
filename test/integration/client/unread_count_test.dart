@@ -1,4 +1,5 @@
 import 'package:nostr_mail/src/storage/email_repository.dart';
+import 'package:nostr_mail/src/storage/label_repository.dart';
 import 'package:nostr_mail/src/storage/models/email_record.dart';
 import 'package:test/test.dart';
 
@@ -12,6 +13,7 @@ void main() {
     late MockBlossomServer blossom;
     late TestUser user;
     late EmailRepository emailRepo;
+    late LabelRepository labelRepo;
 
     setUp(() async {
       relay = MockRelay(name: 'relay', explicitPort: 19010);
@@ -26,7 +28,8 @@ void main() {
         defaultBlossomServers: ['http://localhost:${blossom.port}'],
       ).create();
 
-      emailRepo = EmailRepository(user.db);
+      emailRepo = EmailRepository(user.database);
+      labelRepo = LabelRepository(user.database);
     });
 
     tearDown(() async {
@@ -35,39 +38,49 @@ void main() {
       await relay.stopServer();
     });
 
-    EmailRecord makeRecord(
+    Future<void> seed(
       String id, {
       required String folder,
       required bool isRead,
-    }) {
+    }) async {
       final ts = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      return EmailRecord(
-        id: id,
-        senderPubkey: 'sender-pubkey',
-        recipientPubkey: user.keyPair.publicKey,
-        lightMimeText: 'From: a@b.com\r\nSubject: T\r\n\r\nBody',
-        attachmentRefs: const [],
-        isPublic: false,
-        createdAt: ts,
-        date: ts,
-        from: 'a@b.com',
-        subject: 'T',
-        bodyPlain: 'Body',
-        searchText: 'a@b.com t body',
-        attachmentCount: 0,
-        folder: folder,
-        isRead: isRead,
-        isStarred: false,
-        labels: const [],
-        isBridged: false,
+      final pubkey = user.keyPair.publicKey;
+      await emailRepo.save(
+        EmailRecord(
+          id: id,
+          senderPubkey: 'sender-pubkey',
+          recipientPubkey: pubkey,
+          lightMimeText: 'From: a@b.com\r\nSubject: T\r\n\r\nBody',
+          attachmentRefs: const [],
+          isPublic: false,
+          createdAt: ts,
+          date: ts,
+          from: 'a@b.com',
+          subject: 'T',
+          bodyPlain: 'Body',
+          folder: folder,
+          isBridged: false,
+        ),
       );
+      for (final label in [
+        if (folder != 'inbox') 'folder:$folder',
+        if (isRead) 'state:read',
+      ]) {
+        await labelRepo.saveLabel(
+          emailId: id,
+          label: label,
+          labelEventId: 'ev-$id-$label',
+          timestamp: ts,
+          recipientPubkey: pubkey,
+        );
+      }
     }
 
     test('getUnreadCount returns total unread per folder', () async {
-      await emailRepo.save(makeRecord('i1', folder: 'inbox', isRead: false));
-      await emailRepo.save(makeRecord('i2', folder: 'inbox', isRead: false));
-      await emailRepo.save(makeRecord('i3', folder: 'inbox', isRead: true));
-      await emailRepo.save(makeRecord('a1', folder: 'archive', isRead: false));
+      await seed('i1', folder: 'inbox', isRead: false);
+      await seed('i2', folder: 'inbox', isRead: false);
+      await seed('i3', folder: 'inbox', isRead: true);
+      await seed('a1', folder: 'archive', isRead: false);
 
       expect(await user.client.getUnreadCount(folder: 'inbox'), 2);
       expect(await user.client.getUnreadCount(folder: 'archive'), 1);
@@ -78,8 +91,8 @@ void main() {
     test(
       'watchUnreadCount emits initial value then updates on markAsRead',
       () async {
-        await emailRepo.save(makeRecord('i1', folder: 'inbox', isRead: false));
-        await emailRepo.save(makeRecord('i2', folder: 'inbox', isRead: false));
+        await seed('i1', folder: 'inbox', isRead: false);
+        await seed('i2', folder: 'inbox', isRead: false);
 
         final emissions = <int>[];
         final sub = user.client
@@ -102,8 +115,8 @@ void main() {
     );
 
     test('watchUnreadCount supports multiple concurrent subscribers', () async {
-      await emailRepo.save(makeRecord('i1', folder: 'inbox', isRead: false));
-      await emailRepo.save(makeRecord('i2', folder: 'inbox', isRead: false));
+      await seed('i1', folder: 'inbox', isRead: false);
+      await seed('i2', folder: 'inbox', isRead: false);
 
       final stream = user.client.watchUnreadCount(folder: 'inbox');
       final emissionsA = <int>[];

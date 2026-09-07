@@ -1,19 +1,22 @@
+import 'package:nostr_mail/src/models/attachment_ref.dart';
 import 'package:nostr_mail/src/storage/email_repository.dart';
+import 'package:nostr_mail/src/storage/label_repository.dart';
 import 'package:nostr_mail/src/storage/models/email_query.dart';
 import 'package:nostr_mail/src/storage/models/email_record.dart';
-import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
+
+import '../../helpers/test_database.dart';
 
 void main() {
   group('EmailRepository', () {
     const rpk = 'rpk';
     late EmailRepository repo;
+    late LabelRepository labels;
 
-    setUp(() async {
-      final db = await databaseFactoryMemory.openDatabase(
-        'test_email_${DateTime.now().microsecondsSinceEpoch}',
-      );
-      repo = EmailRepository(db);
+    setUp(() {
+      final database = testDatabase();
+      repo = EmailRepository(database);
+      labels = LabelRepository(database);
     });
 
     EmailRecord makeRecord(
@@ -22,7 +25,6 @@ void main() {
       bool isRead = false,
       bool isStarred = false,
       int attachmentCount = 0,
-      String? searchText,
       DateTime? date,
       String subject = 'sub',
       String from = 'a@b.com',
@@ -34,28 +36,46 @@ void main() {
         senderPubkey: 'pk-$id',
         recipientPubkey: rpk,
         lightMimeText: 'From: $from\r\nSubject: $subject\r\n\r\n$body',
-        attachmentRefs: const [],
+        attachmentRefs: [
+          for (var i = 0; i < attachmentCount; i++)
+            AttachmentRef(contentType: 'text/plain', size: 1, sha256: 'sha-$i'),
+        ],
         isPublic: false,
         createdAt: ts,
         date: ts,
         from: from,
         subject: subject,
         bodyPlain: body,
-        searchText:
-            searchText ??
-            '${from.toLowerCase()} ${subject.toLowerCase()} ${body.toLowerCase()}',
-        attachmentCount: attachmentCount,
         folder: folder,
         isRead: isRead,
         isStarred: isStarred,
-        labels: const [],
         isBridged: false,
       );
     }
 
+    /// The state fields of a record are derived from labels, so seeding one
+    /// means saving the row and then the labels that produce its state.
+    Future<void> save(EmailRecord record) async {
+      await repo.save(record);
+      final wanted = [
+        if (record.folder != 'inbox') 'folder:${record.folder}',
+        if (record.isRead) 'state:read',
+        if (record.isStarred) 'flag:starred',
+      ];
+      for (final label in wanted) {
+        await labels.saveLabel(
+          emailId: record.id,
+          label: label,
+          labelEventId: 'ev-${record.id}-$label',
+          timestamp: record.date,
+          recipientPubkey: record.recipientPubkey,
+        );
+      }
+    }
+
     group('save / get', () {
       test('save and getById', () async {
-        await repo.save(makeRecord('e1', subject: 'Hello'));
+        await save(makeRecord('e1', subject: 'Hello'));
         final found = await repo.getById('e1', recipientPubkey: rpk);
 
         expect(found, isNotNull);
@@ -71,8 +91,8 @@ void main() {
       });
 
       test('save updates an existing record with the same id', () async {
-        await repo.save(makeRecord('update', subject: 'Original'));
-        await repo.save(makeRecord('update', subject: 'Updated'));
+        await save(makeRecord('update', subject: 'Original'));
+        await save(makeRecord('update', subject: 'Updated'));
 
         final all = await repo.query(EmailQuery(recipientPubkey: rpk));
         expect(all.items.length, 1);
@@ -84,13 +104,13 @@ void main() {
 
     group('query', () {
       test('returns records sorted by date descending', () async {
-        await repo.save(
+        await save(
           makeRecord('e1', date: DateTime.utc(2024, 1, 1), subject: 'First'),
         );
-        await repo.save(
+        await save(
           makeRecord('e2', date: DateTime.utc(2024, 1, 3), subject: 'Second'),
         );
-        await repo.save(
+        await save(
           makeRecord('e3', date: DateTime.utc(2024, 1, 2), subject: 'Third'),
         );
 
@@ -99,9 +119,9 @@ void main() {
       });
 
       test('filters by folder', () async {
-        await repo.save(makeRecord('e1', folder: 'inbox'));
-        await repo.save(makeRecord('e2', folder: 'sent'));
-        await repo.save(makeRecord('e3', folder: 'trash'));
+        await save(makeRecord('e1', folder: 'inbox'));
+        await save(makeRecord('e2', folder: 'sent'));
+        await save(makeRecord('e3', folder: 'trash'));
 
         final result = await repo.query(
           const EmailQuery(recipientPubkey: rpk, folder: 'inbox'),
@@ -111,8 +131,8 @@ void main() {
       });
 
       test('filters by isRead', () async {
-        await repo.save(makeRecord('e1', isRead: true));
-        await repo.save(makeRecord('e2', isRead: false));
+        await save(makeRecord('e1', isRead: true));
+        await save(makeRecord('e2', isRead: false));
 
         final result = await repo.query(
           const EmailQuery(recipientPubkey: rpk, isRead: true),
@@ -122,8 +142,8 @@ void main() {
       });
 
       test('filters by hasAttachments', () async {
-        await repo.save(makeRecord('e1', attachmentCount: 2));
-        await repo.save(makeRecord('e2', attachmentCount: 0));
+        await save(makeRecord('e1', attachmentCount: 2));
+        await save(makeRecord('e2', attachmentCount: 0));
 
         final result = await repo.query(
           const EmailQuery(recipientPubkey: rpk, hasAttachments: true),
@@ -133,13 +153,13 @@ void main() {
       });
 
       test('combines filters', () async {
-        await repo.save(
+        await save(
           makeRecord('e1', folder: 'inbox', isRead: false, isStarred: true),
         );
-        await repo.save(
+        await save(
           makeRecord('e2', folder: 'inbox', isRead: true, isStarred: true),
         );
-        await repo.save(
+        await save(
           makeRecord('e3', folder: 'sent', isRead: false, isStarred: true),
         );
 
@@ -157,9 +177,7 @@ void main() {
 
       test('paginates with limit and offset', () async {
         for (var i = 0; i < 5; i++) {
-          await repo.save(
-            makeRecord('e$i', date: DateTime.utc(2024, 1, 5 - i)),
-          );
+          await save(makeRecord('e$i', date: DateTime.utc(2024, 1, 5 - i)));
         }
 
         final page1 = await repo.query(
@@ -185,7 +203,7 @@ void main() {
 
     group('search', () {
       test('finds by subject, body, or from (case insensitive)', () async {
-        await repo.save(
+        await save(
           makeRecord(
             's1',
             date: DateTime.utc(2024, 1, 1),
@@ -194,7 +212,7 @@ void main() {
             body: 'Let us discuss the project.',
           ),
         );
-        await repo.save(
+        await save(
           makeRecord(
             's2',
             date: DateTime.utc(2024, 1, 2),
@@ -203,7 +221,7 @@ void main() {
             body: 'I am going to the beach.',
           ),
         );
-        await repo.save(
+        await save(
           makeRecord(
             's3',
             date: DateTime.utc(2024, 1, 3),
@@ -227,7 +245,7 @@ void main() {
 
       test('respects limit and offset via EmailQuery.search', () async {
         for (var i = 0; i < 5; i++) {
-          await repo.save(
+          await save(
             makeRecord(
               'search-$i',
               date: DateTime.utc(2024, 1, 10 - i),
@@ -251,9 +269,9 @@ void main() {
 
     group('getByIds', () {
       test('returns records sorted by date descending', () async {
-        await repo.save(makeRecord('b1', date: DateTime.utc(2024, 1, 1)));
-        await repo.save(makeRecord('b2', date: DateTime.utc(2024, 1, 3)));
-        await repo.save(makeRecord('b3', date: DateTime.utc(2024, 1, 2)));
+        await save(makeRecord('b1', date: DateTime.utc(2024, 1, 1)));
+        await save(makeRecord('b2', date: DateTime.utc(2024, 1, 3)));
+        await save(makeRecord('b3', date: DateTime.utc(2024, 1, 2)));
 
         final emails = await repo.getByIds([
           'b1',
@@ -269,7 +287,7 @@ void main() {
       });
 
       test('ignores non-existent ids', () async {
-        await repo.save(makeRecord('exists'));
+        await save(makeRecord('exists'));
 
         final emails = await repo.getByIds([
           'exists',
@@ -282,16 +300,16 @@ void main() {
 
     group('mutations', () {
       test('delete removes the record', () async {
-        await repo.save(makeRecord('to-delete'));
+        await save(makeRecord('to-delete'));
         await repo.delete('to-delete', recipientPubkey: rpk);
         expect(await repo.getById('to-delete', recipientPubkey: rpk), isNull);
       });
 
       test('deleteByIds removes only matching account records', () async {
-        await repo.save(makeRecord('e1'));
-        await repo.save(makeRecord('e2'));
-        await repo.save(makeRecord('e3'));
-        await repo.save(
+        await save(makeRecord('e1'));
+        await save(makeRecord('e2'));
+        await save(makeRecord('e3'));
+        await save(
           EmailRecord(
             id: 'other-account',
             senderPubkey: 'pk-other',
@@ -304,12 +322,7 @@ void main() {
             from: 'a@b.com',
             subject: 'sub',
             bodyPlain: 'body',
-            searchText: 'a@b.com sub body',
-            attachmentCount: 0,
             folder: 'inbox',
-            isRead: false,
-            isStarred: false,
-            labels: const [],
             isBridged: false,
           ),
         );
@@ -331,9 +344,9 @@ void main() {
       });
 
       test('clearAll removes every record', () async {
-        await repo.save(makeRecord('e1'));
-        await repo.save(makeRecord('e2'));
-        await repo.save(makeRecord('e3'));
+        await save(makeRecord('e1'));
+        await save(makeRecord('e2'));
+        await save(makeRecord('e3'));
 
         await repo.clearAll();
 

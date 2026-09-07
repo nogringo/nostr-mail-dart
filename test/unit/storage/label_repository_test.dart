@@ -1,8 +1,9 @@
 import 'package:nostr_mail/src/storage/email_repository.dart';
 import 'package:nostr_mail/src/storage/label_repository.dart';
 import 'package:nostr_mail/src/storage/models/email_record.dart';
-import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
+
+import '../../helpers/test_database.dart';
 
 void main() {
   group('LabelRepository', () {
@@ -24,21 +25,14 @@ void main() {
       from: 'a@b.com',
       subject: 'sub',
       bodyPlain: 'body',
-      searchText: 'a@b.com sub body',
-      attachmentCount: 0,
       folder: 'inbox',
-      isRead: false,
-      isStarred: false,
-      labels: const [],
       isBridged: false,
     );
 
-    setUp(() async {
-      final db = await databaseFactoryMemory.openDatabase(
-        'test_label_${DateTime.now().microsecondsSinceEpoch}',
-      );
-      emails = EmailRepository(db);
-      labels = LabelRepository(db);
+    setUp(() {
+      final database = testDatabase();
+      emails = EmailRepository(database);
+      labels = LabelRepository(database);
     });
 
     Future<void> save(
@@ -101,7 +95,7 @@ void main() {
       });
     });
 
-    group('denormalization onto EmailRecord', () {
+    group('state derived onto EmailRecord', () {
       setUp(() async => emails.save(seedRecord('e1')));
 
       test('flag:starred sets isStarred', () async {
@@ -116,7 +110,7 @@ void main() {
         expect(email!.folder, 'trash');
       });
 
-      test('removeLabel reverts the denormalized state', () async {
+      test('removeLabel reverts the derived state', () async {
         await save('e1', 'state:read');
         await labels.removeLabel('e1', 'state:read', recipientPubkey: rpk);
         final email = await emails.getById('e1', recipientPubkey: rpk);

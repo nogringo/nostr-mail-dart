@@ -1,5 +1,26 @@
 ## 3.0.0
 
+- **Breaking**: the mail store moves from sembast to drift (SQLite).
+  `NostrMailClient.create` takes a `database: NostrMailDatabase`, which the
+  caller opens (`NativeDatabase` on native, `WasmDatabase.open` on web) and
+  closes after `dispose()`. The sembast `db` is still required: the broadcast
+  queue, the Blossom upload queue, the event scheduler and the sync engine
+  keep theirs. Sembast holds every store in memory, which is what made a large
+  mailbox cost a gigabyte in a browser tab.
+- **Breaking**: `kSchemaVersion` and `migrateSchemaIfNeeded` are gone. A
+  schema change bumps `NostrMailDatabase.schemaVersion`, and any mismatch
+  drops and rebuilds the tables from the NDK cache when the store opens.
+- **Breaking**: `search()` runs on an FTS5 index. It matches words and
+  prefixes, case and accent insensitive, instead of arbitrary substrings.
+- The stores earlier versions kept in the sembast database are dropped on the
+  first `create()`. Nothing is lost: they were a projection of the NDK cache,
+  and the next pass rebuilds them without network.
+- An email's folder, read and starred state are derived from its labels by a
+  SQL view instead of being copied onto the row. A label landing before its
+  email, or a wrap coming back through the sync, can no longer leave a row
+  out of step with its labels.
+- On the web, ship `sqlite3.wasm` and `drift_worker.js` in `web/`; see the
+  README.
 - **Breaking**: `NostrMailClient.create` takes a `syncEngine`
   (`sync_engine_shim_for_ndk`), which replaces NDK's broken `fetchedRanges`. It
   belongs to the caller: `create()` starts it but never stops nor disposes it.
