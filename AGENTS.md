@@ -167,7 +167,7 @@ await NostrMailClient.create({
 
 **Lifecycle:**
 - `fetchRecent()` — pull to refresh: goes to the relays now, however fresh the coverage is. The only sync method, and never needed to stay up to date: the engine revisits on its own and the client declares its requests from `create()` and from `ndk.accounts.authStateChanges`
-- `watch()` — broadcast stream of `MailEvent` (emails, labels, deletions)
+- `watch()` — broadcast stream of `MailEvent` (emails, labels, deletions). Its subscriptions follow `ndk.accounts.authStateChanges`, so a login, a switch or a logout redraws them for the account that takes over; the stream itself survives, and calling `watch()` again is a no-op
 - `stopWatching()` — closes stream & subscriptions
 - `clearAllLocalData()` (alias `clearAll()`): wipes local DBs and caches. The NDK cache belongs to the caller and is left alone, so the next pass rebuilds from it
 - `clearLocalAccountData(pubkey:)`: wipes local data for one account only

@@ -1,5 +1,15 @@
 ## Unreleased
 
+- The live subscriptions follow the active account. `watch()` opened seven of
+  them for whoever was logged in and kept no way to close them: a switch left
+  the previous account's subscriptions running, while the new one got none,
+  since `watch()` returned the existing stream without subscribing and
+  `stopWatching()` only closed that stream. What the account left behind kept
+  bringing in was then processed under the new one, so a public email
+  addressed to it landed in the new account's mailbox. The subscriptions are
+  now held by request id and closed on a login, a switch, a logout and on
+  `stopWatching()`, then redrawn for the account that takes over. `dispose()`
+  no longer leaves seven subscriptions open on the relays either.
 - The sync engine authenticates (NIP-42). `wss://auth.nostr1.com` is the first
   default DM relay and refuses an anonymous request, so gift wraps were being
   asked for on a connection that never got to serve them, and the refusal read
