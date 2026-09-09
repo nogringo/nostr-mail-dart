@@ -14,9 +14,15 @@ class RelayResolver {
     : _defaultDmRelays = defaultDmRelays ?? recommendedDmRelays;
 
   /// Get user's DM relays from NIP-17 kind 10050 event.
-  Future<List<String>> getDmRelays(String pubkey) async {
+  ///
+  /// [auth] says which identity the lookup may be attributed to. A lookup for
+  /// someone else should pass [RelayAuth.never]: NIP-59 sends the wrap under an
+  /// ephemeral key, and authenticating to find out where to send it would
+  /// attach the real sender to it.
+  Future<List<String>> getDmRelays(String pubkey, {RelayAuth? auth}) async {
     final response = _ndk.requests.query(
       filter: ndk.Filter(kinds: [dmRelayListKind], authors: [pubkey], limit: 1),
+      auth: auth,
     );
     final events = await response.future;
     if (events.isEmpty) return _defaultDmRelays;

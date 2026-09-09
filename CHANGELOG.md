@@ -1,5 +1,18 @@
 ## Unreleased
 
+- The live subscriptions and the account-scoped queries name their identity
+  (NIP-42). Left unset, ndk authenticates as whoever is logged in when the
+  challenge lands, so a subscription drawn for one account could go out under
+  another's after a switch. Each request now names the account its filters were
+  drawn for. The gift wrap subscription authenticates before the relay asks,
+  like the sync engine, since the first default DM relay serves nothing
+  anonymously and a relay that stays silent instead of refusing never triggers
+  a late authentication. The others stay anonymous until refused, so a
+  pubkey-only login keeps receiving public emails, labels, deletions and
+  metadata.
+- Resolving a recipient's DM relays no longer authenticates. The gift wrap goes
+  out under an ephemeral key, so asking a relay where to send it under the real
+  sender's identity attached that identity to the send.
 - The live subscriptions follow the active account. `watch()` opened seven of
   them for whoever was logged in and kept no way to close them: a switch left
   the previous account's subscriptions running, while the new one got none,

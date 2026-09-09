@@ -586,7 +586,10 @@ class EmailSender {
     // the rumor is dated at the schedule time; ndk randomizes the seal and gift
     // wrap in the 2 days before it, so the envelope never reveals the email was
     // pre-built.
-    final dmRelays = await _relays.getDmRelays(recipientPubkey);
+    final dmRelays = await _relays.getDmRelays(
+      recipientPubkey,
+      auth: const RelayAuth.never(),
+    );
     return OutgoingEvent(giftWrapEvent, dmRelays);
   }
 }

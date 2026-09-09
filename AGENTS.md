@@ -167,7 +167,7 @@ await NostrMailClient.create({
 
 **Lifecycle:**
 - `fetchRecent()` — pull to refresh: goes to the relays now, however fresh the coverage is. The only sync method, and never needed to stay up to date: the engine revisits on its own and the client declares its requests from `create()` and from `ndk.accounts.authStateChanges`
-- `watch()` — broadcast stream of `MailEvent` (emails, labels, deletions). Its subscriptions follow `ndk.accounts.authStateChanges`, so a login, a switch or a logout redraws them for the account that takes over; the stream itself survives, and calling `watch()` again is a no-op
+- `watch()` — broadcast stream of `MailEvent` (emails, labels, deletions). Its subscriptions follow `ndk.accounts.authStateChanges`, so a login, a switch or a logout redraws them for the account that takes over; the stream itself survives, and calling `watch()` again is a no-op. Each one names the account it was drawn for as its NIP-42 identity, see Relay Authentication
 - `stopWatching()` — closes stream & subscriptions
 - `clearAllLocalData()` (alias `clearAll()`): wipes local DBs and caches. The NDK cache belongs to the caller and is left alone, so the next pass rebuilds from it
 - `clearLocalAccountData(pubkey:)`: wipes local data for one account only
@@ -263,6 +263,12 @@ dart test test/cc_bcc_test.dart                # hard-codes ws://localhost:7777,
 - **DM relays**: read from NIP-17 kind 10050 event; fallback to `recommendedDmRelays`.
 - **Write relays**: read from NIP-65 kind 10002 event; fallback to `recommendedDmRelays`.
 - Both lists are fetched on-demand, but `MailSync` declares metadata & relay list events (kinds 0, 10002, 10050, 10063) in its write-relay sync request, so subsequent `RelayResolver` calls usually hit cache.
+- `getDmRelays()` takes an optional `auth`. `EmailSender` passes `RelayAuth.never()` when it resolves a recipient's relays: the wrap goes out under an ephemeral key, so authenticating to find out where to send it would attach the real sender to the send. Every other lookup targets the logged account and keeps the default.
+
+### Relay Authentication (NIP-42)
+`auth` is not a neutral parameter: left unset, ndk authenticates as whoever is logged in *when the challenge lands*, so a request drawn for one account can go out under another's identity. Every account-scoped request therefore names its account. `authFor()` in `lib/src/client/request_auth.dart` resolves it from the pubkey the request was drawn for, and returns `RelayAuth.never()` for an account that cannot sign, which is what a pubkey-only login already got in practice.
+
+`RelayAuth.allow()` is the default choice: anonymous first, authenticated once a relay refuses. `RelayAuth.require()` sends on a connection bound to the account from the start, so it costs a second socket per relay of the set and answers the challenge of any relay that sends one, including relays that would have served the request anonymously; with a NIP-46 signer that is a round trip each. It is reserved for the gift wrap subscription and the sync engine's requests, both on DM relays, where `wss://auth.nostr1.com` serves nothing anonymously. Requests covering write relays use `allow()`: `require()` there would send nothing at all for a pubkey-only login, since a request that cannot be authenticated reaches no relay, and public emails, labels, deletions and metadata do not need an identity.
 
 ### Sync (sync_engine_shim_for_ndk)
 NDK's `fetchedRanges` is broken and is no longer used. The caller passes a `SyncEngine` from `sync_engine_shim_for_ndk`, which tracks its own coverage per relay/filter pair, paginates, backs off per relay, and adds the 2-day NIP-59 margin on kind 1059. `MailSync` declares three `SyncRequest`s covering all 7 filter categories, split by relay set: gift wraps on DM relays, deletions on DM + write relays, and public emails / labels / reposts / settings / metadata on write relays. Each request names the active account as its `authPubkey`, so it goes out on a NIP-42 authenticated connection from the first page: `wss://auth.nostr1.com`, the first default DM relay, serves nothing without it. The pubkey is part of the request identity, so switching account redraws the handles and starts from a blank coverage, and a pubkey-only login syncs nothing at all since it cannot answer a challenge.

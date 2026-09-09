@@ -72,6 +72,7 @@ class SettingsManager {
       filter: ndk.Filter(kinds: [appSettingsKind], authors: [pubkey], limit: 1)
         ..setTag('d', [privateSettingsDTag]),
       explicitRelays: writeRelays,
+      auth: RelayAuth.allow(account),
     );
 
     final events = await response.future;

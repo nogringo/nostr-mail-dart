@@ -20,6 +20,7 @@ import 'client/settings_manager.dart';
 import 'client/mail_sync.dart';
 import 'client/watch_manager.dart';
 import 'client/relay_resolver.dart';
+import 'client/request_auth.dart';
 import 'client/schedule_manager.dart';
 import 'constants.dart';
 import 'exceptions.dart';
@@ -399,6 +400,7 @@ class NostrMailClient {
         .query(
           filter: Filter(ids: [eventId], limit: 1),
           explicitRelays: effectiveRelays,
+          auth: authFor(_ndk, pubkey),
         )
         .future;
 

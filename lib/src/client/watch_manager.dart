@@ -7,6 +7,7 @@ import '../models/mail_event.dart';
 import 'event_bus.dart';
 import 'filters.dart';
 import 'relay_resolver.dart';
+import 'request_auth.dart';
 import 'mail_sync.dart';
 
 /// Manages real-time Nostr subscriptions and routes incoming events
@@ -118,13 +119,18 @@ class WatchManager {
     ).wait;
     if (generation != _generation) return;
     final allRelays = {...dmRelays, ...writeRelays}.toList();
+    final auth = authFor(_ndk, pubkey);
 
-    // Gift wraps (emails)
+    // Gift wraps (emails). Authenticated before the relay asks: the first
+    // default DM relay serves nothing anonymously, the sync engine already
+    // holds an authenticated connection to that set, and a relay that stays
+    // silent instead of refusing never triggers a late authentication.
     _open(
       _ndk.requests.subscription(
         filter: emailFilter(pubkey)..limit = 0,
         explicitRelays: dmRelays,
         cacheWrite: true,
+        auth: authFor(_ndk, pubkey, fromStart: true),
       ),
       generation,
       process: _sync.onGiftWrap,
@@ -136,6 +142,7 @@ class WatchManager {
         filter: publicEmailFilter(pubkey)..limit = 0,
         explicitRelays: writeRelays,
         cacheWrite: true,
+        auth: auth,
       ),
       generation,
       process: _sync.onPublicEmail,
@@ -147,6 +154,7 @@ class WatchManager {
         filter: labelFilter(pubkey)..limit = 0,
         explicitRelays: writeRelays,
         cacheWrite: true,
+        auth: auth,
       ),
       generation,
       process: _sync.onLabelAddition,
@@ -158,6 +166,7 @@ class WatchManager {
         filter: deletionFilter(pubkey)..limit = 0,
         explicitRelays: allRelays,
         cacheWrite: true,
+        auth: auth,
       ),
       generation,
       process: _sync.onDeletion,
@@ -169,6 +178,7 @@ class WatchManager {
         filter: repostFilter(pubkey)..limit = 0,
         explicitRelays: writeRelays,
         cacheWrite: true,
+        auth: auth,
       ),
       generation,
     );
@@ -179,6 +189,7 @@ class WatchManager {
         filter: settingsFilter(pubkey)..limit = 0,
         explicitRelays: writeRelays,
         cacheWrite: true,
+        auth: auth,
       ),
       generation,
     );
@@ -189,6 +200,7 @@ class WatchManager {
         filter: metadataFilter(pubkey)..limit = 0,
         explicitRelays: writeRelays,
         cacheWrite: true,
+        auth: auth,
       ),
       generation,
     );
