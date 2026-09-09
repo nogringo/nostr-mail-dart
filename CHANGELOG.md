@@ -1,5 +1,16 @@
 ## Unreleased
 
+- The sync engine authenticates (NIP-42). `wss://auth.nostr1.com` is the first
+  default DM relay and refuses an anonymous request, so gift wraps were being
+  asked for on a connection that never got to serve them, and the refusal read
+  as a relay with nothing to give. Each request now names the active account
+  and goes out authenticated from the first page. The identity is part of the
+  request, so every account walks its window once more on this upgrade: nothing
+  is lost, and no signer approval is spent replaying what the cache already
+  holds. A pubkey-only login stops syncing, since it cannot answer a challenge
+  and could not decrypt a wrap either. Requires `sync_engine_shim_for_ndk`
+  0.6.0, where a request naming nobody no longer authenticates as whoever is
+  logged in.
 - `getSummaries()` lists a mailbox without reading or parsing any MIME. The
   list methods return `Email`, which holds the whole message body, so drawing
   a screenful of rows pulled every body off disk to show a subject and a

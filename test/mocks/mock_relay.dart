@@ -97,9 +97,20 @@ class MockRelay {
   int rejectFirstEventPublishes;
   String rejectEventMessage;
 
+  /// when set, every REQ is answered with a CLOSED carrying this message
+  String? closeRequestsMessage;
+
+  /// when true a REQ is recorded and left unanswered, the way a relay that goes
+  /// quiet on a request does
+  bool silenceRequests;
+
   /// how many AUTH events are left unanswered, the way a relay that goes quiet
   /// in the middle of an authentication does. The next ones are answered
   int silenceFirstAuths;
+
+  /// accept REQ messages but never answer them, neither with events nor with
+  /// an EOSE, the way a relay that is alive but stuck does
+  bool ignoreRequests;
 
   // NIP-46 Remote Signer Support
   static const int kNip46Kind = BunkerRequest.kKind;
@@ -179,7 +190,10 @@ class MockRelay {
     this.signEventContentOverride,
     this.rejectFirstEventPublishes = 0,
     this.rejectEventMessage = 'rate-limited: retry later',
+    this.closeRequestsMessage,
+    this.silenceRequests = false,
     this.silenceFirstAuths = 0,
+    this.ignoreRequests = false,
     int? explicitPort,
   }) : _nip65s = nip65s,
        _explicitPort = explicitPort,
@@ -192,8 +206,9 @@ class MockRelay {
     Map<String, Nip01Event>? metadatas,
     Map<String, Nip01Event>? nip85Assertions,
     Duration? delayResponse,
+    Duration? delayConnection,
   }) async {
-    var myPromise = Completer<void>();
+    final myPromise = Completer<void>();
 
     if (nip65s != null) {
       _nip65s = nip65s;
@@ -245,7 +260,19 @@ class MockRelay {
     }
 
     this.server = server;
-    var stream = server.transform(WebSocketTransformer());
+    final Stream<WebSocket> stream;
+    if (delayConnection == null) {
+      stream = server.transform(WebSocketTransformer());
+    } else {
+      // holds the handshake, not the answers: it is how a client is left with a
+      // connection that is still opening
+      final upgrades = StreamController<WebSocket>();
+      server.listen((request) async {
+        await Future.delayed(delayConnection);
+        upgrades.add(await WebSocketTransformer.upgrade(request));
+      }, onDone: upgrades.close);
+      stream = upgrades.stream;
+    }
 
     // Generate challenge once for the entire server lifetime (fixes race condition on reconnect)
     final String serverChallenge = Helpers.getRandomString(10);
@@ -459,6 +486,19 @@ class MockRelay {
                   .putIfAbsent(webSocket, () => {})
                   .add(requestId);
 
+              final closeMessage = closeRequestsMessage;
+              if (closeMessage != null) {
+                _send(
+                  webSocket,
+                  jsonEncode(["CLOSED", requestId, closeMessage]),
+                );
+                return;
+              }
+
+              if (silenceRequests) {
+                return;
+              }
+
               // Check auth: any authenticated user can access all data
               if (requireAuthForRequests && authenticatedPubkeys.isEmpty) {
                 _send(
@@ -469,6 +509,11 @@ class MockRelay {
                     "auth-required: we can't serve requests to unauthenticated users",
                   ]),
                 );
+                return;
+              }
+
+              if (ignoreRequests) {
+                log("MockRelay: ignoring REQ $requestId");
                 return;
               }
 

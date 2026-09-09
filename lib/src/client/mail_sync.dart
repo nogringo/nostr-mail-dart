@@ -161,25 +161,44 @@ class MailSync {
     final allRelays = {...dmRelays, ...writeRelays}.toList();
 
     return [
-      _ensure('emails', [emailFilter(pubkey)], dmRelays),
-      _ensure('deletions', [deletionFilter(pubkey)], allRelays),
-      _ensure('write', [
-        publicEmailFilter(pubkey),
-        labelFilter(pubkey),
-        repostFilter(pubkey),
-        settingsFilter(pubkey),
-        metadataFilter(pubkey),
-      ], writeRelays),
+      _ensure('emails', [emailFilter(pubkey)], dmRelays, authPubkey: pubkey),
+      _ensure(
+        'deletions',
+        [deletionFilter(pubkey)],
+        allRelays,
+        authPubkey: pubkey,
+      ),
+      _ensure(
+        'write',
+        [
+          publicEmailFilter(pubkey),
+          labelFilter(pubkey),
+          repostFilter(pubkey),
+          settingsFilter(pubkey),
+          metadataFilter(pubkey),
+        ],
+        writeRelays,
+        authPubkey: pubkey,
+      ),
     ];
   }
 
-  /// The engine derives the request identity from the filters and the relay
-  /// set, both of which move here: switching account rewrites the filters, and
-  /// [RelayResolver] hands back the fallback list until the kind 10050 lands.
-  /// A hand-written id would pin whichever it saw first.
-  SyncHandle _ensure(String scope, List<Filter> filters, List<String> relays) {
+  /// The engine derives the request identity from the filters, the relay set
+  /// and [authPubkey], all of which move here: switching account rewrites the
+  /// filters, and [RelayResolver] hands back the fallback list until the kind
+  /// 10050 lands. A hand-written id would pin whichever it saw first.
+  ///
+  /// [authPubkey] is passed rather than read back from ndk: the account can
+  /// change while the relays resolve, and a request must not carry one
+  /// account's filters under another's identity.
+  SyncHandle _ensure(
+    String scope,
+    List<Filter> filters,
+    List<String> relays, {
+    required String authPubkey,
+  }) {
     final handle = _engine.ensure(
-      SyncRequest(filters: filters, relays: relays),
+      SyncRequest(filters: filters, relays: relays, authPubkey: authPubkey),
     );
 
     final held = _handles[scope];
