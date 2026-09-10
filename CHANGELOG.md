@@ -1,81 +1,34 @@
-## Unreleased
+## 3.1.0
 
-- The live subscriptions and the account-scoped queries name their identity
-  (NIP-42). Left unset, ndk authenticates as whoever is logged in when the
-  challenge lands, so a subscription drawn for one account could go out under
-  another's after a switch. Each request now names the account its filters were
-  drawn for. The gift wrap subscription authenticates before the relay asks,
-  like the sync engine, since the first default DM relay serves nothing
-  anonymously and a relay that stays silent instead of refusing never triggers
-  a late authentication. The others stay anonymous until refused, so a
-  pubkey-only login keeps receiving public emails, labels, deletions and
-  metadata.
-- Resolving a recipient's DM relays no longer authenticates. The gift wrap goes
-  out under an ephemeral key, so asking a relay where to send it under the real
-  sender's identity attached that identity to the send.
-- The live subscriptions follow the active account. `watch()` opened seven of
-  them for whoever was logged in and kept no way to close them: a switch left
-  the previous account's subscriptions running, while the new one got none,
-  since `watch()` returned the existing stream without subscribing and
-  `stopWatching()` only closed that stream. What the account left behind kept
-  bringing in was then processed under the new one, so a public email
-  addressed to it landed in the new account's mailbox. The subscriptions are
-  now held by request id and closed on a login, a switch, a logout and on
-  `stopWatching()`, then redrawn for the account that takes over. `dispose()`
-  no longer leaves seven subscriptions open on the relays either.
-- The sync engine authenticates (NIP-42). `wss://auth.nostr1.com` is the first
-  default DM relay and refuses an anonymous request, so gift wraps were being
-  asked for on a connection that never got to serve them, and the refusal read
-  as a relay with nothing to give. Each request now names the active account
-  and goes out authenticated from the first page. The identity is part of the
-  request, so every account walks its window once more on this upgrade: nothing
-  is lost, and no signer approval is spent replaying what the cache already
-  holds. A pubkey-only login stops syncing, since it cannot answer a challenge
-  and could not decrypt a wrap either. Requires `sync_engine_shim_for_ndk`
-  0.6.0, where a request naming nobody no longer authenticates as whoever is
-  logged in.
-- `getSummaries()` lists a mailbox without reading or parsing any MIME. The
-  list methods return `Email`, which holds the whole message body, so drawing
-  a screenful of rows pulled every body off disk to show a subject and a
-  sender. An `EmailSummary` reads only the indexed columns a row draws:
-  sender, recipients, subject, a preview SQLite truncates itself, date,
-  folder, read and starred state, labels and attachment metadata. A row costs
-  a few hundred bytes instead of the whole message. It returns a
-  `PaginatedResult`, now exported, whose `total` and `hasMore` tell an endless
-  list when to stop asking.
-- `labels` is indexed on `(email_id, recipient_pubkey, label)`. The
-  `email_states` view resolves the folder, read and starred state of a row
-  through correlated subqueries keyed on `email_id`, and the only index on the
-  table started at `recipient_pubkey`, so every one of those subqueries
-  rescanned every label of the account. Any query filtering on a folder walked
-  the whole mailbox: on a store of 5000 emails and 2500 labels, counting the
-  inbox took 360 ms and `getUnreadCount(folder: 'inbox')`, which
-  `watchUnreadCount` re-runs on every change, took the same. Both now take
-  about 2 ms.
-- An `Email` parses its MIME on first read of `.mime` rather than in its
-  constructor. Parsing walks the entire part tree and copies every body out of
-  `lightMimeText`, and every caller paid for it, including those that only
-  wanted an id or a date.
-- The store indexes the recipients and the sender's display name. `To`, `Cc`
-  and `Bcc` lived only inside the stored MIME, and `from_address` dropped the
-  personal name, so no listing could show either without parsing the message.
-  Schema version 2: the tables are rebuilt from the NDK cache on first open,
-  without network and without a signer.
-- A schema change no longer drops the NIP-44 decryptions. What a gift wrap
-  yields once opened moves to its own `unsealed` table, kept across the drop
-  along with the decrypted settings, so rebuilding the tables costs no signer
-  approval. Everything else stays a projection of the NDK cache and of those
-  two tables. A wipe the user asks for still takes all of it.
-- The client asks for the full replay that refills a dropped projection.
-  Nothing else would: the sync engine's coverage does not move across a schema
-  change, so its rounds bring no page, and the mailbox stayed empty until a
-  `fetchRecent()`.
-- Live subscriptions write what they receive to the NDK cache. They wrote
-  nothing before (`subscription()` defaults to `cacheWrite: false`), so an
-  event seen only in real time was projected and then lost: a rebuild of the
-  tables replayed the cache without it, until the sync engine walked its
-  period again. The reposts, settings and metadata subscriptions, which
-  process nothing themselves, now serve their purpose.
+- The sync engine and every account-scoped request name their account as their
+  NIP-42 identity. `wss://auth.nostr1.com`, the first default DM relay, serves
+  nothing anonymously, and a request naming nobody went out under whoever was
+  logged in when the challenge landed. Every account walks its window once
+  more on this upgrade, and a pubkey-only login stops syncing. Requires
+  `sync_engine_shim_for_ndk` 0.6.0 or 0.7.x.
+- Resolving a recipient's DM relays stays anonymous. The gift wrap goes out
+  under an ephemeral key, so authenticating to find where to send it attached
+  the real sender to the send.
+- **Fix**: the live subscriptions follow the active account. Opened for
+  whoever was logged in and never closed, they left a public email addressed
+  to the previous account landing in the new one's mailbox after a switch.
+- **Fix**: the live subscriptions write what they receive to the NDK cache. An
+  event seen only in real time was projected and then lost until the sync
+  engine walked its period again.
+- `getSummaries()` lists a mailbox from the indexed columns alone, a few
+  hundred bytes a row instead of the whole message, and returns a
+  `PaginatedResult`, now exported. An `Email` parses its MIME on first read of
+  `.mime` rather than in its constructor.
+- `labels` is indexed on `(email_id, recipient_pubkey, label)`, which the
+  `email_states` view needs to resolve a row without rescanning every label of
+  the account. Counting the inbox of a 5000 email store took 360 ms and now
+  takes about 2 ms, as does the `getUnreadCount()` that `watchUnreadCount`
+  re-runs on every change.
+- Schema version 2: the recipients and the sender's display name are indexed,
+  and what a gift wrap yields once opened moves to its own table, so a schema
+  change no longer spends a signer approval. The tables are rebuilt from the
+  NDK cache on first open, and the client now asks for the replay that refills
+  them.
 
 ## 3.0.0
 
