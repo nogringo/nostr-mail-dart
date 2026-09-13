@@ -1,7 +1,7 @@
 # nostr_mail — Agent Guide
 
 > Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59 gift-wrapped messages.
-> Version: 3.1.0 | Dart SDK: ^3.12.0 | Platforms: Android, iOS, Linux, macOS, Web, Windows
+> Version: 3.1.1 | Dart SDK: ^3.12.0 | Platforms: Android, iOS, Linux, macOS, Web, Windows
 
 ---
 
@@ -290,7 +290,7 @@ The engine never returns events: it fills the NDK cache. The cache is therefore 
 Removal is a NIP-09 kind 5 deletion request targeting the label event ID.
 
 ### `Email.isBridged`
-An email is considered "bridged" if the sender's pubkey does **not** match the pubkey extracted from the `From:` address local part. This detects legacy SMTP-to-Nostr gateway traffic.
+An email is bridged when its rumor carries a `mail-from` tag. Its `senderPubkey` is then the bridge's, shared by every legacy sender behind it: telling those senders apart takes `from` as well.
 
 ---
 

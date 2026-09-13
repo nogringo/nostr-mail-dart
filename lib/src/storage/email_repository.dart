@@ -70,6 +70,17 @@ class EmailRepository {
     if (q.folder != null) expr = expr & v.folder.equals(q.folder!);
     if (q.isRead != null) expr = expr & v.isRead.equals(q.isRead!);
     if (q.isStarred != null) expr = expr & v.isStarred.equals(q.isStarred!);
+    if (q.senderPubkey != null) {
+      expr = expr & v.senderPubkey.equals(q.senderPubkey!);
+    }
+    if (q.fromAddress != null) {
+      // Both sides in SQL: SQLite's lower() folds ASCII only, Dart's Unicode.
+      expr =
+          expr &
+          v.fromAddress.lower().equalsExp(
+            Variable<String>(q.fromAddress!).lower(),
+          );
+    }
     if (q.hasAttachments != null) {
       final hasAttachments = existsQuery(
         _db.select(_db.attachments)..where((a) => a.emailId.equalsExp(v.id)),

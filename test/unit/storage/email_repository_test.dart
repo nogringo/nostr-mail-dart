@@ -29,11 +29,13 @@ void main() {
       String subject = 'sub',
       String from = 'a@b.com',
       String body = 'body',
+      String? senderPubkey,
+      bool isBridged = false,
     }) {
       final ts = (date ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000;
       return EmailRecord(
         id: id,
-        senderPubkey: 'pk-$id',
+        senderPubkey: senderPubkey ?? 'pk-$id',
         recipientPubkey: rpk,
         lightMimeText: 'From: $from\r\nSubject: $subject\r\n\r\n$body',
         attachmentRefs: [
@@ -49,7 +51,7 @@ void main() {
         folder: folder,
         isRead: isRead,
         isStarred: isStarred,
-        isBridged: false,
+        isBridged: isBridged,
       );
     }
 
@@ -150,6 +152,58 @@ void main() {
         );
         expect(result.items.length, 1);
         expect(result.items.first.id, 'e1');
+      });
+
+      test('filters by sender, one address behind a shared bridge', () async {
+        await save(
+          makeRecord(
+            'github',
+            senderPubkey: 'bridge',
+            from: 'notifications@github.com',
+            isBridged: true,
+          ),
+        );
+        await save(
+          makeRecord(
+            'bank',
+            senderPubkey: 'bridge',
+            from: 'alerts@bank.com',
+            isBridged: true,
+          ),
+        );
+        await save(
+          makeRecord(
+            'spoof',
+            senderPubkey: 'native',
+            from: 'notifications@github.com',
+          ),
+        );
+
+        final github = await repo.query(
+          const EmailQuery(
+            recipientPubkey: rpk,
+            senderPubkey: 'bridge',
+            fromAddress: 'Notifications@GitHub.com',
+          ),
+        );
+        expect(github.items.map((e) => e.id), ['github']);
+
+        final native = await repo.query(
+          const EmailQuery(recipientPubkey: rpk, senderPubkey: 'native'),
+        );
+        expect(native.items.map((e) => e.id), ['spoof']);
+      });
+
+      test('matches a non-ASCII address in another case', () async {
+        await save(makeRecord('eric', from: 'Éric@exemple.fr'));
+
+        final result = await repo.query(
+          const EmailQuery(
+            recipientPubkey: rpk,
+            fromAddress: 'Éric@Exemple.fr',
+          ),
+        );
+        expect(result.items.map((e) => e.id), ['eric']);
       });
 
       test('combines filters', () async {

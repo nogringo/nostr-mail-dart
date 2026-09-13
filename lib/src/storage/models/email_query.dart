@@ -1,16 +1,20 @@
 /// Lightweight query abstraction for the email repository.
 ///
 /// Covers the 80 % use-case: folder + read/starred state + attachments +
-/// free-text search, with native Sembast pagination.
+/// sender + free-text search, with pagination.
 ///
-/// Every query is scoped to a single account via [recipientPubkey] — this
-/// is what prevents emails from one logged-in account leaking into another.
+/// Every query is scoped to a single account via [recipientPubkey], which
+/// prevents emails from one logged-in account leaking into another.
 class EmailQuery {
   final String recipientPubkey;
   final String? folder;
   final bool? isRead;
   final bool? isStarred;
   final bool? hasAttachments;
+  final String? senderPubkey;
+
+  /// Matched case-insensitively.
+  final String? fromAddress;
   final String? search;
   final int? limit;
   final int? offset;
@@ -22,6 +26,8 @@ class EmailQuery {
     this.isRead,
     this.isStarred,
     this.hasAttachments,
+    this.senderPubkey,
+    this.fromAddress,
     this.search,
     this.limit,
     this.offset,
@@ -34,6 +40,8 @@ class EmailQuery {
     this.isRead,
     this.isStarred,
     this.hasAttachments,
+    this.senderPubkey,
+    this.fromAddress,
     this.search,
     this.limit,
     this.offset,
@@ -46,6 +54,8 @@ class EmailQuery {
     this.isRead,
     this.isStarred,
     this.hasAttachments,
+    this.senderPubkey,
+    this.fromAddress,
     this.search,
     this.limit,
     this.offset,
@@ -58,6 +68,8 @@ class EmailQuery {
     this.isRead,
     this.isStarred,
     this.hasAttachments,
+    this.senderPubkey,
+    this.fromAddress,
     this.search,
     this.limit,
     this.offset,
@@ -70,6 +82,8 @@ class EmailQuery {
     this.isRead,
     this.isStarred,
     this.hasAttachments,
+    this.senderPubkey,
+    this.fromAddress,
     this.search,
     this.limit,
     this.offset,
@@ -82,6 +96,8 @@ class EmailQuery {
     bool? isRead,
     bool? isStarred,
     bool? hasAttachments,
+    String? senderPubkey,
+    String? fromAddress,
     String? search,
     int? limit,
     int? offset,
@@ -93,6 +109,8 @@ class EmailQuery {
       isRead: isRead ?? this.isRead,
       isStarred: isStarred ?? this.isStarred,
       hasAttachments: hasAttachments ?? this.hasAttachments,
+      senderPubkey: senderPubkey ?? this.senderPubkey,
+      fromAddress: fromAddress ?? this.fromAddress,
       search: search ?? this.search,
       limit: limit ?? this.limit,
       offset: offset ?? this.offset,

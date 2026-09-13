@@ -1,3 +1,10 @@
+## 3.1.1
+
+- `getSummaries()` filters by sender with `senderPubkey` and `fromAddress`,
+  the address matched without regard to ASCII case. A bridged email carries
+  the bridge's pubkey, shared by every sender behind it, so list one of them
+  by passing both. The address alone would let any sender claim it.
+
 ## 3.1.0
 
 - The sync engine and every account-scoped request name their account as their
