@@ -24,4 +24,5 @@ export 'src/services/email_parser.dart' show EmailParser;
 export 'src/utils/recipient_resolver.dart' show resolveRecipient;
 export 'src/storage/database.dart' show NostrMailDatabase;
 export 'src/utils/event_email_parser.dart' show parseEmailEvent;
+export 'src/utils/html_to_text.dart' show htmlToText;
 export 'src/exceptions.dart';

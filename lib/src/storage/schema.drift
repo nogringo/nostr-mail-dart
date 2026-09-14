@@ -14,6 +14,7 @@ CREATE TABLE emails (
   from_name TEXT,
   subject TEXT NOT NULL,
   body_plain TEXT NOT NULL,
+  preview TEXT NOT NULL DEFAULT '',
   -- JSON arrays of {name, email}, so a listing draws the header line without
   -- reading light_mime_text.
   to_addresses TEXT NOT NULL DEFAULT '[]',

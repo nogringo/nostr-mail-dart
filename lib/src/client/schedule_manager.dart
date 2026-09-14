@@ -9,7 +9,7 @@ import '../constants.dart';
 import '../exceptions.dart';
 import '../models/recipient.dart';
 import '../models/scheduled_email.dart';
-import '../utils/html_utils.dart';
+import '../utils/body_preview.dart';
 import 'email_sender.dart';
 
 /// Schedules emails for future delivery via a Scheduler DVM (kind:5905 requests
@@ -235,7 +235,7 @@ class ScheduleManager {
       cc: addrs(message.cc),
       bcc: addrs(message.bcc),
       subject: message.decodeSubject() ?? '',
-      bodyPreview: _bodyPreview(message),
+      bodyPreview: bodyPreview(message),
       // Only a public email carries a broadcast kind:1301 job; every other job
       // is a gift wrap.
       isPublic: package.jobs.any((j) => j.targetEvent.kind == emailKind),
@@ -250,15 +250,6 @@ class ScheduleManager {
 
   Nip01Event _decodeRumor(String content) =>
       Nip01EventModel.fromJson(jsonDecode(content) as Map<String, dynamic>);
-
-  static String _bodyPreview(MimeMessage message, {int max = 140}) {
-    var text = message.decodeTextPlainPart() ?? '';
-    if (text.isEmpty) {
-      text = stripHtmlTags(message.decodeTextHtmlPart() ?? '');
-    }
-    text = text.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return text.length > max ? '${text.substring(0, max)}...' : text;
-  }
 
   static List<String> _attachmentNames(MimeMessage message) {
     final names = <String>[];

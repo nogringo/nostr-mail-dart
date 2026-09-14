@@ -1,4 +1,6 @@
+import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:nostr_mail/src/models/attachment_ref.dart';
+import 'package:nostr_mail/src/models/email.dart';
 import 'package:nostr_mail/src/storage/email_repository.dart';
 import 'package:nostr_mail/src/storage/label_repository.dart';
 import 'package:nostr_mail/src/storage/models/email_query.dart';
@@ -101,6 +103,31 @@ void main() {
 
         final retrieved = await repo.getById('update', recipientPubkey: rpk);
         expect(retrieved!.subject, 'Updated');
+      });
+
+      test('a summary carries the preview of the rendered body', () async {
+        final mime =
+            (MessageBuilder.prepareMultipartAlternativeMessage()
+                  ..from = [MailAddress(null, 'a@b.com')]
+                  ..subject = 'sub'
+                  ..addTextPlain('Hi\n\n\\-\\-\nSent with Nmail')
+                  ..addTextHtml('<p>Hi<br/><br/>--<br/>Sent with Nmail</p>'))
+                .buildMimeMessage();
+        final email = Email(
+          id: 'e1',
+          senderPubkey: 'pk',
+          recipientPubkey: rpk,
+          lightMimeText: mime.renderMessage(),
+          attachmentRefs: const [],
+          createdAt: DateTime.now(),
+          isBridged: false,
+        );
+        await save(EmailRecord.fromEmail(email));
+
+        final page = await repo.querySummaries(
+          EmailQuery(recipientPubkey: rpk),
+        );
+        expect(page.items.single.preview, 'Hi');
       });
     });
 

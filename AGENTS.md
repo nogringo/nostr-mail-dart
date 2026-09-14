@@ -1,7 +1,7 @@
 # nostr_mail — Agent Guide
 
 > Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59 gift-wrapped messages.
-> Version: 3.1.1 | Dart SDK: ^3.12.0 | Platforms: Android, iOS, Linux, macOS, Web, Windows
+> Version: 3.1.2 | Dart SDK: ^3.12.0 | Platforms: Android, iOS, Linux, macOS, Web, Windows
 
 ---
 
@@ -112,6 +112,8 @@ lib/
         ├── recipient_resolver.dart   # npub / hex / NIP-05 / bridge resolution
         ├── encrypt_blob.dart         # AES-256-GCM encryption
         ├── decrypt_blob.dart         # AES-256-GCM decryption
+        ├── html_to_text.dart         # htmlToText(), the text/plain a reader sees
+        ├── body_preview.dart         # One-line listing snippet, no quotes or signature
         ├── mime_message_cleaner.dart # removeBccHeaders()
         └── attachment_counter.dart   # Counts attachments via MimeMessage
 

@@ -169,6 +169,18 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
     requiredDuringInsert: true,
     $customConstraints: 'NOT NULL',
   );
+  static const VerificationMeta _previewMeta = const VerificationMeta(
+    'preview',
+  );
+  late final GeneratedColumn<String> preview = GeneratedColumn<String>(
+    'preview',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT \'\'',
+    defaultValue: const CustomExpression('\'\''),
+  );
   static const VerificationMeta _toAddressesMeta = const VerificationMeta(
     'toAddresses',
   );
@@ -222,6 +234,7 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
     fromName,
     subject,
     bodyPlain,
+    preview,
     toAddresses,
     ccAddresses,
     bccAddresses,
@@ -368,6 +381,12 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
     } else if (isInserting) {
       context.missing(_bodyPlainMeta);
     }
+    if (data.containsKey('preview')) {
+      context.handle(
+        _previewMeta,
+        preview.isAcceptableOrUnknown(data['preview']!, _previewMeta),
+      );
+    }
     if (data.containsKey('to_addresses')) {
       context.handle(
         _toAddressesMeta,
@@ -464,6 +483,10 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
         DriftSqlType.string,
         data['${effectivePrefix}body_plain'],
       )!,
+      preview: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}preview'],
+      )!,
       toAddresses: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}to_addresses'],
@@ -504,6 +527,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
   final String? fromName;
   final String subject;
   final String bodyPlain;
+  final String preview;
 
   /// JSON arrays of {name, email}, so a listing draws the header line without
   /// reading light_mime_text.
@@ -526,6 +550,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     this.fromName,
     required this.subject,
     required this.bodyPlain,
+    required this.preview,
     required this.toAddresses,
     required this.ccAddresses,
     required this.bccAddresses,
@@ -556,6 +581,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     }
     map['subject'] = Variable<String>(subject);
     map['body_plain'] = Variable<String>(bodyPlain);
+    map['preview'] = Variable<String>(preview);
     map['to_addresses'] = Variable<String>(toAddresses);
     map['cc_addresses'] = Variable<String>(ccAddresses);
     map['bcc_addresses'] = Variable<String>(bccAddresses);
@@ -587,6 +613,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
           : Value(fromName),
       subject: Value(subject),
       bodyPlain: Value(bodyPlain),
+      preview: Value(preview),
       toAddresses: Value(toAddresses),
       ccAddresses: Value(ccAddresses),
       bccAddresses: Value(bccAddresses),
@@ -614,6 +641,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
       fromName: serializer.fromJson<String?>(json['from_name']),
       subject: serializer.fromJson<String>(json['subject']),
       bodyPlain: serializer.fromJson<String>(json['body_plain']),
+      preview: serializer.fromJson<String>(json['preview']),
       toAddresses: serializer.fromJson<String>(json['to_addresses']),
       ccAddresses: serializer.fromJson<String>(json['cc_addresses']),
       bccAddresses: serializer.fromJson<String>(json['bcc_addresses']),
@@ -638,6 +666,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
       'from_name': serializer.toJson<String?>(fromName),
       'subject': serializer.toJson<String>(subject),
       'body_plain': serializer.toJson<String>(bodyPlain),
+      'preview': serializer.toJson<String>(preview),
       'to_addresses': serializer.toJson<String>(toAddresses),
       'cc_addresses': serializer.toJson<String>(ccAddresses),
       'bcc_addresses': serializer.toJson<String>(bccAddresses),
@@ -660,6 +689,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     Value<String?> fromName = const Value.absent(),
     String? subject,
     String? bodyPlain,
+    String? preview,
     String? toAddresses,
     String? ccAddresses,
     String? bccAddresses,
@@ -683,6 +713,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     fromName: fromName.present ? fromName.value : this.fromName,
     subject: subject ?? this.subject,
     bodyPlain: bodyPlain ?? this.bodyPlain,
+    preview: preview ?? this.preview,
     toAddresses: toAddresses ?? this.toAddresses,
     ccAddresses: ccAddresses ?? this.ccAddresses,
     bccAddresses: bccAddresses ?? this.bccAddresses,
@@ -718,6 +749,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
       fromName: data.fromName.present ? data.fromName.value : this.fromName,
       subject: data.subject.present ? data.subject.value : this.subject,
       bodyPlain: data.bodyPlain.present ? data.bodyPlain.value : this.bodyPlain,
+      preview: data.preview.present ? data.preview.value : this.preview,
       toAddresses: data.toAddresses.present
           ? data.toAddresses.value
           : this.toAddresses,
@@ -748,6 +780,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
           ..write('fromName: $fromName, ')
           ..write('subject: $subject, ')
           ..write('bodyPlain: $bodyPlain, ')
+          ..write('preview: $preview, ')
           ..write('toAddresses: $toAddresses, ')
           ..write('ccAddresses: $ccAddresses, ')
           ..write('bccAddresses: $bccAddresses')
@@ -772,6 +805,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     fromName,
     subject,
     bodyPlain,
+    preview,
     toAddresses,
     ccAddresses,
     bccAddresses,
@@ -795,6 +829,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
           other.fromName == this.fromName &&
           other.subject == this.subject &&
           other.bodyPlain == this.bodyPlain &&
+          other.preview == this.preview &&
           other.toAddresses == this.toAddresses &&
           other.ccAddresses == this.ccAddresses &&
           other.bccAddresses == this.bccAddresses);
@@ -816,6 +851,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
   final Value<String?> fromName;
   final Value<String> subject;
   final Value<String> bodyPlain;
+  final Value<String> preview;
   final Value<String> toAddresses;
   final Value<String> ccAddresses;
   final Value<String> bccAddresses;
@@ -836,6 +872,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     this.fromName = const Value.absent(),
     this.subject = const Value.absent(),
     this.bodyPlain = const Value.absent(),
+    this.preview = const Value.absent(),
     this.toAddresses = const Value.absent(),
     this.ccAddresses = const Value.absent(),
     this.bccAddresses = const Value.absent(),
@@ -857,6 +894,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     this.fromName = const Value.absent(),
     required String subject,
     required String bodyPlain,
+    this.preview = const Value.absent(),
     this.toAddresses = const Value.absent(),
     this.ccAddresses = const Value.absent(),
     this.bccAddresses = const Value.absent(),
@@ -888,6 +926,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     Expression<String>? fromName,
     Expression<String>? subject,
     Expression<String>? bodyPlain,
+    Expression<String>? preview,
     Expression<String>? toAddresses,
     Expression<String>? ccAddresses,
     Expression<String>? bccAddresses,
@@ -909,6 +948,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
       if (fromName != null) 'from_name': fromName,
       if (subject != null) 'subject': subject,
       if (bodyPlain != null) 'body_plain': bodyPlain,
+      if (preview != null) 'preview': preview,
       if (toAddresses != null) 'to_addresses': toAddresses,
       if (ccAddresses != null) 'cc_addresses': ccAddresses,
       if (bccAddresses != null) 'bcc_addresses': bccAddresses,
@@ -932,6 +972,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     Value<String?>? fromName,
     Value<String>? subject,
     Value<String>? bodyPlain,
+    Value<String>? preview,
     Value<String>? toAddresses,
     Value<String>? ccAddresses,
     Value<String>? bccAddresses,
@@ -953,6 +994,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
       fromName: fromName ?? this.fromName,
       subject: subject ?? this.subject,
       bodyPlain: bodyPlain ?? this.bodyPlain,
+      preview: preview ?? this.preview,
       toAddresses: toAddresses ?? this.toAddresses,
       ccAddresses: ccAddresses ?? this.ccAddresses,
       bccAddresses: bccAddresses ?? this.bccAddresses,
@@ -1008,6 +1050,9 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     if (bodyPlain.present) {
       map['body_plain'] = Variable<String>(bodyPlain.value);
     }
+    if (preview.present) {
+      map['preview'] = Variable<String>(preview.value);
+    }
     if (toAddresses.present) {
       map['to_addresses'] = Variable<String>(toAddresses.value);
     }
@@ -1041,6 +1086,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
           ..write('fromName: $fromName, ')
           ..write('subject: $subject, ')
           ..write('bodyPlain: $bodyPlain, ')
+          ..write('preview: $preview, ')
           ..write('toAddresses: $toAddresses, ')
           ..write('ccAddresses: $ccAddresses, ')
           ..write('bccAddresses: $bccAddresses, ')
@@ -3191,6 +3237,7 @@ class EmailState extends DataClass {
   final String? fromName;
   final String subject;
   final String bodyPlain;
+  final String preview;
   final String toAddresses;
   final String ccAddresses;
   final String bccAddresses;
@@ -3213,6 +3260,7 @@ class EmailState extends DataClass {
     this.fromName,
     required this.subject,
     required this.bodyPlain,
+    required this.preview,
     required this.toAddresses,
     required this.ccAddresses,
     required this.bccAddresses,
@@ -3241,6 +3289,7 @@ class EmailState extends DataClass {
       fromName: serializer.fromJson<String?>(json['from_name']),
       subject: serializer.fromJson<String>(json['subject']),
       bodyPlain: serializer.fromJson<String>(json['body_plain']),
+      preview: serializer.fromJson<String>(json['preview']),
       toAddresses: serializer.fromJson<String>(json['to_addresses']),
       ccAddresses: serializer.fromJson<String>(json['cc_addresses']),
       bccAddresses: serializer.fromJson<String>(json['bcc_addresses']),
@@ -3268,6 +3317,7 @@ class EmailState extends DataClass {
       'from_name': serializer.toJson<String?>(fromName),
       'subject': serializer.toJson<String>(subject),
       'body_plain': serializer.toJson<String>(bodyPlain),
+      'preview': serializer.toJson<String>(preview),
       'to_addresses': serializer.toJson<String>(toAddresses),
       'cc_addresses': serializer.toJson<String>(ccAddresses),
       'bcc_addresses': serializer.toJson<String>(bccAddresses),
@@ -3293,6 +3343,7 @@ class EmailState extends DataClass {
     Value<String?> fromName = const Value.absent(),
     String? subject,
     String? bodyPlain,
+    String? preview,
     String? toAddresses,
     String? ccAddresses,
     String? bccAddresses,
@@ -3319,6 +3370,7 @@ class EmailState extends DataClass {
     fromName: fromName.present ? fromName.value : this.fromName,
     subject: subject ?? this.subject,
     bodyPlain: bodyPlain ?? this.bodyPlain,
+    preview: preview ?? this.preview,
     toAddresses: toAddresses ?? this.toAddresses,
     ccAddresses: ccAddresses ?? this.ccAddresses,
     bccAddresses: bccAddresses ?? this.bccAddresses,
@@ -3344,6 +3396,7 @@ class EmailState extends DataClass {
           ..write('fromName: $fromName, ')
           ..write('subject: $subject, ')
           ..write('bodyPlain: $bodyPlain, ')
+          ..write('preview: $preview, ')
           ..write('toAddresses: $toAddresses, ')
           ..write('ccAddresses: $ccAddresses, ')
           ..write('bccAddresses: $bccAddresses, ')
@@ -3371,6 +3424,7 @@ class EmailState extends DataClass {
     fromName,
     subject,
     bodyPlain,
+    preview,
     toAddresses,
     ccAddresses,
     bccAddresses,
@@ -3397,6 +3451,7 @@ class EmailState extends DataClass {
           other.fromName == this.fromName &&
           other.subject == this.subject &&
           other.bodyPlain == this.bodyPlain &&
+          other.preview == this.preview &&
           other.toAddresses == this.toAddresses &&
           other.ccAddresses == this.ccAddresses &&
           other.bccAddresses == this.bccAddresses &&
@@ -3428,6 +3483,7 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
     fromName,
     subject,
     bodyPlain,
+    preview,
     toAddresses,
     ccAddresses,
     bccAddresses,
@@ -3509,6 +3565,10 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
       bodyPlain: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}body_plain'],
+      )!,
+      preview: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}preview'],
       )!,
       toAddresses: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -3629,6 +3689,12 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
   );
   late final GeneratedColumn<String> bodyPlain = GeneratedColumn<String>(
     'body_plain',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+  );
+  late final GeneratedColumn<String> preview = GeneratedColumn<String>(
+    'preview',
     aliasedName,
     false,
     type: DriftSqlType.string,
@@ -4085,6 +4151,7 @@ typedef $EmailsCreateCompanionBuilder =
       Value<String?> fromName,
       required String subject,
       required String bodyPlain,
+      Value<String> preview,
       Value<String> toAddresses,
       Value<String> ccAddresses,
       Value<String> bccAddresses,
@@ -4107,6 +4174,7 @@ typedef $EmailsUpdateCompanionBuilder =
       Value<String?> fromName,
       Value<String> subject,
       Value<String> bodyPlain,
+      Value<String> preview,
       Value<String> toAddresses,
       Value<String> ccAddresses,
       Value<String> bccAddresses,
@@ -4217,6 +4285,11 @@ class $EmailsFilterComposer extends Composer<_$NostrMailDatabase, Emails> {
 
   ColumnFilters<String> get bodyPlain => $composableBuilder(
     column: $table.bodyPlain,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get preview => $composableBuilder(
+    column: $table.preview,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4344,6 +4417,11 @@ class $EmailsOrderingComposer extends Composer<_$NostrMailDatabase, Emails> {
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get preview => $composableBuilder(
+    column: $table.preview,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get toAddresses => $composableBuilder(
     column: $table.toAddresses,
     builder: (column) => ColumnOrderings(column),
@@ -4426,6 +4504,9 @@ class $EmailsAnnotationComposer extends Composer<_$NostrMailDatabase, Emails> {
 
   GeneratedColumn<String> get bodyPlain =>
       $composableBuilder(column: $table.bodyPlain, builder: (column) => column);
+
+  GeneratedColumn<String> get preview =>
+      $composableBuilder(column: $table.preview, builder: (column) => column);
 
   GeneratedColumn<String> get toAddresses => $composableBuilder(
     column: $table.toAddresses,
@@ -4511,6 +4592,7 @@ class $EmailsTableManager
                 Value<String?> fromName = const Value.absent(),
                 Value<String> subject = const Value.absent(),
                 Value<String> bodyPlain = const Value.absent(),
+                Value<String> preview = const Value.absent(),
                 Value<String> toAddresses = const Value.absent(),
                 Value<String> ccAddresses = const Value.absent(),
                 Value<String> bccAddresses = const Value.absent(),
@@ -4531,6 +4613,7 @@ class $EmailsTableManager
                 fromName: fromName,
                 subject: subject,
                 bodyPlain: bodyPlain,
+                preview: preview,
                 toAddresses: toAddresses,
                 ccAddresses: ccAddresses,
                 bccAddresses: bccAddresses,
@@ -4553,6 +4636,7 @@ class $EmailsTableManager
                 Value<String?> fromName = const Value.absent(),
                 required String subject,
                 required String bodyPlain,
+                Value<String> preview = const Value.absent(),
                 Value<String> toAddresses = const Value.absent(),
                 Value<String> ccAddresses = const Value.absent(),
                 Value<String> bccAddresses = const Value.absent(),
@@ -4573,6 +4657,7 @@ class $EmailsTableManager
                 fromName: fromName,
                 subject: subject,
                 bodyPlain: bodyPlain,
+                preview: preview,
                 toAddresses: toAddresses,
                 ccAddresses: ccAddresses,
                 bccAddresses: bccAddresses,

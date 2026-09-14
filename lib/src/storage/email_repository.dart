@@ -19,9 +19,6 @@ import 'models/email_record.dart';
 /// database. A row whose [EmailRecord.recipientPubkey] does not match the
 /// caller is invisible (and unreachable, even by id).
 class EmailRepository {
-  /// Characters of body kept for a listing preview.
-  static const _previewLength = 200;
-
   final NostrMailDatabase _db;
 
   EmailRepository(this._db);
@@ -146,12 +143,11 @@ class EmailRepository {
   /// Prefer this over [query] wherever the body is not shown: a row costs a
   /// few hundred bytes instead of the whole message. Attachment refs and
   /// custom labels take one batched query each for the page, never one per
-  /// row, and the preview is truncated by SQLite so no full body crosses into
+  /// row, and the preview is computed at insert so no full body crosses into
   /// Dart.
   Future<PaginatedResult<EmailSummary>> querySummaries(EmailQuery q) async {
     final total = await count(q);
     final v = _db.emailStates;
-    final preview = v.bodyPlain.substr(1, _previewLength);
     final statement = _db.selectOnly(v)
       ..addColumns([
         v.id,
@@ -168,7 +164,7 @@ class EmailRepository {
         v.isStarred,
         v.isPublic,
         v.isBridged,
-        preview,
+        v.preview,
       ])
       ..where(_matches(v, q))
       ..orderBy([
@@ -205,7 +201,7 @@ class EmailRepository {
           cc: decodeAddresses(row.read(v.ccAddresses)!),
           bcc: decodeAddresses(row.read(v.bccAddresses)!),
           subject: row.read(v.subject)!,
-          preview: row.read(preview) ?? '',
+          preview: row.read(v.preview)!,
           date: DateTime.fromMillisecondsSinceEpoch(row.read(v.date)! * 1000),
           folder: row.read(v.folder)!,
           isRead: row.read(v.isRead)!,
@@ -323,6 +319,7 @@ class EmailRepository {
           bcc: decodeAddresses(row.bccAddresses),
           subject: row.subject,
           bodyPlain: row.bodyPlain,
+          preview: row.preview,
           folder: row.folder,
           isRead: row.isRead,
           isStarred: row.isStarred,
@@ -401,6 +398,7 @@ class EmailRepository {
     bccAddresses: encodeAddresses(r.bcc),
     subject: r.subject,
     bodyPlain: r.bodyPlain,
+    preview: r.preview,
   );
 
   /// Every word of [search] as a quoted prefix term, so user input never

@@ -1,6 +1,6 @@
 import 'package:enough_mail_plus/enough_mail.dart';
 
-import '../utils/html_utils.dart';
+import '../utils/html_to_text.dart';
 import 'attachment_ref.dart';
 
 /// A parsed email.
@@ -91,7 +91,7 @@ class Email {
     final html = htmlBody;
     if (html == null || html.isEmpty) return '';
 
-    return stripHtmlTags(html);
+    return htmlToText(html);
   }
 
   /// Get the HTML body content.

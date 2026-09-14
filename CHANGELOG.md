@@ -1,3 +1,21 @@
+## 3.1.2
+
+- **Fix**: the listing preview shows the body as the reader sees it. It was
+  the raw text/plain part, which for an email composed as markdown showed the
+  syntax and its escapes (`\-\- Sent with [https://x\.org](https://x.org)`).
+  The preview now renders the HTML part when there is one, drops quoted
+  replies with their `On ... wrote:` line and everything after the `-- `
+  signature delimiter, and is empty when nothing is left. It is computed once
+  at insert into a new `preview` column, so the schema version moves to 3 and
+  the projection is rebuilt from the NDK cache on upgrade.
+- `ScheduledEmail.bodyPreview` follows the same rules and no longer ends with
+  `...`: truncation is left to the layout.
+- `htmlToText()` is exported. It renders HTML as the text/plain alternative a
+  rich-text composer should send: one line per block, links as `text <url>`,
+  list items as `* ` or `1. `, quotes prefixed with `> `, and a `--` line as
+  the `-- ` delimiter. `Email.body` uses it when an email has no text part,
+  which also stops the content of `<style>` elements leaking into the text.
+
 ## 3.1.1
 
 - `getSummaries()` filters by sender with `senderPubkey` and `fromAddress`,

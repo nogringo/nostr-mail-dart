@@ -2,6 +2,7 @@ import 'package:enough_mail_plus/enough_mail.dart';
 
 import '../../models/attachment_ref.dart';
 import '../../models/email.dart';
+import '../../utils/body_preview.dart';
 
 /// An email as the local store sees it.
 ///
@@ -60,6 +61,9 @@ class EmailRecord {
   /// Plain-text body (HTML stripped if needed).
   final String bodyPlain;
 
+  /// One-line snippet for a listing, see [bodyPreview].
+  final String preview;
+
   // ── Derived from the labels table ───────────────────────────────────────
 
   /// Current folder. Mutually exclusive: inbox, sent, trash, archive, spam.
@@ -85,6 +89,7 @@ class EmailRecord {
     required this.from,
     required this.subject,
     required this.bodyPlain,
+    this.preview = '',
     required this.folder,
     required this.isBridged,
     this.fromName,
@@ -128,6 +133,7 @@ class EmailRecord {
       bcc: email.mime.bcc ?? const [],
       subject: email.subject ?? '',
       bodyPlain: email.textBody ?? email.body,
+      preview: bodyPreview(email.mime),
       folder: naturalFolder(
         senderPubkey: email.senderPubkey,
         recipientPubkey: email.recipientPubkey,
