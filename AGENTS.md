@@ -191,8 +191,9 @@ await NostrMailClient.create({
 - Folder labels (`folder:*`) are **mutually exclusive**.
 
 **Private Settings (NIP-78):**
-- `getPrivateSettings()` — fetch from relays, decrypt, cache
-- `getCachedPrivateSettings()` / `cachedPrivateSettings` — read local cache (no signer needed)
+- `getPrivateSettings()`: local-first `NdkDataResponse`, emits the local cache then newer relay copies
+- `fetchPrivateSettings()`: fetch from relays, decrypt, cache
+- `getLocalPrivateSettings()` / `cachedPrivateSettings()`: read local cache (no signer needed)
 - `setPrivateSettings()`, `updatePrivateSettings(...)` — encrypt & publish
 
 **NIP-59 Introspection:**

@@ -1,3 +1,25 @@
+## 3.1.3
+
+- **Breaking**: `getPrivateSettings()` is renamed `getLocalPrivateSettings()`.
+  It still reads only the decrypted local cache, without a signer.
+- **New**: every private settings method takes an optional `pubkey`:
+  `getLocalPrivateSettings`, `fetchPrivateSettings`, `setPrivateSettings`,
+  `updatePrivateSettings` and the new `getPrivateSettings`. It defaults to the
+  logged account and can name any account ndk holds with a signer, so the
+  settings of another account are read and written without switching to it.
+- **Breaking**: the `cachedPrivateSettings` getter is now the method
+  `cachedPrivateSettings({pubkey})`, so the synchronous read takes the same
+  `pubkey`. Add `()` to existing reads.
+- **New**: `getPrivateSettings({pubkey, timeout})` reads the private settings
+  local-first, following the local-first reads ADR of ndk (relaystr/ndk#702).
+  Its `stream` emits the local settings with a `cache` origin right away, even
+  when there are none, then every newer relay copy with a `relays` origin.
+  `(null, relays)` means the relays confirmed no settings exist. An
+  undecryptable relay copy, or no relay answering, is a stream error instead of
+  `null`. `future` completes with the last emission.
+- `NdkDataResponse`, `NdkValue` and `DataOrigin` are exported, as a local copy
+  of the ADR types until ndk ships them.
+
 ## 3.1.2
 
 - **Fix**: the listing preview shows the body as the reader sees it. It was

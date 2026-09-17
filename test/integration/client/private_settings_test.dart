@@ -50,13 +50,13 @@ void main() {
         );
         addTearDown(() async => await clientA.dispose());
 
-        expect(clientA.cachedPrivateSettings, isNull);
+        expect(clientA.cachedPrivateSettings(), isNull);
 
         await clientA.setPrivateSettings(
           const PrivateSettings(signature: 'test'),
         );
 
-        expect(clientA.cachedPrivateSettings!.signature, 'test');
+        expect(clientA.cachedPrivateSettings()!.signature, 'test');
 
         // Fresh DB, same relay/account: settings should be re-fetched.
         final db2 = await databaseFactoryMemory.openDatabase(
@@ -76,9 +76,9 @@ void main() {
 
         expect(
           settings!.sourceEvent!.id,
-          clientA.cachedPrivateSettings!.sourceEvent!.id,
+          clientA.cachedPrivateSettings()!.sourceEvent!.id,
         );
-        expect(settings.signature, clientA.cachedPrivateSettings!.signature);
+        expect(settings.signature, clientA.cachedPrivateSettings()!.signature);
       },
     );
   });
@@ -131,21 +131,20 @@ void main() {
     });
 
     test('cachedPrivateSettings is null before first local read', () {
-      expect(client.cachedPrivateSettings, isNull);
+      expect(client.cachedPrivateSettings(), isNull);
     });
 
     test(
       'NostrMailClient.create primes cachedPrivateSettings from local DB',
       () async {
         await client.updatePrivateSettings(signature: 'primed signature');
-        expect(client.cachedPrivateSettings!.signature, 'primed signature');
+        expect(client.cachedPrivateSettings()!.signature, 'primed signature');
 
         // Reopen a fresh client backed by the SAME database. The signature is
         // persisted in the SettingsRepository, so the new client must expose
         // it through the sync getter immediately after create() returns,
-        // without anyone calling getPrivateSettings() first. This mirrors the
-        // post-login flow where
-        // the app reads the cached signature right after initClient().
+        // without anyone calling getLocalPrivateSettings() first. This mirrors
+        // the post-login flow where the app reads the cached signature right after initClient().
         final reopened = await NostrMailClient.create(
           ndk: ndk,
           database: database,
@@ -155,8 +154,8 @@ void main() {
           defaultDmRelays: [relay.url],
         );
 
-        expect(reopened.cachedPrivateSettings, isNotNull);
-        expect(reopened.cachedPrivateSettings!.signature, 'primed signature');
+        expect(reopened.cachedPrivateSettings(), isNotNull);
+        expect(reopened.cachedPrivateSettings()!.signature, 'primed signature');
       },
     );
 
@@ -195,22 +194,22 @@ void main() {
       () async {
         await client.updatePrivateSettings(signature: 'Synced signature');
 
-        final settings = await client.getPrivateSettings();
+        final settings = await client.getLocalPrivateSettings();
 
         expect(settings, isNotNull);
         expect(settings!.signature, 'Synced signature');
-        expect(client.cachedPrivateSettings!.signature, 'Synced signature');
+        expect(client.cachedPrivateSettings()!.signature, 'Synced signature');
       },
       timeout: const Timeout(Duration(seconds: 30)),
     );
 
     test('updatePrivateSettings updates an existing signature', () async {
       await client.updatePrivateSettings(signature: 'First signature');
-      var settings = await client.getPrivateSettings();
+      var settings = await client.getLocalPrivateSettings();
       expect(settings!.signature, 'First signature');
 
       await client.updatePrivateSettings(signature: 'Updated signature');
-      settings = await client.getPrivateSettings();
+      settings = await client.getLocalPrivateSettings();
       expect(settings!.signature, 'Updated signature');
     }, timeout: const Timeout(Duration(seconds: 30)));
 
@@ -218,7 +217,7 @@ void main() {
       final bridges = ['nostr.mail', 'bridge.example.com'];
       await client.updatePrivateSettings(bridges: bridges);
 
-      final settings = await client.getPrivateSettings();
+      final settings = await client.getLocalPrivateSettings();
 
       expect(settings!.bridges, bridges);
     }, timeout: const Timeout(Duration(seconds: 30)));
@@ -230,7 +229,7 @@ void main() {
       ];
       await client.updatePrivateSettings(identities: identities);
 
-      final settings = await client.getPrivateSettings();
+      final settings = await client.getLocalPrivateSettings();
 
       expect(settings!.defaultAddress!.personalName, 'Alice');
       expect(settings.identities!.length, 2);
@@ -238,23 +237,23 @@ void main() {
 
     test('clearAll resets the private settings cache', () async {
       await client.updatePrivateSettings(signature: 'Test signature');
-      await client.getPrivateSettings();
-      expect(client.cachedPrivateSettings, isNotNull);
+      await client.getLocalPrivateSettings();
+      expect(client.cachedPrivateSettings(), isNotNull);
 
       await client.clearAll();
 
-      expect(client.cachedPrivateSettings, isNull);
+      expect(client.cachedPrivateSettings(), isNull);
     }, timeout: const Timeout(Duration(seconds: 30)));
 
     test(
       'updatePrivateSettings with clearSignature drops the signature',
       () async {
         await client.updatePrivateSettings(signature: 'To be cleared');
-        expect(client.cachedPrivateSettings!.signature, 'To be cleared');
+        expect(client.cachedPrivateSettings()!.signature, 'To be cleared');
 
         await client.updatePrivateSettings(clearSignature: true);
 
-        final settings = await client.getPrivateSettings();
+        final settings = await client.getLocalPrivateSettings();
         expect(settings!.signature, isNull);
       },
       timeout: const Timeout(Duration(seconds: 30)),
@@ -274,6 +273,139 @@ void main() {
       expect(dTag[1], privateSettingsDTag);
     }, timeout: const Timeout(Duration(seconds: 30)));
 
+    group('getPrivateSettings', () {
+      Future<NostrMailClient> freshClient({List<String>? dmRelays}) async {
+        final freshDb = await databaseFactoryMemory.openDatabase(
+          'test_private_settings_${DateTime.now().microsecondsSinceEpoch}_d',
+        );
+        final fresh = await NostrMailClient.create(
+          ndk: ndk,
+          database: testDatabase(),
+          db: freshDb,
+          syncEngine: testSyncEngine(ndk, freshDb),
+          blossomCache: blossomCache,
+          defaultDmRelays: dmRelays ?? [relay.url],
+        );
+        addTearDown(fresh.dispose);
+        return fresh;
+      }
+
+      test('emits the local value then the relay copy', () async {
+        await client.setPrivateSettings(
+          const PrivateSettings(signature: 'test'),
+        );
+
+        final values = await client.getPrivateSettings().stream.toList();
+
+        expect(values.map((v) => v.origin), [
+          DataOrigin.cache,
+          DataOrigin.relays,
+        ]);
+        expect(values.map((v) => v.value!.signature), ['test', 'test']);
+        expect(
+          values.last.value!.sourceEvent!.id,
+          client.cachedPrivateSettings()!.sourceEvent!.id,
+        );
+      }, timeout: const Timeout(Duration(seconds: 30)));
+
+      test('emits null from cache then the relay copy', () async {
+        await client.setPrivateSettings(
+          const PrivateSettings(signature: 'remote'),
+        );
+        final fresh = await freshClient();
+
+        final response = fresh.getPrivateSettings();
+        final values = await response.stream.toList();
+
+        expect(values.first.value, isNull);
+        expect(values.first.origin, DataOrigin.cache);
+        expect(values.last.value!.signature, 'remote');
+        expect(values.last.origin, DataOrigin.relays);
+
+        final last = await response.future;
+        expect(last.origin, DataOrigin.relays);
+        expect(fresh.cachedPrivateSettings()!.signature, 'remote');
+      }, timeout: const Timeout(Duration(seconds: 30)));
+
+      test('confirms absence when the relay holds nothing', () async {
+        final values = await client.getPrivateSettings().stream.toList();
+
+        expect(values.map((v) => (v.value, v.origin)), [
+          (null, DataOrigin.cache),
+          (null, DataOrigin.relays),
+        ]);
+      }, timeout: const Timeout(Duration(seconds: 30)));
+
+      test('fails when no relay answers', () async {
+        final fresh = await freshClient(dmRelays: ['ws://localhost:19099']);
+
+        final response = fresh.getPrivateSettings(
+          timeout: const Duration(seconds: 2),
+        );
+
+        await expectLater(response.future, throwsA(isA<NostrMailException>()));
+      }, timeout: const Timeout(Duration(seconds: 30)));
+
+      test('reads and writes another account known to ndk', () async {
+        final loggedPubkey = ndk.accounts.getPublicKey()!;
+        final other = Bip340.generatePrivateKey();
+        ndk.accounts.addAccount(
+          pubkey: other.publicKey,
+          type: AccountType.privateKey,
+          signer: Bip340EventSigner(
+            privateKey: other.privateKey,
+            publicKey: other.publicKey,
+          ),
+        );
+        await client.setPrivateSettings(
+          const PrivateSettings(signature: 'other'),
+          pubkey: other.publicKey,
+        );
+        await client.updatePrivateSettings(
+          bridges: ['bridge.example.com'],
+          pubkey: other.publicKey,
+        );
+
+        expect(client.cachedPrivateSettings(), isNull);
+        expect(
+          client.cachedPrivateSettings(pubkey: other.publicKey)!.signature,
+          'other',
+        );
+
+        final last = await client
+            .getPrivateSettings(pubkey: other.publicKey)
+            .future;
+        expect(last.origin, DataOrigin.relays);
+        expect(last.value!.signature, 'other');
+        expect(last.value!.bridges, ['bridge.example.com']);
+
+        final fetched = await client.fetchPrivateSettings(
+          pubkey: other.publicKey,
+        );
+        expect(fetched!.sourceEvent!.pubKey, other.publicKey);
+        expect(ndk.accounts.getPublicKey(), loggedPubkey);
+      }, timeout: const Timeout(Duration(seconds: 30)));
+
+      test('throws for a pubkey unknown to ndk', () {
+        expect(
+          () => client.getPrivateSettings(
+            pubkey: Bip340.generatePrivateKey().publicKey,
+          ),
+          throwsA(isA<NostrMailException>()),
+        );
+      });
+
+      test('throws without signing capability', () {
+        final readOnlyKeys = Bip340.generatePrivateKey();
+        ndk.accounts.loginPublicKey(pubkey: readOnlyKeys.publicKey);
+
+        expect(
+          () => client.getPrivateSettings(),
+          throwsA(isA<NostrMailException>()),
+        );
+      });
+    });
+
     test('updatePrivateSettings persists identities', () async {
       final identities = [
         MailAddress('Alice Real', 'alice@nostr.mail'),
@@ -281,7 +413,7 @@ void main() {
       ];
       await client.updatePrivateSettings(identities: identities);
 
-      final settings = await client.getPrivateSettings();
+      final settings = await client.getLocalPrivateSettings();
 
       expect(settings!.identities, hasLength(2));
       expect(settings.identities![0].personalName, 'Alice Real');
@@ -294,11 +426,11 @@ void main() {
         await client.updatePrivateSettings(
           identities: [MailAddress('Test', 'test@test.com')],
         );
-        expect(client.cachedPrivateSettings!.identities, isNotNull);
+        expect(client.cachedPrivateSettings()!.identities, isNotNull);
 
         await client.updatePrivateSettings(clearIdentities: true);
 
-        final settings = await client.getPrivateSettings();
+        final settings = await client.getLocalPrivateSettings();
         expect(settings!.identities, isNull);
         expect(settings.defaultAddress, isNull);
       },

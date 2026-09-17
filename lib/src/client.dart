@@ -29,6 +29,7 @@ import 'models/email.dart';
 import 'models/email_summary.dart';
 import 'models/gift_wrap_state.dart';
 import 'models/mail_event.dart';
+import 'models/ndk_data_response.dart';
 import 'models/paginated_result.dart';
 import 'models/private_settings.dart';
 import 'models/recipient.dart';
@@ -210,12 +211,12 @@ class NostrMailClient {
     );
 
     // Prime the in-memory settings cache from local storage so the sync
-    // getter `cachedPrivateSettings` is ready right after `create()` returns.
+    // read `cachedPrivateSettings()` is ready right after `create()` returns.
     // Without this, callers observe `null` until the first async local read,
     // which races with auth-state listeners that fire before this client
     // is constructed.
     if (ndk.accounts.isLoggedIn) {
-      await settingsManager.getPrivateSettings();
+      await settingsManager.getLocalPrivateSettings();
     }
 
     // Declaring is what makes the engine keep this account's mail available
@@ -1121,16 +1122,22 @@ class NostrMailClient {
 
   // ── Private Settings ────────────────────────────────────────────────────
 
-  PrivateSettings? get cachedPrivateSettings => _settings.cachedPrivateSettings;
+  PrivateSettings? cachedPrivateSettings({String? pubkey}) =>
+      _settings.cachedPrivateSettings(pubkey: pubkey);
 
-  Future<PrivateSettings?> getPrivateSettings() =>
-      _settings.getPrivateSettings();
+  Future<PrivateSettings?> getLocalPrivateSettings({String? pubkey}) =>
+      _settings.getLocalPrivateSettings(pubkey: pubkey);
 
-  Future<PrivateSettings?> fetchPrivateSettings() =>
-      _settings.fetchPrivateSettings();
+  Future<PrivateSettings?> fetchPrivateSettings({String? pubkey}) =>
+      _settings.fetchPrivateSettings(pubkey: pubkey);
 
-  Future<void> setPrivateSettings(PrivateSettings settings) =>
-      _settings.setPrivateSettings(settings);
+  NdkDataResponse<PrivateSettings> getPrivateSettings({
+    String? pubkey,
+    Duration? timeout,
+  }) => _settings.getPrivateSettings(pubkey: pubkey, timeout: timeout);
+
+  Future<void> setPrivateSettings(PrivateSettings settings, {String? pubkey}) =>
+      _settings.setPrivateSettings(settings, pubkey: pubkey);
 
   Future<void> updatePrivateSettings({
     String? signature,
@@ -1139,6 +1146,7 @@ class NostrMailClient {
     bool clearSignature = false,
     bool clearBridges = false,
     bool clearIdentities = false,
+    String? pubkey,
   }) => _settings.updatePrivateSettings(
     signature: signature,
     bridges: bridges,
@@ -1146,6 +1154,7 @@ class NostrMailClient {
     clearSignature: clearSignature,
     clearBridges: clearBridges,
     clearIdentities: clearIdentities,
+    pubkey: pubkey,
   );
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
