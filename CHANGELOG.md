@@ -40,6 +40,11 @@
 - **Breaking**: `flushBroadcasts()` and `flushBlossomUploads()` are removed
   from the client. Wait on `broadcastQueue` and `blossomUploadQueue` directly
   instead.
+- **Fix**: deleting a sent email before the sync brought its gift wrap back
+  now deletes that wrap on the relays. The deletion only named the rumor id,
+  which no relay holds, so the wrap stayed there. The sender's own wrap is now
+  recorded at send time, so `getGiftWrap`, `getSeal` and `getRumor` also answer
+  for a sent email right away.
 
 ## 3.1.2
 

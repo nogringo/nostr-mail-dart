@@ -72,6 +72,8 @@ class RelayResolver {
   /// defaults when none of them publishes a kind 10050.
   RelaySet dmRelaySet(List<String> pubkeys) => RelaySet.fallback([
     RelaySet.dm(pubkeys),
+    // TODO: fall back to RelaySet.inbox(pubkeys) here, and in getDmRelays
+    // too, so sends and deletions keep targeting the same relays.
     RelaySet.explicit(_defaultDmRelays),
   ]);
 

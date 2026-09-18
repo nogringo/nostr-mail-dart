@@ -250,6 +250,7 @@ class NostrMailClient {
       blossomQueue,
       blossomCache,
       emailRepo,
+      giftWrapRepo,
       defaultBlossomServers: defaultBlossomServers,
       nip05Overrides: nip05Overrides,
     );

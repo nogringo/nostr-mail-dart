@@ -35,6 +35,39 @@ class GiftWrapRepository {
     return const GiftWrapProgress(stage: GiftWrapStage.saved);
   }
 
+  /// Record a wrap this device built, already open: nothing is left to decrypt,
+  /// so the sync finds it stored when it comes back from the relays.
+  Future<void> saveOpened(
+    Nip01Event event, {
+    required String recipientPubkey,
+    required Nip01Event seal,
+    required Nip01Event rumor,
+  }) async {
+    await _db.transaction(() async {
+      await _db
+          .into(_db.giftWraps)
+          .insertOnConflictUpdate(
+            GiftWrapsCompanion.insert(
+              id: event.id,
+              recipientPubkey: recipientPubkey,
+              event: _encode(event),
+              stage: _stored,
+            ),
+          );
+      await _db
+          .into(_db.unsealed)
+          .insertOnConflictUpdate(
+            UnsealedRow(
+              wrapId: event.id,
+              recipientPubkey: recipientPubkey,
+              seal: _encode(seal),
+              rumor: _encode(rumor),
+              rumorId: rumor.id,
+            ),
+          );
+    });
+  }
+
   /// Get a gift wrap record by its globally unique outer event ID.
   Future<Map<String, dynamic>?> getById(String giftWrapId) async =>
       _record(await _row(giftWrapId));

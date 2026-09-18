@@ -5,7 +5,10 @@ import 'package:ndk/ndk.dart' hide RelaySet;
 class OutgoingEvent {
   final Nip01Event event;
   final List<String> relays;
-  OutgoingEvent(this.event, this.relays);
+
+  /// The seal inside, when [event] is a gift wrap this device built.
+  final Nip01Event? seal;
+  OutgoingEvent(this.event, this.relays, {this.seal});
 }
 
 /// Wraps a rumor into a NIP-59 gift wrap for [recipientPubkey], returning the
@@ -17,6 +20,9 @@ typedef GiftWrapBuilder =
 /// immediately before the event is persisted to the broadcast queue.
 typedef BeforePublish =
     Future<void> Function(Nip01Event event, List<String> relays);
+
+/// Hook invoked with a freshly built gift wrap, before it is delivered.
+typedef OnGiftWrapBuilt = Future<void> Function(OutgoingEvent wrap);
 
 /// Strategy for where the events built during a send go: broadcast now, or
 /// collected for later scheduling. Lets the sender share one build path for
@@ -31,7 +37,11 @@ abstract class Delivery {
   bool get saveSelfCopy;
 
   Future<void> deliverEvent(Nip01Event event, List<String> relays);
-  Future<void> deliverGiftWrap(Nip01Event rumor, String recipientPubkey);
+  Future<void> deliverGiftWrap(
+    Nip01Event rumor,
+    String recipientPubkey, {
+    OnGiftWrapBuilt? onBuilt,
+  });
 }
 
 /// Broadcasts each built event immediately through the offline queue.
@@ -73,8 +83,13 @@ class BroadcastDelivery implements Delivery {
   }
 
   @override
-  Future<void> deliverGiftWrap(Nip01Event rumor, String recipientPubkey) async {
+  Future<void> deliverGiftWrap(
+    Nip01Event rumor,
+    String recipientPubkey, {
+    OnGiftWrapBuilt? onBuilt,
+  }) async {
     final out = await _buildGiftWrap(rumor, recipientPubkey);
+    await onBuilt?.call(out);
     await _beforePublish?.call(out.event, out.relays);
     await _queue.broadcast(
       out.event,
@@ -104,7 +119,13 @@ class ScheduleDelivery implements Delivery {
   }
 
   @override
-  Future<void> deliverGiftWrap(Nip01Event rumor, String recipientPubkey) async {
-    items.add(await _buildGiftWrap(rumor, recipientPubkey));
+  Future<void> deliverGiftWrap(
+    Nip01Event rumor,
+    String recipientPubkey, {
+    OnGiftWrapBuilt? onBuilt,
+  }) async {
+    final out = await _buildGiftWrap(rumor, recipientPubkey);
+    await onBuilt?.call(out);
+    items.add(out);
   }
 }

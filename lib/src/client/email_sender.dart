@@ -15,6 +15,7 @@ import '../models/recipient.dart';
 import '../services/bridge_resolver.dart';
 import '../services/email_parser.dart';
 import '../storage/email_repository.dart';
+import '../storage/gift_wrap_repository.dart';
 import '../storage/models/email_record.dart';
 import '../utils/attachment_extractor.dart';
 import '../utils/encrypt_blob.dart';
@@ -32,6 +33,7 @@ class EmailSender {
   final OfflineBlossomUpload _blossomUploadQueue;
   final BlossomCache _blossomCache;
   final EmailRepository _emailRepo;
+  final GiftWrapRepository _giftWrapRepo;
   final List<String> _defaultBlossomServers;
   final Map<String, String>? nip05Overrides;
 
@@ -42,7 +44,8 @@ class EmailSender {
     this._broadcastQueue,
     this._blossomUploadQueue,
     this._blossomCache,
-    this._emailRepo, {
+    this._emailRepo,
+    this._giftWrapRepo, {
     List<String>? defaultBlossomServers,
     this.nip05Overrides,
   }) : _parser = EmailParser(),
@@ -404,7 +407,7 @@ class EmailSender {
       });
 
       if (keepCopy) {
-        await delivery.deliverGiftWrap(senderRumor, senderPubkey);
+        await _deliverSelfCopy(delivery, senderRumor, senderPubkey);
       }
 
       await Future.wait(bccFutures);
@@ -443,7 +446,7 @@ class EmailSender {
         // Reuse the pre-built sender rumor so rumor.id stays stable:
         // when the gift wrap comes back via sync, the dedup is a no-op.
         if (keepCopy && pubkey == senderPubkey) {
-          await delivery.deliverGiftWrap(senderRumor, pubkey);
+          await _deliverSelfCopy(delivery, senderRumor, pubkey);
           return;
         }
 
@@ -572,13 +575,40 @@ class EmailSender {
     await _emailRepo.save(EmailRecord.fromEmail(email));
   }
 
+  /// Delivers the sender's own wrap and, when the Sent copy was saved locally,
+  /// records the wrap too: a deletion needs its id, and the sync may not have
+  /// brought it back yet.
+  Future<void> _deliverSelfCopy(
+    Delivery delivery,
+    Nip01Event rumor,
+    String senderPubkey,
+  ) => delivery.deliverGiftWrap(
+    rumor,
+    senderPubkey,
+    onBuilt: delivery.saveSelfCopy
+        ? (wrap) => _giftWrapRepo.saveOpened(
+            wrap.event,
+            recipientPubkey: senderPubkey,
+            seal: wrap.seal!,
+            rumor: rumor,
+          )
+        : null,
+  );
+
   Future<OutgoingEvent> _buildGiftWrap(
     Nip01Event rumor,
     String recipientPubkey,
   ) async {
-    final giftWrapEvent = await _ndk.giftWrap.toGiftWrap(
+    // What toGiftWrap does, split so the seal stays in hand.
+    final seal = await _ndk.giftWrap.sealRumor(
       rumor: rumor,
       recipientPubkey: recipientPubkey,
+    );
+    final giftWrapEvent = await GiftWrap.wrapEvent(
+      recipientPublicKey: recipientPubkey,
+      sealEvent: seal,
+      eventSignerFactory: _ndk.giftWrap.eventSignerFactory,
+      randomizeCreatedAtBefore: rumor.createdAt,
     );
     // Gift wraps go to the recipient's DM relays (NIP-17). For a scheduled send
     // the rumor is dated at the schedule time; ndk randomizes the seal and gift
@@ -588,6 +618,6 @@ class EmailSender {
       recipientPubkey,
       auth: const RelayAuth.never(),
     );
-    return OutgoingEvent(giftWrapEvent, dmRelays);
+    return OutgoingEvent(giftWrapEvent, dmRelays, seal: seal);
   }
 }
