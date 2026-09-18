@@ -2,6 +2,7 @@ import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_user.dart';
+import '../../helpers/wait_for_broadcasts.dart';
 import '../../mocks/mock_relay.dart';
 
 void main() {
@@ -33,7 +34,7 @@ void main() {
       );
       final queued = await sender.client.broadcastQueue.listAll();
       final giftWrap = queued.single.event;
-      await sender.client.flushBroadcasts();
+      await waitForBroadcasts(sender.client.broadcastQueue);
 
       final email = await recipient.client.openEmail(
         eventId: giftWrap.id,
@@ -78,7 +79,7 @@ void main() {
       );
       final queued = await sender.client.broadcastQueue.listAll();
       final giftWrap = queued.single.event;
-      await sender.client.flushBroadcasts();
+      await waitForBroadcasts(sender.client.broadcastQueue);
 
       final email = await recipient.client.openEmail(
         eventId: giftWrap.id,
@@ -118,7 +119,7 @@ void main() {
       );
       final queued = await sender.client.broadcastQueue.listAll();
       final publicEvent = queued.single.event;
-      await sender.client.flushBroadcasts();
+      await waitForBroadcasts(sender.client.broadcastQueue);
 
       final email = await recipient.client.openEmail(
         eventId: publicEvent.id,

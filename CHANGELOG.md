@@ -37,6 +37,9 @@
   `restoreFromArchive`) signs the deletion before removing the label locally.
   A signer failure now throws and leaves the label in place, instead of
   removing it on this device only.
+- **Breaking**: `flushBroadcasts()` and `flushBlossomUploads()` are removed
+  from the client. Wait on `broadcastQueue` and `blossomUploadQueue` directly
+  instead.
 
 ## 3.1.2
 

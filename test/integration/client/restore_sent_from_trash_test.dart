@@ -3,6 +3,7 @@ import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_user.dart';
+import '../../helpers/wait_for_broadcasts.dart';
 import '../../mocks/mock_relay.dart';
 
 void main() {
@@ -33,13 +34,13 @@ void main() {
       subject: 'Restore sent message',
       body: 'This message should return to Sent after restore.',
     );
-    await sender.client.flushBroadcasts();
+    await waitForBroadcasts(sender.client.broadcastQueue);
 
     final sentEmail = (await sender.client.getSentEmails()).single;
 
     await sender.client.moveToTrash(sentEmail.id);
     await Future<void>.delayed(const Duration(milliseconds: 50));
-    await sender.client.flushBroadcasts();
+    await waitForBroadcasts(sender.client.broadcastQueue);
 
     expect(
       (await sender.client.getTrashedEmails()).map((email) => email.id),
@@ -49,7 +50,7 @@ void main() {
 
     await sender.client.restoreFromTrash(sentEmail.id);
     await Future<void>.delayed(const Duration(milliseconds: 50));
-    await sender.client.flushBroadcasts();
+    await waitForBroadcasts(sender.client.broadcastQueue);
 
     expect(
       (await sender.client.getSentEmails()).map((email) => email.id),
