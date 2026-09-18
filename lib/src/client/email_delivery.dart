@@ -1,5 +1,5 @@
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
-import 'package:ndk/ndk.dart';
+import 'package:ndk/ndk.dart' hide RelaySet;
 
 /// A signed event ready to publish, paired with its target relays.
 class OutgoingEvent {
@@ -39,6 +39,10 @@ abstract class Delivery {
 /// Every entry is attributed to [senderPubkey] so the queue can be wiped per
 /// account on logout. Gift wraps carry an ephemeral event pubkey, so the
 /// sending account is the only usable attribution.
+///
+/// The relays are resolved here and queued as a `RelaySet.explicit`: a send
+/// reports the exact relay list it targets through [BeforePublish], and the
+/// same list goes in the `public-ref` tag of a public email.
 class BroadcastDelivery implements Delivery {
   final OfflineBroadcast _queue;
   final GiftWrapBuilder _buildGiftWrap;
@@ -61,14 +65,22 @@ class BroadcastDelivery implements Delivery {
   @override
   Future<void> deliverEvent(Nip01Event event, List<String> relays) async {
     await _beforePublish?.call(event, relays);
-    await _queue.broadcast(event, relays: relays, pubkey: senderPubkey);
+    await _queue.broadcast(
+      event,
+      relaySet: RelaySet.explicit(relays),
+      pubkey: senderPubkey,
+    );
   }
 
   @override
   Future<void> deliverGiftWrap(Nip01Event rumor, String recipientPubkey) async {
     final out = await _buildGiftWrap(rumor, recipientPubkey);
     await _beforePublish?.call(out.event, out.relays);
-    await _queue.broadcast(out.event, relays: out.relays, pubkey: senderPubkey);
+    await _queue.broadcast(
+      out.event,
+      relaySet: RelaySet.explicit(out.relays),
+      pubkey: senderPubkey,
+    );
   }
 }
 

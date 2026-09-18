@@ -6,7 +6,8 @@
 // account's recipientPubkey. Each test simulates Alice reading the store
 // and asserts that none of Bob's data is reachable.
 
-import 'package:ndk/ndk.dart';
+import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
+import 'package:ndk/ndk.dart' hide RelaySet;
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:ndk/shared/nips/nip01/key_pair.dart';
 import 'package:nostr_mail/nostr_mail.dart';
@@ -345,12 +346,12 @@ void main() {
       );
       await client.broadcastQueue.broadcast(
         makeEvent('alice-queued'),
-        relays: [relay.url],
+        relaySet: RelaySet.explicit([relay.url]),
         pubkey: aliceAccount.publicKey,
       );
       await client.broadcastQueue.broadcast(
         makeEvent('bob-queued'),
-        relays: [relay.url],
+        relaySet: RelaySet.explicit([relay.url]),
         pubkey: bobAccount.publicKey,
       );
 

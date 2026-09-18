@@ -1,5 +1,5 @@
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
-import 'package:ndk/ndk.dart';
+import 'package:ndk/ndk.dart' hide RelaySet;
 
 import '../constants.dart';
 import '../exceptions.dart';
@@ -88,10 +88,13 @@ class LabelManager {
 
     // Enqueue for durable broadcast. The outbox persists the event before
     // any network attempt and retries until every write relay has acked,
-    // so a label survives offline use and process death.
-    _relays.getWriteRelays(pubkey).then((relays) {
-      _broadcastQueue.broadcast(signed, relays: relays, pubkey: pubkey);
-    });
+    // so a label survives offline use and process death. It resolves the
+    // write relays itself, so labelling never waits on a relay list.
+    await _broadcastQueue.broadcast(
+      signed,
+      relaySet: _relays.writeRelaySet(pubkey),
+      pubkey: pubkey,
+    );
   }
 
   /// Remove a label from an email (local-first).
@@ -135,9 +138,11 @@ class LabelManager {
     // codebase already follow sign-then-mutate; this is the lone
     // exception.
     _ndk.accounts.sign(deletionEvent).then((signed) {
-      _relays.getWriteRelays(pubkey).then((relays) {
-        _broadcastQueue.broadcast(signed, relays: relays, pubkey: pubkey);
-      });
+      _broadcastQueue.broadcast(
+        signed,
+        relaySet: _relays.writeRelaySet(pubkey),
+        pubkey: pubkey,
+      );
     });
   }
 

@@ -1,9 +1,14 @@
-import 'package:ndk/ndk.dart';
+import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
+import 'package:ndk/ndk.dart' hide RelaySet;
 import 'package:ndk/domain_layer/entities/filter.dart' as ndk;
 
 import '../constants.dart';
 
 /// Resolves DM and write relays for a given pubkey via NDK.
+///
+/// The `get*` methods query the relays now; the `*RelaySet` ones describe the
+/// same targets as a [RelaySet] the broadcast queue resolves on its own, so an
+/// event can be enqueued without waiting on a lookup.
 ///
 /// Falls back to [defaultDmRelays] when the user has no relay lists configured.
 class RelayResolver {
@@ -12,6 +17,11 @@ class RelayResolver {
 
   RelayResolver(this._ndk, {List<String>? defaultDmRelays})
     : _defaultDmRelays = defaultDmRelays ?? recommendedDmRelays;
+
+  /// The relays a lookup falls back to when the account publishes no list.
+  /// They are also where the broadcast queue looks relay lists up, next to
+  /// the public indexers.
+  List<String> get defaultRelays => _defaultDmRelays;
 
   /// Get user's DM relays from NIP-17 kind 10050 event.
   ///
@@ -57,4 +67,18 @@ class RelayResolver {
 
     return relays.isNotEmpty ? relays : _defaultDmRelays;
   }
+
+  /// [getDmRelays] as a [RelaySet]: the NIP-17 DM relays of [pubkeys], or the
+  /// defaults when none of them publishes a kind 10050.
+  RelaySet dmRelaySet(List<String> pubkeys) => RelaySet.fallback([
+    RelaySet.dm(pubkeys),
+    RelaySet.explicit(_defaultDmRelays),
+  ]);
+
+  /// [getWriteRelays] as a [RelaySet]: the NIP-65 write relays of [pubkey], or
+  /// the defaults when it publishes no kind 10002.
+  RelaySet writeRelaySet(String pubkey) => RelaySet.fallback([
+    RelaySet.outbox(pubkey),
+    RelaySet.explicit(_defaultDmRelays),
+  ]);
 }

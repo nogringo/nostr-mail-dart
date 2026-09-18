@@ -4,7 +4,7 @@ import 'package:blossom_cache/blossom_cache.dart';
 import 'package:blossom_upload_queue_shim_for_ndk/blossom_upload_queue_shim_for_ndk.dart';
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
 import 'package:enough_mail_plus/enough_mail.dart' hide MailEvent;
-import 'package:ndk/ndk.dart';
+import 'package:ndk/ndk.dart' hide RelaySet;
 import 'package:nostr_event_scheduler/nostr_event_scheduler.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:sembast/sembast.dart' hide Filter;
@@ -123,8 +123,13 @@ class NostrMailClient {
   /// queue, you also own its lifecycle: call `.start()` yourself before
   /// `create()` (or before the first send), `.dispose()` when you no longer
   /// need it, and clear it yourself on logout (see [clearLocalAccountData]).
+  /// It must be able to resolve relay lists, so build it with
+  /// `OfflineBroadcast.withNdk` or give it a `relayListFn`: labels, private
+  /// settings and deletions name the account's NIP-65 or DM relays rather than
+  /// URLs, so the queue looks them up itself instead of holding the call.
   /// When [broadcastQueue] is null, the client instantiates and starts an
-  /// internal `OfflineBroadcast.withNdk(ndk, db: db)`, and
+  /// internal `OfflineBroadcast.withNdk(ndk, db: db)` that looks the lists up
+  /// on the public indexers plus [defaultDmRelays], and
   /// `NostrMailClient.dispose()` disposes it.
   ///
   /// [blossomCache] is the local blob store that holds the encrypted bytes
@@ -171,7 +176,17 @@ class NostrMailClient {
       queue = broadcastQueue;
       ownsQueue = false;
     } else {
-      queue = OfflineBroadcast.withNdk(ndk, db: db);
+      // The queue resolves the relay sets it is given, and looks the lists up
+      // on the public indexers only. Add our own relays: an account whose
+      // NIP-65 lives there alone would otherwise never resolve.
+      queue = OfflineBroadcast.withNdk(
+        ndk,
+        db: db,
+        relayListDiscoveryRelays: {
+          ...defaultIndexerRelays,
+          ...relayResolver.defaultRelays,
+        },
+      );
       queue.start();
       ownsQueue = true;
     }
@@ -241,7 +256,12 @@ class NostrMailClient {
 
     final scheduleManager = ScheduleManager(
       ndk,
-      EventScheduler(ndk: ndk, broadcast: queue, db: db),
+      EventScheduler(
+        ndk: ndk,
+        broadcast: queue,
+        syncEngine: syncEngine,
+        db: db,
+      ),
       emailSender,
       defaultDvm: schedulerDvm,
       dvmReadRelays: schedulerDvmReadRelays,
@@ -844,15 +864,17 @@ class NostrMailClient {
       _bus.emit(EmailDeleted(emailId: id));
     }
 
-    final relayLookups = <Future<List<String>>>[
+    final targets = <RelaySet>[
       if (emails.any((email) => !email.isPublic))
-        _relayResolver.getDmRelays(pubkey),
+        _relayResolver.dmRelaySet([pubkey]),
       if (emails.any((email) => email.isPublic) || labelEventIds.isNotEmpty)
-        _relayResolver.getWriteRelays(pubkey),
+        _relayResolver.writeRelaySet(pubkey),
     ];
-    final relayLists = await Future.wait(relayLookups);
-    final relays = relayLists.expand((relays) => relays).toSet().toList();
-    await broadcastQueue.broadcast(signed, relays: relays, pubkey: pubkey);
+    await broadcastQueue.broadcast(
+      signed,
+      relaySet: RelaySet.union(targets),
+      pubkey: pubkey,
+    );
   }
 
   // ── Repost ──────────────────────────────────────────────────────────────
@@ -881,13 +903,12 @@ class NostrMailClient {
 
     final signedRepost = await _ndk.accounts.sign(repostEvent);
 
+    // The repost's `r` tags name the relays it was sent to, so the broadcast
+    // targets that very list rather than describing it again.
+    final target = RelaySet.explicit(writeRelays);
     await Future.wait([
-      broadcastQueue.broadcast(emailEvent, relays: writeRelays, pubkey: pubkey),
-      broadcastQueue.broadcast(
-        signedRepost,
-        relays: writeRelays,
-        pubkey: pubkey,
-      ),
+      broadcastQueue.broadcast(emailEvent, relaySet: target, pubkey: pubkey),
+      broadcastQueue.broadcast(signedRepost, relaySet: target, pubkey: pubkey),
     ]);
   }
 

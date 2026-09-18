@@ -10,6 +10,7 @@ import '../../helpers/test_blossom_cache.dart';
 import '../../helpers/test_database.dart';
 import '../../mocks/mock_relay.dart';
 import '../../helpers/test_sync_engine.dart';
+import '../../helpers/wait_for_broadcasts.dart';
 
 void main() {
   group('PrivateSettings end-to-end', () {
@@ -57,6 +58,7 @@ void main() {
         );
 
         expect(clientA.cachedPrivateSettings()!.signature, 'test');
+        await waitForBroadcasts(clientA.broadcastQueue);
 
         // Fresh DB, same relay/account: settings should be re-fetched.
         final db2 = await databaseFactoryMemory.openDatabase(
@@ -261,6 +263,7 @@ void main() {
 
     test('sourceEvent is populated on fetchPrivateSettings', () async {
       await client.setPrivateSettings(const PrivateSettings(signature: 'test'));
+      await waitForBroadcasts(client.broadcastQueue);
       final settings = await client.fetchPrivateSettings();
 
       expect(settings!.sourceEvent, isNotNull);
@@ -294,6 +297,7 @@ void main() {
         await client.setPrivateSettings(
           const PrivateSettings(signature: 'test'),
         );
+        await waitForBroadcasts(client.broadcastQueue);
 
         final values = await client.getPrivateSettings().stream.toList();
 
@@ -312,6 +316,7 @@ void main() {
         await client.setPrivateSettings(
           const PrivateSettings(signature: 'remote'),
         );
+        await waitForBroadcasts(client.broadcastQueue);
         final fresh = await freshClient();
 
         final response = fresh.getPrivateSettings();
@@ -365,6 +370,7 @@ void main() {
           bridges: ['bridge.example.com'],
           pubkey: other.publicKey,
         );
+        await waitForBroadcasts(client.broadcastQueue);
 
         expect(client.cachedPrivateSettings(), isNull);
         expect(

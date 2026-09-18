@@ -1,5 +1,19 @@
-## 3.1.3
+## 3.2.0
 
+- **Breaking**: require `broadcast_queue_shim_for_ndk: ^0.6.0` and
+  `nostr_event_scheduler: ^0.5.0`. A `broadcastQueue` passed to `create` must
+  now be able to resolve relay lists, so build it with
+  `OfflineBroadcast.withNdk` or give it a `relayListFn`.
+- Labels, private settings and deletions no longer resolve their relays before
+  queueing: they hand the queue the account's NIP-65 or DM relay list as a
+  `RelaySet` and it resolves it on its own, offline included. Adding a label or
+  saving settings no longer waits on a relay list, and the event reaches the
+  relays once the queue has resolved them rather than during the call.
+- The queue the client owns looks relay lists up on the public indexers plus
+  `defaultDmRelays`, not on the indexers alone.
+- Sending an email keeps resolving its relays itself: `beforePublish` still
+  reports the exact list an event is queued for, and it is still that list a
+  public email names in its `public-ref` tag.
 - **Breaking**: `getPrivateSettings()` is renamed `getLocalPrivateSettings()`.
   It still reads only the decrypted local cache, without a signer.
 - **New**: every private settings method takes an optional `pubkey`:

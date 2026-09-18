@@ -1,6 +1,6 @@
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
-import 'package:ndk/ndk.dart';
+import 'package:ndk/ndk.dart' hide RelaySet;
 import 'package:ndk/domain_layer/entities/filter.dart' as ndk;
 import 'package:rxdart/rxdart.dart';
 
@@ -233,10 +233,9 @@ class SettingsManager {
       identities: settings.identities,
     );
 
-    final writeRelays = await _relays.getWriteRelays(pubkey);
     await _broadcastQueue.broadcast(
       signed,
-      relays: writeRelays,
+      relaySet: _relays.writeRelaySet(pubkey),
       pubkey: pubkey,
     );
   }

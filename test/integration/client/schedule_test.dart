@@ -66,6 +66,7 @@ void main() {
       final inspector = EventScheduler(
         ndk: sender.ndk,
         broadcast: sender.client.broadcastQueue,
+        syncEngine: sender.syncEngine,
         db: sender.db,
       );
       addTearDown(() async => await inspector.dispose());
