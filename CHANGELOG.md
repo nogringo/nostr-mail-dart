@@ -33,6 +33,10 @@
   `null`. `future` completes with the last emission.
 - `NdkDataResponse`, `NdkValue` and `DataOrigin` are exported, as a local copy
   of the ADR types until ndk ships them.
+- **Fix**: `removeLabel` (and `markAsUnread`, `unstar`, `restoreFromTrash`,
+  `restoreFromArchive`) signs the deletion before removing the label locally.
+  A signer failure now throws and leaves the label in place, instead of
+  removing it on this device only.
 
 ## 3.1.2
 

@@ -109,17 +109,6 @@ class LabelManager {
     );
     if (labelEventId == null) return;
 
-    // Tombstone the label event so it is not re-applied if re-served
-    // by a relay (or by NDK's in-memory cache) on a future sync.
-    await _tombstones.add(labelEventId, recipientPubkey: pubkey);
-
-    // Remove locally FIRST
-    await _labels.removeLabel(emailId, label, recipientPubkey: pubkey);
-
-    // Notify listeners immediately
-    _bus.emit(LabelRemoved(emailId: emailId, label: label));
-
-    // Broadcast deletion in background
     final deletionEvent = Nip01Event(
       pubKey: pubkey,
       kind: deletionRequestKind,
@@ -130,20 +119,21 @@ class LabelManager {
       content: '',
     );
 
-    // TODO: sign before mutating local state. If sign() throws (NIP-46
-    // signer offline, user rejection, ...), the local tombstone + label
-    // removal above have already happened but the deletion event is
-    // never broadcast, leaving an "orphan" removal that other devices
-    // never see. addLabel above and every other sign() site in the
-    // codebase already follow sign-then-mutate; this is the lone
-    // exception.
-    _ndk.accounts.sign(deletionEvent).then((signed) {
-      _broadcastQueue.broadcast(
-        signed,
-        relaySet: _relays.writeRelaySet(pubkey),
-        pubkey: pubkey,
-      );
-    });
+    final signed = await _ndk.accounts.sign(deletionEvent);
+
+    // Tombstone the label event so it is not re-applied if re-served
+    // by a relay (or by NDK's in-memory cache) on a future sync.
+    await _tombstones.add(labelEventId, recipientPubkey: pubkey);
+
+    await _labels.removeLabel(emailId, label, recipientPubkey: pubkey);
+
+    _bus.emit(LabelRemoved(emailId: emailId, label: label));
+
+    await _broadcastQueue.broadcast(
+      signed,
+      relaySet: _relays.writeRelaySet(pubkey),
+      pubkey: pubkey,
+    );
   }
 
   // ── Convenience helpers ─────────────────────────────────────────────────
