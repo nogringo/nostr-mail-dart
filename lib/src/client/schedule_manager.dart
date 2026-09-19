@@ -161,10 +161,10 @@ class ScheduleManager {
     return _toScheduledEmail(package);
   }
 
-  /// All scheduled emails, newest first.
+  /// All scheduled emails, soonest send time first.
   Future<List<ScheduledEmail>> list() async {
     final packages = await _scheduler.listPackages(pubkey: _requirePubkey());
-    return _sortNewest(packages.map(_tryMap));
+    return sortBySendTime(packages.map(_tryMap));
   }
 
   /// Reactive [list]: re-emits whenever a schedule is added, cancelled, or its
@@ -173,7 +173,7 @@ class ScheduleManager {
     return _scheduler
         .schedulesStream(pubkey: _requirePubkey())
         .map(
-          (items) => _sortNewest(
+          (items) => sortBySendTime(
             items
                 .where((i) => i.type == ScheduledItemType.package)
                 .map((i) => _tryMap(i.package)),
@@ -204,9 +204,13 @@ class ScheduleManager {
 
   // ── Mapping ────────────────────────────────────────────────────────────────
 
-  List<ScheduledEmail> _sortNewest(Iterable<ScheduledEmail?> emails) {
+  /// Soonest [ScheduledEmail.scheduleAt] first, then oldest schedule first.
+  static List<ScheduledEmail> sortBySendTime(Iterable<ScheduledEmail?> emails) {
     final list = emails.whereType<ScheduledEmail>().toList();
-    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    list.sort((a, b) {
+      final bySendTime = a.scheduleAt.compareTo(b.scheduleAt);
+      return bySendTime != 0 ? bySendTime : a.createdAt.compareTo(b.createdAt);
+    });
     return list;
   }
 

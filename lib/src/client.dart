@@ -1104,7 +1104,7 @@ class NostrMailClient {
     dvmPubkey: dvmPubkey,
   );
 
-  /// All scheduled (not-yet-sent) emails, newest first.
+  /// All scheduled (not-yet-sent) emails, soonest send time first.
   Future<List<ScheduledEmail>> getScheduledEmails() => _schedule.list();
 
   /// Reactive [getScheduledEmails]: re-emits on schedule, cancel, or DVM

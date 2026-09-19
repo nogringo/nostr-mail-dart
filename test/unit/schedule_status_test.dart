@@ -92,6 +92,35 @@ void main() {
     });
   });
 
+  group('ScheduleManager.sortBySendTime', () {
+    ScheduledEmail email(String id, DateTime scheduleAt, DateTime createdAt) {
+      return ScheduledEmail(
+        packageId: id,
+        scheduleAt: scheduleAt,
+        from: null,
+        to: const [],
+        cc: const [],
+        bcc: const [],
+        subject: '',
+        bodyPreview: '',
+        isPublic: false,
+        attachmentNames: const [],
+        status: ScheduledEmailStatus.scheduled,
+        createdAt: createdAt,
+      );
+    }
+
+    test('orders by send time, then by creation', () {
+      final sorted = ScheduleManager.sortBySendTime([
+        email('late', DateTime.utc(2026, 9, 19, 19), DateTime.utc(2026, 9, 1)),
+        null,
+        email('newer', DateTime.utc(2026, 9, 19, 16), DateTime.utc(2026, 9, 3)),
+        email('older', DateTime.utc(2026, 9, 19, 16), DateTime.utc(2026, 9, 2)),
+      ]);
+      expect(sorted.map((e) => e.packageId), ['older', 'newer', 'late']);
+    });
+  });
+
   group('ScheduleManager.statusMessage', () {
     ScheduledJob job(JobStatus status, String? message) {
       return ScheduledJob(
