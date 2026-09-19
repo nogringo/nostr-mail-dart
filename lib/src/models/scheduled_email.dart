@@ -6,6 +6,9 @@ enum ScheduledEmailStatus {
   /// The DVM accepted and queued every job.
   scheduled,
 
+  /// Some jobs are published, the others are still queued or pending.
+  sending,
+
   /// Every job was published to its relays by the DVM.
   published,
 
@@ -46,6 +49,10 @@ class ScheduledEmail {
   /// Aggregate status across the package's DVM jobs.
   final ScheduledEmailStatus status;
 
+  /// The DVM's human-readable message for [status], typically why a job
+  /// failed or was rejected.
+  final String? statusMessage;
+
   /// When the schedule was created locally.
   final DateTime createdAt;
 
@@ -61,6 +68,7 @@ class ScheduledEmail {
     required this.isPublic,
     required this.attachmentNames,
     required this.status,
+    this.statusMessage,
     required this.createdAt,
   });
 

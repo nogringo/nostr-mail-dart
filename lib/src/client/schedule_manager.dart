@@ -227,6 +227,7 @@ class ScheduleManager {
     final message = MimeMessage.parseFromText(rumor.content);
     List<String> addrs(List<MailAddress>? a) =>
         a?.map((m) => m.email).toList() ?? const [];
+    final status = aggregateStatus(package.jobs.map((j) => j.status));
     return ScheduledEmail(
       packageId: package.packageId,
       scheduleAt: DateTime.fromMillisecondsSinceEpoch(rumor.createdAt * 1000),
@@ -240,7 +241,8 @@ class ScheduleManager {
       // is a gift wrap.
       isPublic: package.jobs.any((j) => j.targetEvent.kind == emailKind),
       attachmentNames: _attachmentNames(message),
-      status: aggregateStatus(package.jobs.map((j) => j.status)),
+      status: status,
+      statusMessage: statusMessage(package.jobs, status),
       createdAt: DateTime.fromMillisecondsSinceEpoch(package.createdAt * 1000),
     );
   }
@@ -285,7 +287,24 @@ class ScheduleManager {
     if (any(JobStatus.failed)) return ScheduledEmailStatus.failed;
     if (all(JobStatus.published)) return ScheduledEmailStatus.published;
     if (all(JobStatus.cancelled)) return ScheduledEmailStatus.cancelled;
+    if (any(JobStatus.published)) return ScheduledEmailStatus.sending;
     if (any(JobStatus.pending)) return ScheduledEmailStatus.pending;
     return ScheduledEmailStatus.scheduled;
+  }
+
+  /// First non-empty DVM message among the [jobs] that account for [status].
+  static String? statusMessage(
+    Iterable<ScheduledJob> jobs,
+    ScheduledEmailStatus status,
+  ) {
+    final jobStatus = JobStatus.values.asNameMap()[status.name];
+    if (jobStatus == null) return null;
+    for (final job in jobs) {
+      final message = job.lastMessage?.trim();
+      if (job.status == jobStatus && message != null && message.isNotEmpty) {
+        return message;
+      }
+    }
+    return null;
   }
 }
