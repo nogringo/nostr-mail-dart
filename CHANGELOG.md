@@ -1,7 +1,8 @@
 ## 3.2.0
 
-- **Breaking**: require `broadcast_queue_shim_for_ndk: ^0.6.0` and
-  `nostr_event_scheduler: ^0.5.0`. A `broadcastQueue` passed to `create` must
+- **Breaking**: require `broadcast_queue_shim_for_ndk: ^0.6.0`,
+  `nostr_event_scheduler: ^0.5.1` and `sync_engine_shim_for_ndk: ^0.7.0`
+  (0.6.x is no longer accepted). A `broadcastQueue` passed to `create` must
   now be able to resolve relay lists, so build it with
   `OfflineBroadcast.withNdk` or give it a `relayListFn`.
 - Labels, private settings and deletions no longer resolve their relays before
@@ -45,6 +46,13 @@
   which no relay holds, so the wrap stayed there. The sender's own wrap is now
   recorded at send time, so `getGiftWrap`, `getSeal` and `getRumor` also answer
   for a sent email right away.
+- **Breaking**: `ScheduledEmailStatus` gains `sending`, reported while some
+  of the DVM jobs are published and the others are still queued. A `switch`
+  over the enum must handle it.
+- **New**: `ScheduledEmail.statusMessage` carries the DVM's message for the
+  status, typically why a job failed or was rejected.
+- `getScheduledEmails()` and `watchScheduledEmails()` now list the soonest send time first,
+  instead of the most recently created schedule first.
 
 ## 3.1.2
 
