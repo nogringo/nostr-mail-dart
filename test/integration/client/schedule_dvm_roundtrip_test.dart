@@ -4,6 +4,7 @@ import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:nostr_scheduler_dvm/nostr_scheduler_dvm.dart';
 import 'package:sembast/sembast_memory.dart';
+import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_user.dart';
@@ -31,17 +32,21 @@ void main() {
         privkey: dvmKey.privateKey!,
       );
       final dvmDb = await databaseFactoryMemory.openDatabase('dvm-roundtrip');
+      final dvmSyncEngine = SyncEngine(dvmNdk, db: dvmDb)..start();
       final dvm = SchedulerDvm(
         SchedulerDvmConfig(
           ndk: dvmNdk,
-          database: dvmDb,
+          store: SembastDvmJobStore(dvmDb),
+          syncEngine: dvmSyncEngine,
           bootstrapRelays: [relay.url],
           announceNip89: false,
+          targetRelayPolicy: RelayUrlPolicy.permissive,
         ),
       );
       await dvm.start();
       addTearDown(() async {
         await dvm.dispose();
+        await dvmSyncEngine.dispose();
         await dvmNdk.destroy();
         await dvmDb.close();
       });

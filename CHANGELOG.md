@@ -1,3 +1,10 @@
+## 3.2.1
+
+- Require `nostr_event_scheduler: ^0.5.3`. A scheduled email's status follows
+  the latest `kind:7000` feedback again, including from a DVM that encrypts it
+  with its own key as the spec now describes, and cancelling a scheduled email
+  tags each DVM its requests named.
+
 ## 3.2.0
 
 - **Breaking**: require `broadcast_queue_shim_for_ndk: ^0.6.0`,
