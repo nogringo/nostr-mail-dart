@@ -35,16 +35,22 @@ class NostrMailDatabase extends _$NostrMailDatabase {
   @override
   MigrationStrategy get migration => MigrationStrategy(
     beforeOpen: (_) => customStatement('PRAGMA foreign_keys = ON'),
-    onUpgrade: (m, from, to) async {
-      for (final entity in allSchemaEntities) {
-        if (entity is TableInfo &&
-            _rawTables.contains(entity.actualTableName)) {
-          continue;
-        }
-        await m.drop(entity);
-      }
-      await m.createAll();
-      _droppedProjection = true;
-    },
+    // Creation drops first too. drift runs the callback outside a transaction
+    // and writes user_version only once it returns, so a `createAll` cut short
+    // leaves half a schema behind a version still reading 0: the next open
+    // creates again, and `CREATE INDEX` has no `IF NOT EXISTS` to save it.
+    onCreate: _recreateProjection,
+    onUpgrade: (m, _, _) => _recreateProjection(m),
   );
+
+  Future<void> _recreateProjection(Migrator m) async {
+    for (final entity in allSchemaEntities) {
+      if (entity is TableInfo && _rawTables.contains(entity.actualTableName)) {
+        continue;
+      }
+      await m.drop(entity);
+    }
+    await m.createAll();
+    _droppedProjection = true;
+  }
 }

@@ -1,3 +1,9 @@
+## 3.2.2
+
+- Creating the schema drops any leftover entity first. A store whose creation
+  was cut short failed every later open with `index emails_recipient_date
+  already exists`; it is now repaired on the next open.
+
 ## 3.2.1
 
 - Require `nostr_event_scheduler: ^0.5.3`. A scheduled email's status follows
