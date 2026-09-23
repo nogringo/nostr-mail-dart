@@ -1,3 +1,9 @@
+## 3.2.3
+
+- Require `ndk: ^0.10.0-dev.6`, `nostr_event_scheduler: ^0.5.4` and
+  `sync_engine_shim_for_ndk: ^0.7.1`. ndk renamed `RelayAuth` to `AuthPolicy`:
+  code passing one to ndk directly needs the new name.
+
 ## 3.2.2
 
 - Creating the schema drops any leftover entity first. A store whose creation

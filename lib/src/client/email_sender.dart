@@ -616,7 +616,7 @@ class EmailSender {
     // pre-built.
     final dmRelays = await _relays.getDmRelays(
       recipientPubkey,
-      auth: const RelayAuth.never(),
+      auth: const AuthPolicy.never(),
     );
     return OutgoingEvent(giftWrapEvent, dmRelays, seal: seal);
   }

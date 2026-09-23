@@ -14,13 +14,13 @@ import 'package:ndk/ndk.dart';
 /// any relay that sends one, including relays that would have served it
 /// anonymously.
 ///
-/// An account that cannot sign gets [RelayAuth.never]: it has no answer to a
+/// An account that cannot sign gets [AuthPolicy.never]: it has no answer to a
 /// challenge, and saying nothing to ndk would authenticate as the logged
 /// account instead.
-RelayAuth authFor(Ndk ndk, String pubkey, {bool fromStart = false}) {
+AuthPolicy authFor(Ndk ndk, String pubkey, {bool fromStart = false}) {
   final account = ndk.accounts.accounts[pubkey];
   if (account == null || !account.signer.canSign()) {
-    return const RelayAuth.never();
+    return const AuthPolicy.never();
   }
-  return fromStart ? RelayAuth.require(account) : RelayAuth.allow(account);
+  return fromStart ? AuthPolicy.require(account) : AuthPolicy.allow(account);
 }

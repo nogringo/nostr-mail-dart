@@ -57,7 +57,7 @@ class SettingsManager {
     final response = _ndk.requests.query(
       filter: _filter(pubkey),
       explicitRelays: writeRelays,
-      auth: RelayAuth.allow(account),
+      auth: AuthPolicy.allow(account),
     );
 
     final events = await response.future;
@@ -108,7 +108,7 @@ class SettingsManager {
     final response = _ndk.requests.query(
       filter: _filter(pubkey),
       explicitRelays: writeRelays,
-      auth: RelayAuth.allow(account),
+      auth: AuthPolicy.allow(account),
       cacheRead: false,
       timeout: timeout,
     );
