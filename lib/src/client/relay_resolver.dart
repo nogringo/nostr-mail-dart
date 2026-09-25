@@ -47,7 +47,19 @@ class RelayResolver {
   }
 
   /// Get user's write relays from NIP-65 kind 10002 event.
-  Future<List<String>> getWriteRelays(String pubkey) async {
+  Future<List<String>> getWriteRelays(String pubkey) =>
+      _nip65Relays(pubkey, excluding: 'read');
+
+  /// Get user's read relays from NIP-65 kind 10002 event: where others
+  /// publish the events that mention them.
+  Future<List<String>> getReadRelays(String pubkey) =>
+      _nip65Relays(pubkey, excluding: 'write');
+
+  /// An `r` tag without a marker is both read and write.
+  Future<List<String>> _nip65Relays(
+    String pubkey, {
+    required String excluding,
+  }) async {
     final response = _ndk.requests.query(
       filter: ndk.Filter(kinds: [relayListKind], authors: [pubkey], limit: 1),
     );
@@ -58,9 +70,9 @@ class RelayResolver {
     final relays = event.tags
         .where(
           (t) =>
-              t.isNotEmpty &&
+              t.length >= 2 &&
               t[0] == 'r' &&
-              (t.length == 2 || (t.length == 3 && t[2] != 'read')),
+              (t.length == 2 || t[2] != excluding),
         )
         .map((t) => t[1])
         .toList();

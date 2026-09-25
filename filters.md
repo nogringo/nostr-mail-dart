@@ -6,4 +6,4 @@
 | `{kinds:[1985], authors:[me], "#L":["mail"]}` |
 | `{kinds:[5], authors:[me], "#k":["1059","1301","1985","16"]}` |
 | `{kinds:[30078], authors:[me], "#d":["nostr-mail/settings/private"]}` |
-| `{kinds:[0, 10002, 10050, 10063], authors:[me]}` |
+| `{kinds:[0, 10002, 10013, 10050, 10063], authors:[me]}` |

@@ -113,9 +113,10 @@ class WatchManager {
   }
 
   Future<void> _setupSubscriptions(String pubkey, int generation) async {
-    final (dmRelays, writeRelays) = await (
+    final (dmRelays, writeRelays, readRelays) = await (
       _relays.getDmRelays(pubkey),
       _relays.getWriteRelays(pubkey),
+      _relays.getReadRelays(pubkey),
     ).wait;
     if (generation != _generation) return;
     final allRelays = {...dmRelays, ...writeRelays}.toList();
@@ -136,11 +137,11 @@ class WatchManager {
       process: _sync.onGiftWrap,
     );
 
-    // Public emails
+    // Public emails, published to the read relays of those they mention
     _open(
       _ndk.requests.subscription(
         filter: publicEmailFilter(pubkey)..limit = 0,
-        explicitRelays: writeRelays,
+        explicitRelays: readRelays,
         cacheWrite: true,
         auth: auth,
       ),

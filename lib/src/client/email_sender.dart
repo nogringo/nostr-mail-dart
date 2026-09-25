@@ -359,7 +359,17 @@ class EmailSender {
 
       final signedPublicEvent = await _ndk.accounts.sign(emailEvent);
 
-      final writeRelays = await _relays.getWriteRelays(senderPubkey);
+      // NIP-65: the author's write relays, and the read relays of everyone it
+      // tags, which is where they look for it. BCC recipients are not tagged
+      // and get a wrap instead.
+      final (writeRelays, recipientReadRelays) = await (
+        _relays.getWriteRelays(senderPubkey),
+        Future.wait(publicRecipientPubkeys.map(_relays.getReadRelays)),
+      ).wait;
+      final publicEventRelays = {
+        ...writeRelays,
+        ...recipientReadRelays.expand((relays) => relays),
+      }.toList();
 
       // Persist the sender's local copy before any broadcast is enqueued.
       // From here on every step is either a local write or a durable
@@ -387,7 +397,7 @@ class EmailSender {
         );
       }
 
-      await delivery.deliverEvent(signedPublicEvent, writeRelays);
+      await delivery.deliverEvent(signedPublicEvent, publicEventRelays);
 
       final bccTags = List<List<String>>.from(baseTags)
         ..add(['public-ref', signedPublicEvent.id, ...writeRelays]);

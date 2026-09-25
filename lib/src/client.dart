@@ -493,12 +493,13 @@ class NostrMailClient {
     List<String> relays,
     String pubkey,
   ) async {
-    final (dmRelays, writeRelays) = await (
+    final (dmRelays, writeRelays, readRelays) = await (
       _relayResolver.getDmRelays(pubkey),
       _relayResolver.getWriteRelays(pubkey),
+      _relayResolver.getReadRelays(pubkey),
     ).wait;
 
-    return {...dmRelays, ...writeRelays, ...relays}.toList();
+    return {...dmRelays, ...writeRelays, ...readRelays, ...relays}.toList();
   }
 
   Future<List<Email>> search(String query, {int? limit, int? offset}) async {

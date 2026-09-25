@@ -154,9 +154,10 @@ class MailSync {
   Future<List<SyncHandle>> _ensureHandles() async {
     final pubkey = _pubkey!;
 
-    final (dmRelays, writeRelays) = await (
+    final (dmRelays, writeRelays, readRelays) = await (
       _relays.getDmRelays(pubkey),
       _relays.getWriteRelays(pubkey),
+      _relays.getReadRelays(pubkey),
     ).wait;
     final allRelays = {...dmRelays, ...writeRelays}.toList();
 
@@ -168,10 +169,17 @@ class MailSync {
         allRelays,
         authPubkey: pubkey,
       ),
+      // NIP-65: an event mentioning the account is published to its read
+      // relays.
+      _ensure(
+        'read',
+        [publicEmailFilter(pubkey)],
+        readRelays,
+        authPubkey: pubkey,
+      ),
       _ensure(
         'write',
         [
-          publicEmailFilter(pubkey),
           labelFilter(pubkey),
           repostFilter(pubkey),
           settingsFilter(pubkey),

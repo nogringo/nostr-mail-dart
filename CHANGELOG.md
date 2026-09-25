@@ -15,6 +15,10 @@
   no relay holds and which told its sender and other recipients the email was
   deleted. The deletion names the wraps only, and other devices resolve them
   to the email. Deletions from earlier versions are still applied.
+- **Fix**: public emails follow NIP-65. They go to the sender's write relays
+  and to the read relays of each `to`/`cc` recipient, and are received on the
+  account's read relays. They used to reach a recipient only when both
+  accounts' write relays overlapped.
 - `getFailedCount()` and `getFailedGiftWraps()` also count the wraps of
   labels, which cannot be told from an email before they are decrypted.
 - The schema version moves to 4: the projection is rebuilt from the NDK cache
