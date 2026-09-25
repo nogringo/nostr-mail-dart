@@ -366,12 +366,12 @@ class EmailRepository {
                   l.recipientPubkey.equals(recipientPubkey),
             ))
             .get();
-    final byEmail = <String, List<String>>{};
+    final byEmail = <String, Set<String>>{};
     for (final row in rows) {
       if (_isStateLabel(row.label)) continue;
-      byEmail.putIfAbsent(row.emailId, () => []).add(row.label);
+      byEmail.putIfAbsent(row.emailId, () => {}).add(row.label);
     }
-    return byEmail;
+    return byEmail.map((id, labels) => MapEntry(id, labels.toList()));
   }
 
   static bool _isStateLabel(String label) =>

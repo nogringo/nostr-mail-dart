@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 
+import '../constants.dart';
 import 'database.dart';
 
 /// Repository for NIP-32 labels.
@@ -19,6 +20,7 @@ class LabelRepository {
     required String emailId,
     required String label,
     required String labelEventId,
+    String? wrapId,
     required int timestamp,
     required String recipientPubkey,
   }) async {
@@ -26,16 +28,18 @@ class LabelRepository {
         .into(_db.labels)
         .insertOnConflictUpdate(
           LabelRow(
+            labelEventId: labelEventId,
             emailId: emailId,
             label: label,
-            labelEventId: labelEventId,
+            wrapId: wrapId,
             timestamp: timestamp,
             recipientPubkey: recipientPubkey,
           ),
         );
   }
 
-  /// Remove a label. No-op if the label belongs to another account.
+  /// Remove a label, every event carrying it included. No-op if the label
+  /// belongs to another account.
   Future<void> removeLabel(
     String emailId,
     String label, {
@@ -46,18 +50,57 @@ class LabelRepository {
     )..where((l) => _isLabel(l, emailId, label, recipientPubkey))).go();
   }
 
-  /// Get the label event ID for a specific email/label combination
-  /// belonging to [recipientPubkey].
-  Future<String?> getLabelEventId(
+  /// Every event carrying [label] on [recipientPubkey]'s [emailId].
+  Future<List<LabelRow>> getLabelEvents(
     String emailId,
     String label, {
     required String recipientPubkey,
+  }) {
+    return (_db.select(
+      _db.labels,
+    )..where((l) => _isLabel(l, emailId, label, recipientPubkey))).get();
+  }
+
+  /// The label event a deletion naming [id] removes: [id] is either the
+  /// event's own id or the id of the gift wrap that carried it.
+  Future<LabelRow?> getLabelEvent(
+    String id, {
+    required String recipientPubkey,
+  }) {
+    return (_db.select(_db.labels)
+          ..where(
+            (l) =>
+                (l.labelEventId.equals(id) | l.wrapId.equals(id)) &
+                l.recipientPubkey.equals(recipientPubkey),
+          )
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
+  Future<bool> hasLabelEvent(
+    String labelEventId, {
+    required String recipientPubkey,
   }) async {
     final row =
-        await (_db.select(_db.labels)
-              ..where((l) => _isLabel(l, emailId, label, recipientPubkey)))
+        await (_db.select(_db.labels)..where(
+              (l) =>
+                  l.labelEventId.equals(labelEventId) &
+                  l.recipientPubkey.equals(recipientPubkey),
+            ))
             .getSingleOrNull();
-    return row?.labelEventId;
+    return row != null;
+  }
+
+  Future<void> removeLabelEvent(
+    String labelEventId, {
+    required String recipientPubkey,
+  }) async {
+    await (_db.delete(_db.labels)..where(
+          (l) =>
+              l.labelEventId.equals(labelEventId) &
+              l.recipientPubkey.equals(recipientPubkey),
+        ))
+        .go();
   }
 
   /// Get all labels for an email belonging to [recipientPubkey].
@@ -72,7 +115,7 @@ class LabelRepository {
                   l.recipientPubkey.equals(recipientPubkey),
             ))
             .get();
-    return rows.map((r) => r.label).toList();
+    return rows.map((r) => r.label).toSet().toList();
   }
 
   /// Check if [recipientPubkey]'s [emailId] has [label].
@@ -83,7 +126,8 @@ class LabelRepository {
   }) async {
     final row =
         await (_db.select(_db.labels)
-              ..where((l) => _isLabel(l, emailId, label, recipientPubkey)))
+              ..where((l) => _isLabel(l, emailId, label, recipientPubkey))
+              ..limit(1))
             .getSingleOrNull();
     return row != null;
   }
@@ -100,7 +144,7 @@ class LabelRepository {
                   l.recipientPubkey.equals(recipientPubkey),
             ))
             .get();
-    return rows.map((r) => r.emailId).toList();
+    return rows.map((r) => r.emailId).toSet().toList();
   }
 
   /// Get email IDs with a label older than [before], scoped by account.
@@ -118,25 +162,23 @@ class LabelRepository {
                   l.timestamp.isSmallerOrEqualValue(cutoff),
             ))
             .get();
-    return rows.map((r) => r.emailId).toList();
+    return rows.map((r) => r.emailId).toSet().toList();
   }
 
-  /// Get label event IDs attached to any email in [emailIds].
-  Future<List<String>> getLabelEventIdsForEmails(
+  /// Every label event attached to any email in [emailIds].
+  Future<List<LabelRow>> getLabelEventsForEmails(
     Iterable<String> emailIds, {
     required String recipientPubkey,
   }) async {
     final uniqueIds = emailIds.toSet().toList();
     if (uniqueIds.isEmpty) return [];
 
-    final rows =
-        await (_db.select(_db.labels)..where(
-              (l) =>
-                  l.emailId.isIn(uniqueIds) &
-                  l.recipientPubkey.equals(recipientPubkey),
-            ))
-            .get();
-    return rows.map((r) => r.labelEventId).toSet().toList();
+    return (_db.select(_db.labels)..where(
+          (l) =>
+              l.emailId.isIn(uniqueIds) &
+              l.recipientPubkey.equals(recipientPubkey),
+        ))
+        .get();
   }
 
   /// Delete all labels for an email belonging to [recipientPubkey].
@@ -164,14 +206,6 @@ class LabelRepository {
         .go();
   }
 
-  /// Get all label records for [recipientPubkey] (used by sync to find
-  /// labels by event id when processing label deletions).
-  Future<List<LabelRow>> getAllLabels({required String recipientPubkey}) {
-    return (_db.select(
-      _db.labels,
-    )..where((l) => l.recipientPubkey.equals(recipientPubkey))).get();
-  }
-
   /// Delete every label for [recipientPubkey], or pass `null` to wipe the
   /// entire store across all accounts.
   Future<void> clearAll({String? recipientPubkey}) async {
@@ -191,4 +225,12 @@ class LabelRepository {
       l.emailId.equals(emailId) &
       l.label.equals(label) &
       l.recipientPubkey.equals(recipientPubkey);
+}
+
+extension LabelDeletion on LabelRow {
+  /// What a deletion names: the wrap a relay holds, or the label itself when
+  /// it was published in clear.
+  String get deletionTarget => wrapId ?? labelEventId;
+
+  int get deletionKind => wrapId == null ? labelKind : giftWrapKind;
 }

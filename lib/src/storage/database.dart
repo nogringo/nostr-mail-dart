@@ -20,7 +20,7 @@ class NostrMailDatabase extends _$NostrMailDatabase {
   /// recreates it instead of migrating. Indexes are dropped either way: they
   /// hold nothing of their own, and `createAll` would trip over one it finds.
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   bool _droppedProjection = false;
 
@@ -40,7 +40,12 @@ class NostrMailDatabase extends _$NostrMailDatabase {
     // leaves half a schema behind a version still reading 0: the next open
     // creates again, and `CREATE INDEX` has no `IF NOT EXISTS` to save it.
     onCreate: _recreateProjection,
-    onUpgrade: (m, _, _) => _recreateProjection(m),
+    onUpgrade: (m, from, _) async {
+      // A raw table is kept, so its own constraints have to be migrated: a
+      // label wrap carries no seal.
+      if (from < 4) await m.alterTable(TableMigration(unsealed));
+      await _recreateProjection(m);
+    },
   );
 
   Future<void> _recreateProjection(Migrator m) async {

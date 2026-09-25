@@ -90,6 +90,24 @@ void main() {
       expect(record['recipientPubkey'], 'recipient');
     });
 
+    test('a wrap opened without a seal reads back without one', () async {
+      final label = makeEvent('label', kind: 1985);
+      await repo.saveOpened(
+        makeEvent('wrap'),
+        recipientPubkey: 'recipient',
+        rumor: label,
+      );
+
+      final unwrapped = await repo.getUnsealed('wrap');
+      expect(unwrapped?.seal, isNull);
+      expect(unwrapped?.payload.id, 'label');
+
+      final record = await repo.getById('wrap');
+      expect(record!['stage'], 'stored');
+      expect(record.containsKey('seal'), isFalse);
+      expect(record['rumorId'], 'label');
+    });
+
     test('save does not overwrite a stored entry', () async {
       await save(makeEvent('event-1'));
       await repo.markStored('event-1');

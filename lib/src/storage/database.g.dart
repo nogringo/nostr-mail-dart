@@ -1579,6 +1579,17 @@ class Labels extends Table with TableInfo<Labels, LabelRow> {
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
   Labels(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _labelEventIdMeta = const VerificationMeta(
+    'labelEventId',
+  );
+  late final GeneratedColumn<String> labelEventId = GeneratedColumn<String>(
+    'label_event_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL PRIMARY KEY',
+  );
   static const VerificationMeta _emailIdMeta = const VerificationMeta(
     'emailId',
   );
@@ -1599,16 +1610,14 @@ class Labels extends Table with TableInfo<Labels, LabelRow> {
     requiredDuringInsert: true,
     $customConstraints: 'NOT NULL',
   );
-  static const VerificationMeta _labelEventIdMeta = const VerificationMeta(
-    'labelEventId',
-  );
-  late final GeneratedColumn<String> labelEventId = GeneratedColumn<String>(
-    'label_event_id',
+  static const VerificationMeta _wrapIdMeta = const VerificationMeta('wrapId');
+  late final GeneratedColumn<String> wrapId = GeneratedColumn<String>(
+    'wrap_id',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.string,
-    requiredDuringInsert: true,
-    $customConstraints: 'NOT NULL',
+    requiredDuringInsert: false,
+    $customConstraints: '',
   );
   static const VerificationMeta _timestampMeta = const VerificationMeta(
     'timestamp',
@@ -1634,9 +1643,10 @@ class Labels extends Table with TableInfo<Labels, LabelRow> {
   );
   @override
   List<GeneratedColumn> get $columns => [
+    labelEventId,
     emailId,
     label,
-    labelEventId,
+    wrapId,
     timestamp,
     recipientPubkey,
   ];
@@ -1652,6 +1662,17 @@ class Labels extends Table with TableInfo<Labels, LabelRow> {
   }) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
+    if (data.containsKey('label_event_id')) {
+      context.handle(
+        _labelEventIdMeta,
+        labelEventId.isAcceptableOrUnknown(
+          data['label_event_id']!,
+          _labelEventIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_labelEventIdMeta);
+    }
     if (data.containsKey('email_id')) {
       context.handle(
         _emailIdMeta,
@@ -1668,16 +1689,11 @@ class Labels extends Table with TableInfo<Labels, LabelRow> {
     } else if (isInserting) {
       context.missing(_labelMeta);
     }
-    if (data.containsKey('label_event_id')) {
+    if (data.containsKey('wrap_id')) {
       context.handle(
-        _labelEventIdMeta,
-        labelEventId.isAcceptableOrUnknown(
-          data['label_event_id']!,
-          _labelEventIdMeta,
-        ),
+        _wrapIdMeta,
+        wrapId.isAcceptableOrUnknown(data['wrap_id']!, _wrapIdMeta),
       );
-    } else if (isInserting) {
-      context.missing(_labelEventIdMeta);
     }
     if (data.containsKey('timestamp')) {
       context.handle(
@@ -1702,11 +1718,15 @@ class Labels extends Table with TableInfo<Labels, LabelRow> {
   }
 
   @override
-  Set<GeneratedColumn> get $primaryKey => {emailId, label};
+  Set<GeneratedColumn> get $primaryKey => {labelEventId};
   @override
   LabelRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return LabelRow(
+      labelEventId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}label_event_id'],
+      )!,
       emailId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}email_id'],
@@ -1715,10 +1735,10 @@ class Labels extends Table with TableInfo<Labels, LabelRow> {
         DriftSqlType.string,
         data['${effectivePrefix}label'],
       )!,
-      labelEventId: attachedDatabase.typeMapping.read(
+      wrapId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}label_event_id'],
-      )!,
+        data['${effectivePrefix}wrap_id'],
+      ),
       timestamp: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}timestamp'],
@@ -1736,30 +1756,36 @@ class Labels extends Table with TableInfo<Labels, LabelRow> {
   }
 
   @override
-  List<String> get customConstraints => const ['PRIMARY KEY(email_id, label)'];
-  @override
   bool get dontWriteConstraints => true;
 }
 
 class LabelRow extends DataClass implements Insertable<LabelRow> {
+  final String labelEventId;
   final String emailId;
   final String label;
-  final String labelEventId;
+
+  /// The gift wrap that carried the label, which is what a deletion names.
+  /// Null for a label published in clear.
+  final String? wrapId;
   final int timestamp;
   final String recipientPubkey;
   const LabelRow({
+    required this.labelEventId,
     required this.emailId,
     required this.label,
-    required this.labelEventId,
+    this.wrapId,
     required this.timestamp,
     required this.recipientPubkey,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    map['label_event_id'] = Variable<String>(labelEventId);
     map['email_id'] = Variable<String>(emailId);
     map['label'] = Variable<String>(label);
-    map['label_event_id'] = Variable<String>(labelEventId);
+    if (!nullToAbsent || wrapId != null) {
+      map['wrap_id'] = Variable<String>(wrapId);
+    }
     map['timestamp'] = Variable<int>(timestamp);
     map['recipient_pubkey'] = Variable<String>(recipientPubkey);
     return map;
@@ -1767,9 +1793,12 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
 
   LabelsCompanion toCompanion(bool nullToAbsent) {
     return LabelsCompanion(
+      labelEventId: Value(labelEventId),
       emailId: Value(emailId),
       label: Value(label),
-      labelEventId: Value(labelEventId),
+      wrapId: wrapId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(wrapId),
       timestamp: Value(timestamp),
       recipientPubkey: Value(recipientPubkey),
     );
@@ -1781,9 +1810,10 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return LabelRow(
+      labelEventId: serializer.fromJson<String>(json['label_event_id']),
       emailId: serializer.fromJson<String>(json['email_id']),
       label: serializer.fromJson<String>(json['label']),
-      labelEventId: serializer.fromJson<String>(json['label_event_id']),
+      wrapId: serializer.fromJson<String?>(json['wrap_id']),
       timestamp: serializer.fromJson<int>(json['timestamp']),
       recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
     );
@@ -1792,34 +1822,38 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
+      'label_event_id': serializer.toJson<String>(labelEventId),
       'email_id': serializer.toJson<String>(emailId),
       'label': serializer.toJson<String>(label),
-      'label_event_id': serializer.toJson<String>(labelEventId),
+      'wrap_id': serializer.toJson<String?>(wrapId),
       'timestamp': serializer.toJson<int>(timestamp),
       'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
     };
   }
 
   LabelRow copyWith({
+    String? labelEventId,
     String? emailId,
     String? label,
-    String? labelEventId,
+    Value<String?> wrapId = const Value.absent(),
     int? timestamp,
     String? recipientPubkey,
   }) => LabelRow(
+    labelEventId: labelEventId ?? this.labelEventId,
     emailId: emailId ?? this.emailId,
     label: label ?? this.label,
-    labelEventId: labelEventId ?? this.labelEventId,
+    wrapId: wrapId.present ? wrapId.value : this.wrapId,
     timestamp: timestamp ?? this.timestamp,
     recipientPubkey: recipientPubkey ?? this.recipientPubkey,
   );
   LabelRow copyWithCompanion(LabelsCompanion data) {
     return LabelRow(
-      emailId: data.emailId.present ? data.emailId.value : this.emailId,
-      label: data.label.present ? data.label.value : this.label,
       labelEventId: data.labelEventId.present
           ? data.labelEventId.value
           : this.labelEventId,
+      emailId: data.emailId.present ? data.emailId.value : this.emailId,
+      label: data.label.present ? data.label.value : this.label,
+      wrapId: data.wrapId.present ? data.wrapId.value : this.wrapId,
       timestamp: data.timestamp.present ? data.timestamp.value : this.timestamp,
       recipientPubkey: data.recipientPubkey.present
           ? data.recipientPubkey.value
@@ -1830,9 +1864,10 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
   @override
   String toString() {
     return (StringBuffer('LabelRow(')
+          ..write('labelEventId: $labelEventId, ')
           ..write('emailId: $emailId, ')
           ..write('label: $label, ')
-          ..write('labelEventId: $labelEventId, ')
+          ..write('wrapId: $wrapId, ')
           ..write('timestamp: $timestamp, ')
           ..write('recipientPubkey: $recipientPubkey')
           ..write(')'))
@@ -1840,58 +1875,70 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(emailId, label, labelEventId, timestamp, recipientPubkey);
+  int get hashCode => Object.hash(
+    labelEventId,
+    emailId,
+    label,
+    wrapId,
+    timestamp,
+    recipientPubkey,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is LabelRow &&
+          other.labelEventId == this.labelEventId &&
           other.emailId == this.emailId &&
           other.label == this.label &&
-          other.labelEventId == this.labelEventId &&
+          other.wrapId == this.wrapId &&
           other.timestamp == this.timestamp &&
           other.recipientPubkey == this.recipientPubkey);
 }
 
 class LabelsCompanion extends UpdateCompanion<LabelRow> {
+  final Value<String> labelEventId;
   final Value<String> emailId;
   final Value<String> label;
-  final Value<String> labelEventId;
+  final Value<String?> wrapId;
   final Value<int> timestamp;
   final Value<String> recipientPubkey;
   final Value<int> rowid;
   const LabelsCompanion({
+    this.labelEventId = const Value.absent(),
     this.emailId = const Value.absent(),
     this.label = const Value.absent(),
-    this.labelEventId = const Value.absent(),
+    this.wrapId = const Value.absent(),
     this.timestamp = const Value.absent(),
     this.recipientPubkey = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   LabelsCompanion.insert({
+    required String labelEventId,
     required String emailId,
     required String label,
-    required String labelEventId,
+    this.wrapId = const Value.absent(),
     required int timestamp,
     required String recipientPubkey,
     this.rowid = const Value.absent(),
-  }) : emailId = Value(emailId),
+  }) : labelEventId = Value(labelEventId),
+       emailId = Value(emailId),
        label = Value(label),
-       labelEventId = Value(labelEventId),
        timestamp = Value(timestamp),
        recipientPubkey = Value(recipientPubkey);
   static Insertable<LabelRow> custom({
+    Expression<String>? labelEventId,
     Expression<String>? emailId,
     Expression<String>? label,
-    Expression<String>? labelEventId,
+    Expression<String>? wrapId,
     Expression<int>? timestamp,
     Expression<String>? recipientPubkey,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
+      if (labelEventId != null) 'label_event_id': labelEventId,
       if (emailId != null) 'email_id': emailId,
       if (label != null) 'label': label,
-      if (labelEventId != null) 'label_event_id': labelEventId,
+      if (wrapId != null) 'wrap_id': wrapId,
       if (timestamp != null) 'timestamp': timestamp,
       if (recipientPubkey != null) 'recipient_pubkey': recipientPubkey,
       if (rowid != null) 'rowid': rowid,
@@ -1899,17 +1946,19 @@ class LabelsCompanion extends UpdateCompanion<LabelRow> {
   }
 
   LabelsCompanion copyWith({
+    Value<String>? labelEventId,
     Value<String>? emailId,
     Value<String>? label,
-    Value<String>? labelEventId,
+    Value<String?>? wrapId,
     Value<int>? timestamp,
     Value<String>? recipientPubkey,
     Value<int>? rowid,
   }) {
     return LabelsCompanion(
+      labelEventId: labelEventId ?? this.labelEventId,
       emailId: emailId ?? this.emailId,
       label: label ?? this.label,
-      labelEventId: labelEventId ?? this.labelEventId,
+      wrapId: wrapId ?? this.wrapId,
       timestamp: timestamp ?? this.timestamp,
       recipientPubkey: recipientPubkey ?? this.recipientPubkey,
       rowid: rowid ?? this.rowid,
@@ -1919,14 +1968,17 @@ class LabelsCompanion extends UpdateCompanion<LabelRow> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
+    if (labelEventId.present) {
+      map['label_event_id'] = Variable<String>(labelEventId.value);
+    }
     if (emailId.present) {
       map['email_id'] = Variable<String>(emailId.value);
     }
     if (label.present) {
       map['label'] = Variable<String>(label.value);
     }
-    if (labelEventId.present) {
-      map['label_event_id'] = Variable<String>(labelEventId.value);
+    if (wrapId.present) {
+      map['wrap_id'] = Variable<String>(wrapId.value);
     }
     if (timestamp.present) {
       map['timestamp'] = Variable<int>(timestamp.value);
@@ -1943,9 +1995,10 @@ class LabelsCompanion extends UpdateCompanion<LabelRow> {
   @override
   String toString() {
     return (StringBuffer('LabelsCompanion(')
+          ..write('labelEventId: $labelEventId, ')
           ..write('emailId: $emailId, ')
           ..write('label: $label, ')
-          ..write('labelEventId: $labelEventId, ')
+          ..write('wrapId: $wrapId, ')
           ..write('timestamp: $timestamp, ')
           ..write('recipientPubkey: $recipientPubkey, ')
           ..write('rowid: $rowid')
@@ -2395,10 +2448,10 @@ class Unsealed extends Table with TableInfo<Unsealed, UnsealedRow> {
   late final GeneratedColumn<String> seal = GeneratedColumn<String>(
     'seal',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.string,
-    requiredDuringInsert: true,
-    $customConstraints: 'NOT NULL',
+    requiredDuringInsert: false,
+    $customConstraints: '',
   );
   static const VerificationMeta _rumorMeta = const VerificationMeta('rumor');
   late final GeneratedColumn<String> rumor = GeneratedColumn<String>(
@@ -2464,8 +2517,6 @@ class Unsealed extends Table with TableInfo<Unsealed, UnsealedRow> {
         _sealMeta,
         seal.isAcceptableOrUnknown(data['seal']!, _sealMeta),
       );
-    } else if (isInserting) {
-      context.missing(_sealMeta);
     }
     if (data.containsKey('rumor')) {
       context.handle(
@@ -2503,7 +2554,7 @@ class Unsealed extends Table with TableInfo<Unsealed, UnsealedRow> {
       seal: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}seal'],
-      )!,
+      ),
       rumor: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}rumor'],
@@ -2527,13 +2578,16 @@ class Unsealed extends Table with TableInfo<Unsealed, UnsealedRow> {
 class UnsealedRow extends DataClass implements Insertable<UnsealedRow> {
   final String wrapId;
   final String recipientPubkey;
-  final String seal;
+
+  /// Null for a label, which travels signed without a seal: rumor then holds
+  /// the signed label itself.
+  final String? seal;
   final String rumor;
   final String rumorId;
   const UnsealedRow({
     required this.wrapId,
     required this.recipientPubkey,
-    required this.seal,
+    this.seal,
     required this.rumor,
     required this.rumorId,
   });
@@ -2542,7 +2596,9 @@ class UnsealedRow extends DataClass implements Insertable<UnsealedRow> {
     final map = <String, Expression>{};
     map['wrap_id'] = Variable<String>(wrapId);
     map['recipient_pubkey'] = Variable<String>(recipientPubkey);
-    map['seal'] = Variable<String>(seal);
+    if (!nullToAbsent || seal != null) {
+      map['seal'] = Variable<String>(seal);
+    }
     map['rumor'] = Variable<String>(rumor);
     map['rumor_id'] = Variable<String>(rumorId);
     return map;
@@ -2552,7 +2608,7 @@ class UnsealedRow extends DataClass implements Insertable<UnsealedRow> {
     return UnsealedCompanion(
       wrapId: Value(wrapId),
       recipientPubkey: Value(recipientPubkey),
-      seal: Value(seal),
+      seal: seal == null && nullToAbsent ? const Value.absent() : Value(seal),
       rumor: Value(rumor),
       rumorId: Value(rumorId),
     );
@@ -2566,7 +2622,7 @@ class UnsealedRow extends DataClass implements Insertable<UnsealedRow> {
     return UnsealedRow(
       wrapId: serializer.fromJson<String>(json['wrap_id']),
       recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
-      seal: serializer.fromJson<String>(json['seal']),
+      seal: serializer.fromJson<String?>(json['seal']),
       rumor: serializer.fromJson<String>(json['rumor']),
       rumorId: serializer.fromJson<String>(json['rumor_id']),
     );
@@ -2577,7 +2633,7 @@ class UnsealedRow extends DataClass implements Insertable<UnsealedRow> {
     return <String, dynamic>{
       'wrap_id': serializer.toJson<String>(wrapId),
       'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
-      'seal': serializer.toJson<String>(seal),
+      'seal': serializer.toJson<String?>(seal),
       'rumor': serializer.toJson<String>(rumor),
       'rumor_id': serializer.toJson<String>(rumorId),
     };
@@ -2586,13 +2642,13 @@ class UnsealedRow extends DataClass implements Insertable<UnsealedRow> {
   UnsealedRow copyWith({
     String? wrapId,
     String? recipientPubkey,
-    String? seal,
+    Value<String?> seal = const Value.absent(),
     String? rumor,
     String? rumorId,
   }) => UnsealedRow(
     wrapId: wrapId ?? this.wrapId,
     recipientPubkey: recipientPubkey ?? this.recipientPubkey,
-    seal: seal ?? this.seal,
+    seal: seal.present ? seal.value : this.seal,
     rumor: rumor ?? this.rumor,
     rumorId: rumorId ?? this.rumorId,
   );
@@ -2637,7 +2693,7 @@ class UnsealedRow extends DataClass implements Insertable<UnsealedRow> {
 class UnsealedCompanion extends UpdateCompanion<UnsealedRow> {
   final Value<String> wrapId;
   final Value<String> recipientPubkey;
-  final Value<String> seal;
+  final Value<String?> seal;
   final Value<String> rumor;
   final Value<String> rumorId;
   final Value<int> rowid;
@@ -2652,13 +2708,12 @@ class UnsealedCompanion extends UpdateCompanion<UnsealedRow> {
   UnsealedCompanion.insert({
     required String wrapId,
     required String recipientPubkey,
-    required String seal,
+    this.seal = const Value.absent(),
     required String rumor,
     required String rumorId,
     this.rowid = const Value.absent(),
   }) : wrapId = Value(wrapId),
        recipientPubkey = Value(recipientPubkey),
-       seal = Value(seal),
        rumor = Value(rumor),
        rumorId = Value(rumorId);
   static Insertable<UnsealedRow> custom({
@@ -2682,7 +2737,7 @@ class UnsealedCompanion extends UpdateCompanion<UnsealedRow> {
   UnsealedCompanion copyWith({
     Value<String>? wrapId,
     Value<String>? recipientPubkey,
-    Value<String>? seal,
+    Value<String?>? seal,
     Value<String>? rumor,
     Value<String>? rumorId,
     Value<int>? rowid,
@@ -4052,6 +4107,10 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
     'labels_email_recipient',
     'CREATE INDEX labels_email_recipient ON labels (email_id, recipient_pubkey, label)',
   );
+  late final Index labelsWrapId = Index(
+    'labels_wrap_id',
+    'CREATE INDEX labels_wrap_id ON labels (wrap_id)',
+  );
   late final GiftWraps giftWraps = GiftWraps(this);
   late final Index giftWrapsRecipientStage = Index(
     'gift_wraps_recipient_stage',
@@ -4089,6 +4148,7 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
     labels,
     labelsRecipientLabel,
     labelsEmailRecipient,
+    labelsWrapId,
     giftWraps,
     giftWrapsRecipientStage,
     unsealed,
@@ -5071,18 +5131,20 @@ typedef $AttachmentsProcessedTableManager =
     >;
 typedef $LabelsCreateCompanionBuilder =
     LabelsCompanion Function({
+      required String labelEventId,
       required String emailId,
       required String label,
-      required String labelEventId,
+      Value<String?> wrapId,
       required int timestamp,
       required String recipientPubkey,
       Value<int> rowid,
     });
 typedef $LabelsUpdateCompanionBuilder =
     LabelsCompanion Function({
+      Value<String> labelEventId,
       Value<String> emailId,
       Value<String> label,
-      Value<String> labelEventId,
+      Value<String?> wrapId,
       Value<int> timestamp,
       Value<String> recipientPubkey,
       Value<int> rowid,
@@ -5096,6 +5158,11 @@ class $LabelsFilterComposer extends Composer<_$NostrMailDatabase, Labels> {
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnFilters<String> get labelEventId => $composableBuilder(
+    column: $table.labelEventId,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get emailId => $composableBuilder(
     column: $table.emailId,
     builder: (column) => ColumnFilters(column),
@@ -5106,8 +5173,8 @@ class $LabelsFilterComposer extends Composer<_$NostrMailDatabase, Labels> {
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get labelEventId => $composableBuilder(
-    column: $table.labelEventId,
+  ColumnFilters<String> get wrapId => $composableBuilder(
+    column: $table.wrapId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5130,6 +5197,11 @@ class $LabelsOrderingComposer extends Composer<_$NostrMailDatabase, Labels> {
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  ColumnOrderings<String> get labelEventId => $composableBuilder(
+    column: $table.labelEventId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get emailId => $composableBuilder(
     column: $table.emailId,
     builder: (column) => ColumnOrderings(column),
@@ -5140,8 +5212,8 @@ class $LabelsOrderingComposer extends Composer<_$NostrMailDatabase, Labels> {
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get labelEventId => $composableBuilder(
-    column: $table.labelEventId,
+  ColumnOrderings<String> get wrapId => $composableBuilder(
+    column: $table.wrapId,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -5164,16 +5236,19 @@ class $LabelsAnnotationComposer extends Composer<_$NostrMailDatabase, Labels> {
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
+  GeneratedColumn<String> get labelEventId => $composableBuilder(
+    column: $table.labelEventId,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get emailId =>
       $composableBuilder(column: $table.emailId, builder: (column) => column);
 
   GeneratedColumn<String> get label =>
       $composableBuilder(column: $table.label, builder: (column) => column);
 
-  GeneratedColumn<String> get labelEventId => $composableBuilder(
-    column: $table.labelEventId,
-    builder: (column) => column,
-  );
+  GeneratedColumn<String> get wrapId =>
+      $composableBuilder(column: $table.wrapId, builder: (column) => column);
 
   GeneratedColumn<int> get timestamp =>
       $composableBuilder(column: $table.timestamp, builder: (column) => column);
@@ -5212,32 +5287,36 @@ class $LabelsTableManager
               $LabelsAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
               ({
+                Value<String> labelEventId = const Value.absent(),
                 Value<String> emailId = const Value.absent(),
                 Value<String> label = const Value.absent(),
-                Value<String> labelEventId = const Value.absent(),
+                Value<String?> wrapId = const Value.absent(),
                 Value<int> timestamp = const Value.absent(),
                 Value<String> recipientPubkey = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LabelsCompanion(
+                labelEventId: labelEventId,
                 emailId: emailId,
                 label: label,
-                labelEventId: labelEventId,
+                wrapId: wrapId,
                 timestamp: timestamp,
                 recipientPubkey: recipientPubkey,
                 rowid: rowid,
               ),
           createCompanionCallback:
               ({
+                required String labelEventId,
                 required String emailId,
                 required String label,
-                required String labelEventId,
+                Value<String?> wrapId = const Value.absent(),
                 required int timestamp,
                 required String recipientPubkey,
                 Value<int> rowid = const Value.absent(),
               }) => LabelsCompanion.insert(
+                labelEventId: labelEventId,
                 emailId: emailId,
                 label: label,
-                labelEventId: labelEventId,
+                wrapId: wrapId,
                 timestamp: timestamp,
                 recipientPubkey: recipientPubkey,
                 rowid: rowid,
@@ -5507,7 +5586,7 @@ typedef $UnsealedCreateCompanionBuilder =
     UnsealedCompanion Function({
       required String wrapId,
       required String recipientPubkey,
-      required String seal,
+      Value<String?> seal,
       required String rumor,
       required String rumorId,
       Value<int> rowid,
@@ -5516,7 +5595,7 @@ typedef $UnsealedUpdateCompanionBuilder =
     UnsealedCompanion Function({
       Value<String> wrapId,
       Value<String> recipientPubkey,
-      Value<String> seal,
+      Value<String?> seal,
       Value<String> rumor,
       Value<String> rumorId,
       Value<int> rowid,
@@ -5651,7 +5730,7 @@ class $UnsealedTableManager
               ({
                 Value<String> wrapId = const Value.absent(),
                 Value<String> recipientPubkey = const Value.absent(),
-                Value<String> seal = const Value.absent(),
+                Value<String?> seal = const Value.absent(),
                 Value<String> rumor = const Value.absent(),
                 Value<String> rumorId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -5667,7 +5746,7 @@ class $UnsealedTableManager
               ({
                 required String wrapId,
                 required String recipientPubkey,
-                required String seal,
+                Value<String?> seal = const Value.absent(),
                 required String rumor,
                 required String rumorId,
                 Value<int> rowid = const Value.absent(),

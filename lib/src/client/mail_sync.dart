@@ -398,11 +398,11 @@ class MailSync {
           giftWrapId: event.id,
           recipientPubkey: myPubkey,
           seal: unwrapped.seal,
-          rumor: unwrapped.rumor,
+          rumor: unwrapped.payload,
         );
       }
 
-      final rumor = unwrapped.rumor;
+      final rumor = unwrapped.payload;
 
       if (rumor.kind != emailKind) {
         await _giftWraps.markStored(event.id);
@@ -539,14 +539,23 @@ class MailSync {
           continue;
         }
 
-        // Try as label
-        final allLabels = await _labels.getAllLabels(recipientPubkey: pubkey);
-        var foundLabel = false;
-        for (final labelRecord in allLabels) {
-          if (labelRecord.labelEventId == deletedEventId) {
-            final emailId = labelRecord.emailId;
-            final label = labelRecord.label;
-            await _labels.removeLabel(emailId, label, recipientPubkey: pubkey);
+        final labelEvent = await _labels.getLabelEvent(
+          deletedEventId,
+          recipientPubkey: pubkey,
+        );
+        if (labelEvent != null) {
+          final emailId = labelEvent.emailId;
+          final label = labelEvent.label;
+          await _labels.removeLabelEvent(
+            labelEvent.labelEventId,
+            recipientPubkey: pubkey,
+          );
+          // Another device may have applied the same label: it stays.
+          if (!await _labels.hasLabel(
+            emailId,
+            label,
+            recipientPubkey: pubkey,
+          )) {
             _bus.emit(
               LabelRemoved(
                 emailId: emailId,
@@ -556,13 +565,8 @@ class MailSync {
                 ),
               ),
             );
-            foundLabel = true;
-            break;
           }
         }
-        if (foundLabel) continue;
-
-        // Repost deletion — nothing local to delete
       }
     }
   }
@@ -602,9 +606,12 @@ class MailSync {
     if (emailTag.isEmpty) return;
     final emailId = emailTag[1];
 
-    if (await _labels.hasLabel(emailId, label, recipientPubkey: pubkey)) {
-      return;
-    }
+    if (await _labels.hasLabelEvent(event.id, recipientPubkey: pubkey)) return;
+    final alreadyApplied = await _labels.hasLabel(
+      emailId,
+      label,
+      recipientPubkey: pubkey,
+    );
 
     await _labels.saveLabel(
       emailId: emailId,
@@ -614,6 +621,7 @@ class MailSync {
       recipientPubkey: pubkey,
     );
 
+    if (alreadyApplied) return;
     _bus.emit(
       LabelAdded(
         emailId: emailId,
@@ -630,7 +638,7 @@ class MailSync {
     try {
       final seal = await _ndk.giftWrap.unwrapEvent(wrappedEvent: giftWrapEvent);
       final rumor = await _ndk.giftWrap.unsealRumor(sealedEvent: seal);
-      return UnwrappedGiftWrap(seal: seal, rumor: rumor);
+      return UnwrappedGiftWrap(seal: seal, payload: rumor);
     } on SignerRequestCancelledException {
       rethrow;
     } catch (error) {

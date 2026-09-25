@@ -34,14 +34,18 @@ CREATE TABLE attachments (
   PRIMARY KEY (email_id, position)
 ) AS AttachmentRow;
 
+-- One row per label event, not per label: two devices can apply the same label
+-- before either sees the other, and removing it has to name both.
 -- No foreign key to emails: a label can land before the email it points at.
 CREATE TABLE labels (
+  label_event_id TEXT NOT NULL PRIMARY KEY,
   email_id TEXT NOT NULL,
   label TEXT NOT NULL,
-  label_event_id TEXT NOT NULL,
+  -- The gift wrap that carried the label, which is what a deletion names.
+  -- Null for a label published in clear.
+  wrap_id TEXT,
   timestamp INTEGER NOT NULL,
-  recipient_pubkey TEXT NOT NULL,
-  PRIMARY KEY (email_id, label)
+  recipient_pubkey TEXT NOT NULL
 ) AS LabelRow;
 CREATE INDEX labels_recipient_label ON labels (recipient_pubkey, label);
 -- email_states resolves the folder, read and starred state per row through
@@ -49,6 +53,7 @@ CREATE INDEX labels_recipient_label ON labels (recipient_pubkey, label);
 -- every label of the account and any query filtering on folder walks the
 -- whole mailbox.
 CREATE INDEX labels_email_recipient ON labels (email_id, recipient_pubkey, label);
+CREATE INDEX labels_wrap_id ON labels (wrap_id);
 
 CREATE TABLE gift_wraps (
   id TEXT NOT NULL PRIMARY KEY,
@@ -66,7 +71,9 @@ CREATE INDEX gift_wraps_recipient_stage ON gift_wraps (recipient_pubkey, stage);
 CREATE TABLE unsealed (
   wrap_id TEXT NOT NULL PRIMARY KEY,
   recipient_pubkey TEXT NOT NULL,
-  seal TEXT NOT NULL,
+  -- Null for a label, which travels signed without a seal: rumor then holds
+  -- the signed label itself.
+  seal TEXT,
   rumor TEXT NOT NULL,
   rumor_id TEXT NOT NULL
 ) AS UnsealedRow;

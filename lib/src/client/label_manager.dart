@@ -102,28 +102,30 @@ class LabelManager {
     _assertPubkey();
     final pubkey = _pubkey!;
 
-    final labelEventId = await _labels.getLabelEventId(
+    final events = await _labels.getLabelEvents(
       emailId,
       label,
       recipientPubkey: pubkey,
     );
-    if (labelEventId == null) return;
+    if (events.isEmpty) return;
 
+    final targets = events.map((e) => e.deletionTarget).toList();
+    final kinds = events.map((e) => e.deletionKind).toSet();
     final deletionEvent = Nip01Event(
       pubKey: pubkey,
       kind: deletionRequestKind,
       tags: [
-        ['e', labelEventId],
-        ['k', labelKind.toString()],
+        ...targets.map((id) => ['e', id]),
+        ...kinds.map((kind) => ['k', kind.toString()]),
       ],
       content: '',
     );
 
     final signed = await _ndk.accounts.sign(deletionEvent);
 
-    // Tombstone the label event so it is not re-applied if re-served
+    // Tombstone the label events so they are not re-applied if re-served
     // by a relay (or by NDK's in-memory cache) on a future sync.
-    await _tombstones.add(labelEventId, recipientPubkey: pubkey);
+    await _tombstones.addMany(targets, recipientPubkey: pubkey);
 
     await _labels.removeLabel(emailId, label, recipientPubkey: pubkey);
 
@@ -131,7 +133,10 @@ class LabelManager {
 
     await _broadcastQueue.broadcast(
       signed,
-      relaySet: _relays.writeRelaySet(pubkey),
+      relaySet: RelaySet.union([
+        if (kinds.contains(giftWrapKind)) _relays.dmRelaySet([pubkey]),
+        if (kinds.contains(labelKind)) _relays.writeRelaySet(pubkey),
+      ]),
       pubkey: pubkey,
     );
   }

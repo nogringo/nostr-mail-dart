@@ -140,10 +140,15 @@ void main() {
         recipientPubkey: bob,
       );
 
-      final all = await labels.getAllLabels(recipientPubkey: alice);
-      expect(all.map((r) => r.emailId).toSet(), {
-        'a1',
-      }, reason: 'Alice should only see labels attached to her own emails');
+      expect(
+        await labels.getLabelEvent('ev_a', recipientPubkey: alice),
+        isNotNull,
+      );
+      expect(
+        await labels.getLabelEvent('ev_b', recipientPubkey: alice),
+        isNull,
+        reason: 'Alice should only see labels attached to her own emails',
+      );
     });
   });
 
@@ -372,12 +377,18 @@ void main() {
         isNotNull,
       );
       expect(
-        await labels.getAllLabels(recipientPubkey: aliceAccount.publicKey),
-        isEmpty,
+        await labels.getLabelEvent(
+          'alice-label',
+          recipientPubkey: aliceAccount.publicKey,
+        ),
+        isNull,
       );
       expect(
-        await labels.getAllLabels(recipientPubkey: bobAccount.publicKey),
-        hasLength(1),
+        await labels.getLabelEvent(
+          'bob-label',
+          recipientPubkey: bobAccount.publicKey,
+        ),
+        isNotNull,
       );
       expect(await settings.load(pubkey: aliceAccount.publicKey), isNull);
       expect(await settings.load(pubkey: bobAccount.publicKey), '{"b":true}');

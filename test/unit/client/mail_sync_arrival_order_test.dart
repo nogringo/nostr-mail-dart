@@ -162,6 +162,20 @@ void main() {
       expect(record!.folder, 'inbox');
     });
 
+    test('a label applied twice stays until both events are deleted', () async {
+      await sync.onPublicEmail(publicEmail());
+      await sync.onLabelAddition(labelEvent('read-on-phone', 'state:read'));
+      await sync.onLabelAddition(labelEvent('read-on-desktop', 'state:read'));
+
+      await sync.onDeletion(deletionOf('read-on-phone', labelKind));
+      var record = await emails.getById(emailId, recipientPubkey: alice);
+      expect(record!.isRead, isTrue);
+
+      await sync.onDeletion(deletionOf('read-on-desktop', labelKind));
+      record = await emails.getById(emailId, recipientPubkey: alice);
+      expect(record!.isRead, isFalse);
+    });
+
     test('an email deleted before it arrives is never stored', () async {
       await sync.onDeletion(deletionOf(emailId, emailKind));
       await sync.onPublicEmail(publicEmail());

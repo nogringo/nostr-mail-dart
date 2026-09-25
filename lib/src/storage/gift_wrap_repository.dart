@@ -40,7 +40,7 @@ class GiftWrapRepository {
   Future<void> saveOpened(
     Nip01Event event, {
     required String recipientPubkey,
-    required Nip01Event seal,
+    Nip01Event? seal,
     required Nip01Event rumor,
   }) async {
     await _db.transaction(() async {
@@ -60,7 +60,7 @@ class GiftWrapRepository {
             UnsealedRow(
               wrapId: event.id,
               recipientPubkey: recipientPubkey,
-              seal: _encode(seal),
+              seal: seal == null ? null : _encode(seal),
               rumor: _encode(rumor),
               rumorId: rumor.id,
             ),
@@ -87,7 +87,7 @@ class GiftWrapRepository {
   Future<void> updateUnsealed({
     required String giftWrapId,
     required String recipientPubkey,
-    required Nip01Event seal,
+    Nip01Event? seal,
     required Nip01Event rumor,
   }) async {
     await _db.transaction(() async {
@@ -97,7 +97,7 @@ class GiftWrapRepository {
             UnsealedRow(
               wrapId: giftWrapId,
               recipientPubkey: recipientPubkey,
-              seal: _encode(seal),
+              seal: seal == null ? null : _encode(seal),
               rumor: _encode(rumor),
               rumorId: rumor.id,
             ),
@@ -132,8 +132,8 @@ class GiftWrapRepository {
     final row = await _unsealedRow(giftWrapId);
     if (row == null) return null;
     return UnwrappedGiftWrap(
-      seal: _decode(row.seal),
-      rumor: _decode(row.rumor),
+      seal: row.seal == null ? null : _decode(row.seal!),
+      payload: _decode(row.rumor),
     );
   }
 
@@ -362,7 +362,7 @@ class GiftWrapRepository {
         'recipientPubkey': row.recipientPubkey,
         'event': jsonDecode(row.event),
         if (unsealed != null) ...{
-          'seal': jsonDecode(unsealed.seal),
+          if (unsealed.seal != null) 'seal': jsonDecode(unsealed.seal!),
           'rumor': jsonDecode(unsealed.rumor),
           'rumorId': unsealed.rumorId,
         },

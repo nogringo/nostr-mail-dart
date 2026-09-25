@@ -50,48 +50,71 @@ void main() {
       );
     }
 
-    group('saveLabel / getLabelEventId', () {
+    group('label events', () {
+      Future<List<String>> eventIds(String emailId, String label) async =>
+          (await labels.getLabelEvents(
+            emailId,
+            label,
+            recipientPubkey: rpk,
+          )).map((r) => r.labelEventId).toList();
+
       test('stores and retrieves the event id', () async {
         await save('email-1', 'folder:trash', eventId: 'label-event-1');
 
-        final eventId = await labels.getLabelEventId(
-          'email-1',
-          'folder:trash',
+        expect(await eventIds('email-1', 'folder:trash'), ['label-event-1']);
+      });
+
+      test('returns nothing for an unknown label', () async {
+        expect(await eventIds('email-1', 'folder:trash'), isEmpty);
+      });
+
+      test('keeps every event of a label', () async {
+        await save('email-1', 'state:read', eventId: 'from-phone');
+        await save('email-1', 'state:read', eventId: 'from-desktop');
+
+        expect(
+          await labels.getLabelsForEmail('email-1', recipientPubkey: rpk),
+          ['state:read'],
+        );
+        expect(
+          await eventIds('email-1', 'state:read'),
+          unorderedEquals(['from-phone', 'from-desktop']),
+        );
+
+        await labels.removeLabelEvent('from-phone', recipientPubkey: rpk);
+        expect(
+          await labels.hasLabel('email-1', 'state:read', recipientPubkey: rpk),
+          isTrue,
+        );
+
+        await labels.removeLabel('email-1', 'state:read', recipientPubkey: rpk);
+        expect(await eventIds('email-1', 'state:read'), isEmpty);
+      });
+
+      test('finds a label event by its own id or by its wrap', () async {
+        await labels.saveLabel(
+          emailId: 'email-1',
+          label: 'flag:starred',
+          labelEventId: 'label-event',
+          wrapId: 'wrap',
+          timestamp: now(),
           recipientPubkey: rpk,
         );
 
-        expect(eventId, 'label-event-1');
-      });
-
-      test('returns null for an unknown label', () async {
+        final byWrap = await labels.getLabelEvent('wrap', recipientPubkey: rpk);
+        expect(byWrap?.labelEventId, 'label-event');
+        expect(byWrap?.deletionTarget, 'wrap');
         expect(
-          await labels.getLabelEventId(
-            'email-1',
-            'folder:trash',
+          (await labels.getLabelEvent(
+            'label-event',
             recipientPubkey: rpk,
-          ),
+          ))?.wrapId,
+          'wrap',
+        );
+        expect(
+          await labels.getLabelEvent('wrap', recipientPubkey: 'other'),
           isNull,
         );
-      });
-
-      test('updates the event id when saving the same label twice', () async {
-        await save('email-1', 'folder:trash', eventId: 'old-id');
-        await save('email-1', 'folder:trash', eventId: 'new-id');
-
-        expect(
-          await labels.getLabelEventId(
-            'email-1',
-            'folder:trash',
-            recipientPubkey: rpk,
-          ),
-          'new-id',
-        );
-        // The label is not duplicated.
-        final list = await labels.getLabelsForEmail(
-          'email-1',
-          recipientPubkey: rpk,
-        );
-        expect(list.length, 1);
       });
     });
 
@@ -208,17 +231,20 @@ void main() {
       });
 
       test(
-        'getLabelEventIdsForEmails returns label events for requested emails',
+        'getLabelEventsForEmails returns label events for requested emails',
         () async {
           await save('email-1', 'folder:trash', eventId: 'label-1');
           await save('email-1', 'state:read', eventId: 'label-2');
           await save('email-2', 'folder:trash', eventId: 'label-3');
 
-          final ids = await labels.getLabelEventIdsForEmails([
+          final events = await labels.getLabelEventsForEmails([
             'email-1',
           ], recipientPubkey: rpk);
 
-          expect(ids.toSet(), {'label-1', 'label-2'});
+          expect(events.map((e) => e.labelEventId).toSet(), {
+            'label-1',
+            'label-2',
+          });
         },
       );
 

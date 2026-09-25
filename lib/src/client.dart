@@ -813,7 +813,7 @@ class NostrMailClient {
       throw NostrMailException('Emails not found: ${missingIds.join(', ')}');
     }
 
-    final labelEventIds = await _labelRepo.getLabelEventIdsForEmails(
+    final labels = await _labelRepo.getLabelEventsForEmails(
       uniqueIds,
       recipientPubkey: pubkey,
     );
@@ -828,13 +828,15 @@ class NostrMailClient {
       recipientPubkey: pubkey,
     );
 
-    final deletionIds = [...uniqueIds, ...labelEventIds, ...giftWrapIds];
-    final targetKinds = emails
-        .map((email) => email.isPublic ? emailKind : giftWrapKind)
-        .toSet();
-    if (labelEventIds.isNotEmpty) {
-      targetKinds.add(labelKind);
-    }
+    final deletionIds = [
+      ...uniqueIds,
+      ...labels.map((l) => l.deletionTarget),
+      ...giftWrapIds,
+    ];
+    final targetKinds = {
+      ...emails.map((email) => email.isPublic ? emailKind : giftWrapKind),
+      ...labels.map((l) => l.deletionKind),
+    };
     final deletionEvent = Nip01Event(
       pubKey: pubkey,
       kind: deletionRequestKind,
@@ -866,9 +868,9 @@ class NostrMailClient {
     }
 
     final targets = <RelaySet>[
-      if (emails.any((email) => !email.isPublic))
+      if (targetKinds.contains(giftWrapKind))
         _relayResolver.dmRelaySet([pubkey]),
-      if (emails.any((email) => email.isPublic) || labelEventIds.isNotEmpty)
+      if (targetKinds.contains(emailKind) || targetKinds.contains(labelKind))
         _relayResolver.writeRelaySet(pubkey),
     ];
     await broadcastQueue.broadcast(
