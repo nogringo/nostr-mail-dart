@@ -1641,6 +1641,17 @@ class Labels extends Table with TableInfo<Labels, LabelRow> {
     requiredDuringInsert: true,
     $customConstraints: 'NOT NULL',
   );
+  static const VerificationMeta _prevFolderMeta = const VerificationMeta(
+    'prevFolder',
+  );
+  late final GeneratedColumn<String> prevFolder = GeneratedColumn<String>(
+    'prev_folder',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: '',
+  );
   @override
   List<GeneratedColumn> get $columns => [
     labelEventId,
@@ -1649,6 +1660,7 @@ class Labels extends Table with TableInfo<Labels, LabelRow> {
     wrapId,
     timestamp,
     recipientPubkey,
+    prevFolder,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1714,6 +1726,12 @@ class Labels extends Table with TableInfo<Labels, LabelRow> {
     } else if (isInserting) {
       context.missing(_recipientPubkeyMeta);
     }
+    if (data.containsKey('prev_folder')) {
+      context.handle(
+        _prevFolderMeta,
+        prevFolder.isAcceptableOrUnknown(data['prev_folder']!, _prevFolderMeta),
+      );
+    }
     return context;
   }
 
@@ -1747,6 +1765,10 @@ class Labels extends Table with TableInfo<Labels, LabelRow> {
         DriftSqlType.string,
         data['${effectivePrefix}recipient_pubkey'],
       )!,
+      prevFolder: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}prev_folder'],
+      ),
     );
   }
 
@@ -1769,6 +1791,10 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
   final String? wrapId;
   final int timestamp;
   final String recipientPubkey;
+
+  /// The user folder a folder:trash or folder:archive label moved the email out
+  /// of, applied again on restore.
+  final String? prevFolder;
   const LabelRow({
     required this.labelEventId,
     required this.emailId,
@@ -1776,6 +1802,7 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
     this.wrapId,
     required this.timestamp,
     required this.recipientPubkey,
+    this.prevFolder,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1788,6 +1815,9 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
     }
     map['timestamp'] = Variable<int>(timestamp);
     map['recipient_pubkey'] = Variable<String>(recipientPubkey);
+    if (!nullToAbsent || prevFolder != null) {
+      map['prev_folder'] = Variable<String>(prevFolder);
+    }
     return map;
   }
 
@@ -1801,6 +1831,9 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
           : Value(wrapId),
       timestamp: Value(timestamp),
       recipientPubkey: Value(recipientPubkey),
+      prevFolder: prevFolder == null && nullToAbsent
+          ? const Value.absent()
+          : Value(prevFolder),
     );
   }
 
@@ -1816,6 +1849,7 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
       wrapId: serializer.fromJson<String?>(json['wrap_id']),
       timestamp: serializer.fromJson<int>(json['timestamp']),
       recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
+      prevFolder: serializer.fromJson<String?>(json['prev_folder']),
     );
   }
   @override
@@ -1828,6 +1862,7 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
       'wrap_id': serializer.toJson<String?>(wrapId),
       'timestamp': serializer.toJson<int>(timestamp),
       'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
+      'prev_folder': serializer.toJson<String?>(prevFolder),
     };
   }
 
@@ -1838,6 +1873,7 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
     Value<String?> wrapId = const Value.absent(),
     int? timestamp,
     String? recipientPubkey,
+    Value<String?> prevFolder = const Value.absent(),
   }) => LabelRow(
     labelEventId: labelEventId ?? this.labelEventId,
     emailId: emailId ?? this.emailId,
@@ -1845,6 +1881,7 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
     wrapId: wrapId.present ? wrapId.value : this.wrapId,
     timestamp: timestamp ?? this.timestamp,
     recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+    prevFolder: prevFolder.present ? prevFolder.value : this.prevFolder,
   );
   LabelRow copyWithCompanion(LabelsCompanion data) {
     return LabelRow(
@@ -1858,6 +1895,9 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
       recipientPubkey: data.recipientPubkey.present
           ? data.recipientPubkey.value
           : this.recipientPubkey,
+      prevFolder: data.prevFolder.present
+          ? data.prevFolder.value
+          : this.prevFolder,
     );
   }
 
@@ -1869,7 +1909,8 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
           ..write('label: $label, ')
           ..write('wrapId: $wrapId, ')
           ..write('timestamp: $timestamp, ')
-          ..write('recipientPubkey: $recipientPubkey')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('prevFolder: $prevFolder')
           ..write(')'))
         .toString();
   }
@@ -1882,6 +1923,7 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
     wrapId,
     timestamp,
     recipientPubkey,
+    prevFolder,
   );
   @override
   bool operator ==(Object other) =>
@@ -1892,7 +1934,8 @@ class LabelRow extends DataClass implements Insertable<LabelRow> {
           other.label == this.label &&
           other.wrapId == this.wrapId &&
           other.timestamp == this.timestamp &&
-          other.recipientPubkey == this.recipientPubkey);
+          other.recipientPubkey == this.recipientPubkey &&
+          other.prevFolder == this.prevFolder);
 }
 
 class LabelsCompanion extends UpdateCompanion<LabelRow> {
@@ -1902,6 +1945,7 @@ class LabelsCompanion extends UpdateCompanion<LabelRow> {
   final Value<String?> wrapId;
   final Value<int> timestamp;
   final Value<String> recipientPubkey;
+  final Value<String?> prevFolder;
   final Value<int> rowid;
   const LabelsCompanion({
     this.labelEventId = const Value.absent(),
@@ -1910,6 +1954,7 @@ class LabelsCompanion extends UpdateCompanion<LabelRow> {
     this.wrapId = const Value.absent(),
     this.timestamp = const Value.absent(),
     this.recipientPubkey = const Value.absent(),
+    this.prevFolder = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   LabelsCompanion.insert({
@@ -1919,6 +1964,7 @@ class LabelsCompanion extends UpdateCompanion<LabelRow> {
     this.wrapId = const Value.absent(),
     required int timestamp,
     required String recipientPubkey,
+    this.prevFolder = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : labelEventId = Value(labelEventId),
        emailId = Value(emailId),
@@ -1932,6 +1978,7 @@ class LabelsCompanion extends UpdateCompanion<LabelRow> {
     Expression<String>? wrapId,
     Expression<int>? timestamp,
     Expression<String>? recipientPubkey,
+    Expression<String>? prevFolder,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1941,6 +1988,7 @@ class LabelsCompanion extends UpdateCompanion<LabelRow> {
       if (wrapId != null) 'wrap_id': wrapId,
       if (timestamp != null) 'timestamp': timestamp,
       if (recipientPubkey != null) 'recipient_pubkey': recipientPubkey,
+      if (prevFolder != null) 'prev_folder': prevFolder,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1952,6 +2000,7 @@ class LabelsCompanion extends UpdateCompanion<LabelRow> {
     Value<String?>? wrapId,
     Value<int>? timestamp,
     Value<String>? recipientPubkey,
+    Value<String?>? prevFolder,
     Value<int>? rowid,
   }) {
     return LabelsCompanion(
@@ -1961,6 +2010,7 @@ class LabelsCompanion extends UpdateCompanion<LabelRow> {
       wrapId: wrapId ?? this.wrapId,
       timestamp: timestamp ?? this.timestamp,
       recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+      prevFolder: prevFolder ?? this.prevFolder,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1986,6 +2036,9 @@ class LabelsCompanion extends UpdateCompanion<LabelRow> {
     if (recipientPubkey.present) {
       map['recipient_pubkey'] = Variable<String>(recipientPubkey.value);
     }
+    if (prevFolder.present) {
+      map['prev_folder'] = Variable<String>(prevFolder.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2001,6 +2054,386 @@ class LabelsCompanion extends UpdateCompanion<LabelRow> {
           ..write('wrapId: $wrapId, ')
           ..write('timestamp: $timestamp, ')
           ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('prevFolder: $prevFolder, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class Matches extends Table with TableInfo<Matches, MatchRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  Matches(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _emailIdMeta = const VerificationMeta(
+    'emailId',
+  );
+  late final GeneratedColumn<String> emailId = GeneratedColumn<String>(
+    'email_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL REFERENCES emails(id)ON DELETE CASCADE',
+  );
+  static const VerificationMeta _recipientPubkeyMeta = const VerificationMeta(
+    'recipientPubkey',
+  );
+  late final GeneratedColumn<String> recipientPubkey = GeneratedColumn<String>(
+    'recipient_pubkey',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _entryIdMeta = const VerificationMeta(
+    'entryId',
+  );
+  late final GeneratedColumn<String> entryId = GeneratedColumn<String>(
+    'entry_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _isFolderMeta = const VerificationMeta(
+    'isFolder',
+  );
+  late final GeneratedColumn<bool> isFolder = GeneratedColumn<bool>(
+    'is_folder',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _rankMeta = const VerificationMeta('rank');
+  late final GeneratedColumn<int> rank = GeneratedColumn<int>(
+    'rank',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    emailId,
+    recipientPubkey,
+    entryId,
+    isFolder,
+    rank,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'matches';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MatchRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('email_id')) {
+      context.handle(
+        _emailIdMeta,
+        emailId.isAcceptableOrUnknown(data['email_id']!, _emailIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_emailIdMeta);
+    }
+    if (data.containsKey('recipient_pubkey')) {
+      context.handle(
+        _recipientPubkeyMeta,
+        recipientPubkey.isAcceptableOrUnknown(
+          data['recipient_pubkey']!,
+          _recipientPubkeyMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_recipientPubkeyMeta);
+    }
+    if (data.containsKey('entry_id')) {
+      context.handle(
+        _entryIdMeta,
+        entryId.isAcceptableOrUnknown(data['entry_id']!, _entryIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entryIdMeta);
+    }
+    if (data.containsKey('is_folder')) {
+      context.handle(
+        _isFolderMeta,
+        isFolder.isAcceptableOrUnknown(data['is_folder']!, _isFolderMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_isFolderMeta);
+    }
+    if (data.containsKey('rank')) {
+      context.handle(
+        _rankMeta,
+        rank.isAcceptableOrUnknown(data['rank']!, _rankMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_rankMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {emailId, entryId};
+  @override
+  MatchRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MatchRow(
+      emailId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}email_id'],
+      )!,
+      recipientPubkey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recipient_pubkey'],
+      )!,
+      entryId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entry_id'],
+      )!,
+      isFolder: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_folder'],
+      )!,
+      rank: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}rank'],
+      )!,
+    );
+  }
+
+  @override
+  Matches createAlias(String alias) {
+    return Matches(attachedDatabase, alias);
+  }
+
+  @override
+  List<String> get customConstraints => const [
+    'PRIMARY KEY(email_id, entry_id)',
+  ];
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class MatchRow extends DataClass implements Insertable<MatchRow> {
+  final String emailId;
+  final String recipientPubkey;
+  final String entryId;
+  final bool isFolder;
+
+  /// The folder's place in display order: the first match wins.
+  final int rank;
+  const MatchRow({
+    required this.emailId,
+    required this.recipientPubkey,
+    required this.entryId,
+    required this.isFolder,
+    required this.rank,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['email_id'] = Variable<String>(emailId);
+    map['recipient_pubkey'] = Variable<String>(recipientPubkey);
+    map['entry_id'] = Variable<String>(entryId);
+    map['is_folder'] = Variable<bool>(isFolder);
+    map['rank'] = Variable<int>(rank);
+    return map;
+  }
+
+  MatchesCompanion toCompanion(bool nullToAbsent) {
+    return MatchesCompanion(
+      emailId: Value(emailId),
+      recipientPubkey: Value(recipientPubkey),
+      entryId: Value(entryId),
+      isFolder: Value(isFolder),
+      rank: Value(rank),
+    );
+  }
+
+  factory MatchRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MatchRow(
+      emailId: serializer.fromJson<String>(json['email_id']),
+      recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
+      entryId: serializer.fromJson<String>(json['entry_id']),
+      isFolder: serializer.fromJson<bool>(json['is_folder']),
+      rank: serializer.fromJson<int>(json['rank']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'email_id': serializer.toJson<String>(emailId),
+      'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
+      'entry_id': serializer.toJson<String>(entryId),
+      'is_folder': serializer.toJson<bool>(isFolder),
+      'rank': serializer.toJson<int>(rank),
+    };
+  }
+
+  MatchRow copyWith({
+    String? emailId,
+    String? recipientPubkey,
+    String? entryId,
+    bool? isFolder,
+    int? rank,
+  }) => MatchRow(
+    emailId: emailId ?? this.emailId,
+    recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+    entryId: entryId ?? this.entryId,
+    isFolder: isFolder ?? this.isFolder,
+    rank: rank ?? this.rank,
+  );
+  MatchRow copyWithCompanion(MatchesCompanion data) {
+    return MatchRow(
+      emailId: data.emailId.present ? data.emailId.value : this.emailId,
+      recipientPubkey: data.recipientPubkey.present
+          ? data.recipientPubkey.value
+          : this.recipientPubkey,
+      entryId: data.entryId.present ? data.entryId.value : this.entryId,
+      isFolder: data.isFolder.present ? data.isFolder.value : this.isFolder,
+      rank: data.rank.present ? data.rank.value : this.rank,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MatchRow(')
+          ..write('emailId: $emailId, ')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('entryId: $entryId, ')
+          ..write('isFolder: $isFolder, ')
+          ..write('rank: $rank')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(emailId, recipientPubkey, entryId, isFolder, rank);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MatchRow &&
+          other.emailId == this.emailId &&
+          other.recipientPubkey == this.recipientPubkey &&
+          other.entryId == this.entryId &&
+          other.isFolder == this.isFolder &&
+          other.rank == this.rank);
+}
+
+class MatchesCompanion extends UpdateCompanion<MatchRow> {
+  final Value<String> emailId;
+  final Value<String> recipientPubkey;
+  final Value<String> entryId;
+  final Value<bool> isFolder;
+  final Value<int> rank;
+  final Value<int> rowid;
+  const MatchesCompanion({
+    this.emailId = const Value.absent(),
+    this.recipientPubkey = const Value.absent(),
+    this.entryId = const Value.absent(),
+    this.isFolder = const Value.absent(),
+    this.rank = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MatchesCompanion.insert({
+    required String emailId,
+    required String recipientPubkey,
+    required String entryId,
+    required bool isFolder,
+    required int rank,
+    this.rowid = const Value.absent(),
+  }) : emailId = Value(emailId),
+       recipientPubkey = Value(recipientPubkey),
+       entryId = Value(entryId),
+       isFolder = Value(isFolder),
+       rank = Value(rank);
+  static Insertable<MatchRow> custom({
+    Expression<String>? emailId,
+    Expression<String>? recipientPubkey,
+    Expression<String>? entryId,
+    Expression<bool>? isFolder,
+    Expression<int>? rank,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (emailId != null) 'email_id': emailId,
+      if (recipientPubkey != null) 'recipient_pubkey': recipientPubkey,
+      if (entryId != null) 'entry_id': entryId,
+      if (isFolder != null) 'is_folder': isFolder,
+      if (rank != null) 'rank': rank,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MatchesCompanion copyWith({
+    Value<String>? emailId,
+    Value<String>? recipientPubkey,
+    Value<String>? entryId,
+    Value<bool>? isFolder,
+    Value<int>? rank,
+    Value<int>? rowid,
+  }) {
+    return MatchesCompanion(
+      emailId: emailId ?? this.emailId,
+      recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+      entryId: entryId ?? this.entryId,
+      isFolder: isFolder ?? this.isFolder,
+      rank: rank ?? this.rank,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (emailId.present) {
+      map['email_id'] = Variable<String>(emailId.value);
+    }
+    if (recipientPubkey.present) {
+      map['recipient_pubkey'] = Variable<String>(recipientPubkey.value);
+    }
+    if (entryId.present) {
+      map['entry_id'] = Variable<String>(entryId.value);
+    }
+    if (isFolder.present) {
+      map['is_folder'] = Variable<bool>(isFolder.value);
+    }
+    if (rank.present) {
+      map['rank'] = Variable<int>(rank.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MatchesCompanion(')
+          ..write('emailId: $emailId, ')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('entryId: $entryId, ')
+          ..write('isFolder: $isFolder, ')
+          ..write('rank: $rank, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3553,7 +3986,7 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
   @override
   Map<SqlDialect, String> get createViewStatements => {
     SqlDialect.sqlite:
-        'CREATE VIEW email_states AS SELECT e.*, COALESCE((SELECT substr(l.label, 8) FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label LIKE \'folder:%\' ORDER BY l.timestamp DESC LIMIT 1), CASE WHEN e.sender_pubkey = e.recipient_pubkey THEN \'sent\' ELSE \'inbox\' END) AS folder, EXISTS (SELECT 1 FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label = \'state:read\') AS is_read, EXISTS (SELECT 1 FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label = \'flag:starred\') AS is_starred FROM emails AS e',
+        'CREATE VIEW email_states AS SELECT e.*, COALESCE((SELECT substr(l.label, 8) FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label LIKE \'folder:%\' ORDER BY l.timestamp DESC LIMIT 1), (SELECT m.entry_id FROM matches AS m WHERE m.email_id = e.id AND m.is_folder ORDER BY m.rank LIMIT 1), CASE WHEN e.sender_pubkey = e.recipient_pubkey THEN \'sent\' ELSE \'inbox\' END) AS folder, EXISTS (SELECT 1 FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label = \'state:read\') AS is_read, EXISTS (SELECT 1 FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label = \'flag:starred\') AS is_starred FROM emails AS e',
   };
   @override
   EmailStates get asDslTable => this;
@@ -3804,7 +4237,7 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
   @override
   Query? get query => null;
   @override
-  Set<String> get readTables => const {'emails', 'labels'};
+  Set<String> get readTables => const {'emails', 'labels', 'matches'};
 }
 
 class EmailSearch extends Table
@@ -4111,6 +4544,11 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
     'labels_wrap_id',
     'CREATE INDEX labels_wrap_id ON labels (wrap_id)',
   );
+  late final Matches matches = Matches(this);
+  late final Index matchesRecipientEntry = Index(
+    'matches_recipient_entry',
+    'CREATE INDEX matches_recipient_entry ON matches (recipient_pubkey, entry_id)',
+  );
   late final GiftWraps giftWraps = GiftWraps(this);
   late final Index giftWrapsRecipientStage = Index(
     'gift_wraps_recipient_stage',
@@ -4149,6 +4587,8 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
     labelsRecipientLabel,
     labelsEmailRecipient,
     labelsWrapId,
+    matches,
+    matchesRecipientEntry,
     giftWraps,
     giftWrapsRecipientStage,
     unsealed,
@@ -4169,6 +4609,13 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('attachments', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'emails',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('matches', kind: UpdateKind.delete)],
     ),
     WritePropagation(
       on: TableUpdateQuery.onTableName(
@@ -4259,6 +4706,25 @@ final class $EmailsReferences
     ).filter((f) => f.emailId.id.sqlEquals($_itemColumn<String>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_attachmentsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<Matches, List<MatchRow>> _matchesRefsTable(
+    _$NostrMailDatabase db,
+  ) => MultiTypedResultKey.fromTable(
+    db.matches,
+    aliasName: 'emails__id__matches__email_id',
+  );
+
+  $MatchesProcessedTableManager get matchesRefs {
+    final manager = $MatchesTableManager(
+      $_db,
+      $_db.matches,
+    ).filter((f) => f.emailId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_matchesRefsTable($_db));
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -4384,6 +4850,31 @@ class $EmailsFilterComposer extends Composer<_$NostrMailDatabase, Emails> {
           }) => $AttachmentsFilterComposer(
             $db: $db,
             $table: $db.attachments,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> matchesRefs(
+    Expression<bool> Function($MatchesFilterComposer f) f,
+  ) {
+    final $MatchesFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.matches,
+      getReferencedColumn: (t) => t.emailId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $MatchesFilterComposer(
+            $db: $db,
+            $table: $db.matches,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -4607,6 +5098,31 @@ class $EmailsAnnotationComposer extends Composer<_$NostrMailDatabase, Emails> {
     );
     return f(composer);
   }
+
+  Expression<T> matchesRefs<T extends Object>(
+    Expression<T> Function($MatchesAnnotationComposer a) f,
+  ) {
+    final $MatchesAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.matches,
+      getReferencedColumn: (t) => t.emailId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $MatchesAnnotationComposer(
+            $db: $db,
+            $table: $db.matches,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $EmailsTableManager
@@ -4622,7 +5138,7 @@ class $EmailsTableManager
           $EmailsUpdateCompanionBuilder,
           (EmailRow, $EmailsReferences),
           EmailRow,
-          PrefetchHooks Function({bool attachmentsRefs})
+          PrefetchHooks Function({bool attachmentsRefs, bool matchesRefs})
         > {
   $EmailsTableManager(_$NostrMailDatabase db, Emails table)
     : super(
@@ -4731,29 +5247,52 @@ class $EmailsTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({attachmentsRefs = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [if (attachmentsRefs) db.attachments],
-              addJoins: null,
-              getPrefetchedDataCallback: (items) async {
-                return [
-                  if (attachmentsRefs)
-                    await $_getPrefetchedData<EmailRow, Emails, AttachmentRow>(
-                      currentTable: table,
-                      referencedTable: $EmailsReferences._attachmentsRefsTable(
-                        db,
-                      ),
-                      managerFromTypedResult: (p0) =>
-                          $EmailsReferences(db, table, p0).attachmentsRefs,
-                      referencedItemsForCurrentItem: (item, referencedItems) =>
-                          referencedItems.where((e) => e.emailId == item.id),
-                      typedResults: items,
-                    ),
-                ];
+          prefetchHooksCallback:
+              ({attachmentsRefs = false, matchesRefs = false}) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (attachmentsRefs) db.attachments,
+                    if (matchesRefs) db.matches,
+                  ],
+                  addJoins: null,
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (attachmentsRefs)
+                        await $_getPrefetchedData<
+                          EmailRow,
+                          Emails,
+                          AttachmentRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $EmailsReferences
+                              ._attachmentsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $EmailsReferences(db, table, p0).attachmentsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.emailId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (matchesRefs)
+                        await $_getPrefetchedData<EmailRow, Emails, MatchRow>(
+                          currentTable: table,
+                          referencedTable: $EmailsReferences._matchesRefsTable(
+                            db,
+                          ),
+                          managerFromTypedResult: (p0) =>
+                              $EmailsReferences(db, table, p0).matchesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.emailId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
               },
-            );
-          },
         ),
       );
 }
@@ -4770,7 +5309,7 @@ typedef $EmailsProcessedTableManager =
       $EmailsUpdateCompanionBuilder,
       (EmailRow, $EmailsReferences),
       EmailRow,
-      PrefetchHooks Function({bool attachmentsRefs})
+      PrefetchHooks Function({bool attachmentsRefs, bool matchesRefs})
     >;
 typedef $AttachmentsCreateCompanionBuilder =
     AttachmentsCompanion Function({
@@ -5137,6 +5676,7 @@ typedef $LabelsCreateCompanionBuilder =
       Value<String?> wrapId,
       required int timestamp,
       required String recipientPubkey,
+      Value<String?> prevFolder,
       Value<int> rowid,
     });
 typedef $LabelsUpdateCompanionBuilder =
@@ -5147,6 +5687,7 @@ typedef $LabelsUpdateCompanionBuilder =
       Value<String?> wrapId,
       Value<int> timestamp,
       Value<String> recipientPubkey,
+      Value<String?> prevFolder,
       Value<int> rowid,
     });
 
@@ -5185,6 +5726,11 @@ class $LabelsFilterComposer extends Composer<_$NostrMailDatabase, Labels> {
 
   ColumnFilters<String> get recipientPubkey => $composableBuilder(
     column: $table.recipientPubkey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get prevFolder => $composableBuilder(
+    column: $table.prevFolder,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -5226,6 +5772,11 @@ class $LabelsOrderingComposer extends Composer<_$NostrMailDatabase, Labels> {
     column: $table.recipientPubkey,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get prevFolder => $composableBuilder(
+    column: $table.prevFolder,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $LabelsAnnotationComposer extends Composer<_$NostrMailDatabase, Labels> {
@@ -5255,6 +5806,11 @@ class $LabelsAnnotationComposer extends Composer<_$NostrMailDatabase, Labels> {
 
   GeneratedColumn<String> get recipientPubkey => $composableBuilder(
     column: $table.recipientPubkey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get prevFolder => $composableBuilder(
+    column: $table.prevFolder,
     builder: (column) => column,
   );
 }
@@ -5293,6 +5849,7 @@ class $LabelsTableManager
                 Value<String?> wrapId = const Value.absent(),
                 Value<int> timestamp = const Value.absent(),
                 Value<String> recipientPubkey = const Value.absent(),
+                Value<String?> prevFolder = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LabelsCompanion(
                 labelEventId: labelEventId,
@@ -5301,6 +5858,7 @@ class $LabelsTableManager
                 wrapId: wrapId,
                 timestamp: timestamp,
                 recipientPubkey: recipientPubkey,
+                prevFolder: prevFolder,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -5311,6 +5869,7 @@ class $LabelsTableManager
                 Value<String?> wrapId = const Value.absent(),
                 required int timestamp,
                 required String recipientPubkey,
+                Value<String?> prevFolder = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LabelsCompanion.insert(
                 labelEventId: labelEventId,
@@ -5319,6 +5878,7 @@ class $LabelsTableManager
                 wrapId: wrapId,
                 timestamp: timestamp,
                 recipientPubkey: recipientPubkey,
+                prevFolder: prevFolder,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -5351,6 +5911,323 @@ typedef $LabelsProcessedTableManager =
       (LabelRow, BaseReferences<_$NostrMailDatabase, Labels, LabelRow>),
       LabelRow,
       PrefetchHooks Function()
+    >;
+typedef $MatchesCreateCompanionBuilder =
+    MatchesCompanion Function({
+      required String emailId,
+      required String recipientPubkey,
+      required String entryId,
+      required bool isFolder,
+      required int rank,
+      Value<int> rowid,
+    });
+typedef $MatchesUpdateCompanionBuilder =
+    MatchesCompanion Function({
+      Value<String> emailId,
+      Value<String> recipientPubkey,
+      Value<String> entryId,
+      Value<bool> isFolder,
+      Value<int> rank,
+      Value<int> rowid,
+    });
+
+final class $MatchesReferences
+    extends BaseReferences<_$NostrMailDatabase, Matches, MatchRow> {
+  $MatchesReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static Emails _emailIdTable(_$NostrMailDatabase db) =>
+      db.emails.createAlias('matches__email_id__emails__id');
+
+  $EmailsProcessedTableManager get emailId {
+    final $_column = $_itemColumn<String>('email_id')!;
+
+    final manager = $EmailsTableManager(
+      $_db,
+      $_db.emails,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_emailIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $MatchesFilterComposer extends Composer<_$NostrMailDatabase, Matches> {
+  $MatchesFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entryId => $composableBuilder(
+    column: $table.entryId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isFolder => $composableBuilder(
+    column: $table.isFolder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get rank => $composableBuilder(
+    column: $table.rank,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $EmailsFilterComposer get emailId {
+    final $EmailsFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.emailId,
+      referencedTable: $db.emails,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $EmailsFilterComposer(
+            $db: $db,
+            $table: $db.emails,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $MatchesOrderingComposer extends Composer<_$NostrMailDatabase, Matches> {
+  $MatchesOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entryId => $composableBuilder(
+    column: $table.entryId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isFolder => $composableBuilder(
+    column: $table.isFolder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get rank => $composableBuilder(
+    column: $table.rank,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $EmailsOrderingComposer get emailId {
+    final $EmailsOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.emailId,
+      referencedTable: $db.emails,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $EmailsOrderingComposer(
+            $db: $db,
+            $table: $db.emails,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $MatchesAnnotationComposer
+    extends Composer<_$NostrMailDatabase, Matches> {
+  $MatchesAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get entryId =>
+      $composableBuilder(column: $table.entryId, builder: (column) => column);
+
+  GeneratedColumn<bool> get isFolder =>
+      $composableBuilder(column: $table.isFolder, builder: (column) => column);
+
+  GeneratedColumn<int> get rank =>
+      $composableBuilder(column: $table.rank, builder: (column) => column);
+
+  $EmailsAnnotationComposer get emailId {
+    final $EmailsAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.emailId,
+      referencedTable: $db.emails,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $EmailsAnnotationComposer(
+            $db: $db,
+            $table: $db.emails,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $MatchesTableManager
+    extends
+        RootTableManager<
+          _$NostrMailDatabase,
+          Matches,
+          MatchRow,
+          $MatchesFilterComposer,
+          $MatchesOrderingComposer,
+          $MatchesAnnotationComposer,
+          $MatchesCreateCompanionBuilder,
+          $MatchesUpdateCompanionBuilder,
+          (MatchRow, $MatchesReferences),
+          MatchRow,
+          PrefetchHooks Function({bool emailId})
+        > {
+  $MatchesTableManager(_$NostrMailDatabase db, Matches table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $MatchesFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $MatchesOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $MatchesAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> emailId = const Value.absent(),
+                Value<String> recipientPubkey = const Value.absent(),
+                Value<String> entryId = const Value.absent(),
+                Value<bool> isFolder = const Value.absent(),
+                Value<int> rank = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MatchesCompanion(
+                emailId: emailId,
+                recipientPubkey: recipientPubkey,
+                entryId: entryId,
+                isFolder: isFolder,
+                rank: rank,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String emailId,
+                required String recipientPubkey,
+                required String entryId,
+                required bool isFolder,
+                required int rank,
+                Value<int> rowid = const Value.absent(),
+              }) => MatchesCompanion.insert(
+                emailId: emailId,
+                recipientPubkey: recipientPubkey,
+                entryId: entryId,
+                isFolder: isFolder,
+                rank: rank,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<Matches, MatchRow>(table),
+                  $MatchesReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({emailId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (emailId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.emailId,
+                                referencedTable: $MatchesReferences
+                                    ._emailIdTable(db),
+                                referencedColumn: $MatchesReferences
+                                    ._emailIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $MatchesProcessedTableManager =
+    ProcessedTableManager<
+      _$NostrMailDatabase,
+      Matches,
+      MatchRow,
+      $MatchesFilterComposer,
+      $MatchesOrderingComposer,
+      $MatchesAnnotationComposer,
+      $MatchesCreateCompanionBuilder,
+      $MatchesUpdateCompanionBuilder,
+      (MatchRow, $MatchesReferences),
+      MatchRow,
+      PrefetchHooks Function({bool emailId})
     >;
 typedef $GiftWrapsCreateCompanionBuilder =
     GiftWrapsCompanion Function({
@@ -6287,6 +7164,7 @@ class $NostrMailDatabaseManager {
   $AttachmentsTableManager get attachments =>
       $AttachmentsTableManager(_db, _db.attachments);
   $LabelsTableManager get labels => $LabelsTableManager(_db, _db.labels);
+  $MatchesTableManager get matches => $MatchesTableManager(_db, _db.matches);
   $GiftWrapsTableManager get giftWraps =>
       $GiftWrapsTableManager(_db, _db.giftWraps);
   $UnsealedTableManager get unsealed =>

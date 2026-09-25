@@ -45,7 +45,10 @@ CREATE TABLE labels (
   -- Null for a label published in clear.
   wrap_id TEXT,
   timestamp INTEGER NOT NULL,
-  recipient_pubkey TEXT NOT NULL
+  recipient_pubkey TEXT NOT NULL,
+  -- The user folder a folder:trash or folder:archive label moved the email out
+  -- of, applied again on restore.
+  prev_folder TEXT
 ) AS LabelRow;
 CREATE INDEX labels_recipient_label ON labels (recipient_pubkey, label);
 -- email_states resolves the folder, read and starred state per row through
@@ -54,6 +57,19 @@ CREATE INDEX labels_recipient_label ON labels (recipient_pubkey, label);
 -- whole mailbox.
 CREATE INDEX labels_email_recipient ON labels (email_id, recipient_pubkey, label);
 CREATE INDEX labels_wrap_id ON labels (wrap_id);
+
+-- The user folders and tags whose match condition holds each email, from the
+-- private settings. Computed in Dart: SQLite folds the case of ASCII only.
+CREATE TABLE matches (
+  email_id TEXT NOT NULL REFERENCES emails (id) ON DELETE CASCADE,
+  recipient_pubkey TEXT NOT NULL,
+  entry_id TEXT NOT NULL,
+  is_folder BOOLEAN NOT NULL,
+  -- The folder's place in display order: the first match wins.
+  rank INTEGER NOT NULL,
+  PRIMARY KEY (email_id, entry_id)
+) AS MatchRow;
+CREATE INDEX matches_recipient_entry ON matches (recipient_pubkey, entry_id);
 
 CREATE TABLE gift_wraps (
   id TEXT NOT NULL PRIMARY KEY,
@@ -91,7 +107,8 @@ CREATE TABLE settings (
   json TEXT NOT NULL
 ) AS SettingsRow;
 
--- The folder is the most recent folder label, else the natural mailbox.
+-- The folder is the most recent folder label, else the first user folder
+-- whose condition holds, else the natural mailbox.
 CREATE VIEW email_states AS
 SELECT e.*,
   COALESCE(
@@ -99,6 +116,9 @@ SELECT e.*,
       WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey
         AND l.label LIKE 'folder:%'
       ORDER BY l.timestamp DESC LIMIT 1),
+    (SELECT m.entry_id FROM matches m
+      WHERE m.email_id = e.id AND m.is_folder
+      ORDER BY m.rank LIMIT 1),
     CASE WHEN e.sender_pubkey = e.recipient_pubkey THEN 'sent' ELSE 'inbox' END
   ) AS folder,
   EXISTS(SELECT 1 FROM labels l WHERE l.email_id = e.id

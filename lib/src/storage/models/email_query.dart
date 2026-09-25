@@ -1,13 +1,20 @@
 /// Lightweight query abstraction for the email repository.
 ///
-/// Covers the 80 % use-case: folder + read/starred state + attachments +
-/// sender + free-text search, with pagination.
+/// Covers the 80 % use-case: folder or tag + read/starred state +
+/// attachments + sender + free-text search, with pagination.
 ///
 /// Every query is scoped to a single account via [recipientPubkey], which
 /// prevents emails from one logged-in account leaking into another.
 class EmailQuery {
   final String recipientPubkey;
+
+  /// A reserved folder (`inbox`, `sent`, `archive`, `trash`, `spam`) or the
+  /// id of a user folder.
   final String? folder;
+
+  /// The id of a user tag: the emails it holds by label or by match, outside
+  /// trash and spam.
+  final String? tag;
   final bool? isRead;
   final bool? isStarred;
   final bool? hasAttachments;
@@ -23,6 +30,7 @@ class EmailQuery {
   const EmailQuery({
     required this.recipientPubkey,
     this.folder,
+    this.tag,
     this.isRead,
     this.isStarred,
     this.hasAttachments,
@@ -46,6 +54,7 @@ class EmailQuery {
     this.limit,
     this.offset,
   }) : folder = 'inbox',
+       tag = null,
        sort = EmailSort.dateDesc;
 
   /// Preset for sent items.
@@ -60,6 +69,7 @@ class EmailQuery {
     this.limit,
     this.offset,
   }) : folder = 'sent',
+       tag = null,
        sort = EmailSort.dateDesc;
 
   /// Preset for trash.
@@ -74,6 +84,7 @@ class EmailQuery {
     this.limit,
     this.offset,
   }) : folder = 'trash',
+       tag = null,
        sort = EmailSort.dateDesc;
 
   /// Preset for archive.
@@ -88,11 +99,13 @@ class EmailQuery {
     this.limit,
     this.offset,
   }) : folder = 'archive',
+       tag = null,
        sort = EmailSort.dateDesc;
 
   EmailQuery copyWith({
     String? recipientPubkey,
     String? folder,
+    String? tag,
     bool? isRead,
     bool? isStarred,
     bool? hasAttachments,
@@ -106,6 +119,7 @@ class EmailQuery {
     return EmailQuery(
       recipientPubkey: recipientPubkey ?? this.recipientPubkey,
       folder: folder ?? this.folder,
+      tag: tag ?? this.tag,
       isRead: isRead ?? this.isRead,
       isStarred: isStarred ?? this.isStarred,
       hasAttachments: hasAttachments ?? this.hasAttachments,

@@ -5,14 +5,15 @@ import '../models/email_summary.dart';
 import '../models/paginated_result.dart';
 import 'database.dart';
 import 'mail_address_codec.dart';
+import 'match_repository.dart';
 import 'models/email_query.dart';
 import 'models/email_record.dart';
 
 /// Repository for stored emails.
 ///
 /// Reads go through the `email_states` view, which derives the folder, read
-/// and starred state from the labels table, and through the FTS5 index for
-/// free-text search.
+/// and starred state from the labels and matches tables, and through the FTS5
+/// index for free-text search.
 ///
 /// Every read takes a [recipientPubkey] and filters on it: this is what
 /// keeps multi-account data isolated when several accounts share one
@@ -20,11 +21,12 @@ import 'models/email_record.dart';
 /// caller is invisible (and unreachable, even by id).
 class EmailRepository {
   final NostrMailDatabase _db;
+  final MatchRepository _matchIndex;
 
-  EmailRepository(this._db);
+  EmailRepository(this._db) : _matchIndex = MatchRepository(_db);
 
   /// Insert or replace the email and its attachment refs. The state fields
-  /// of [record] are not written: labels own them.
+  /// of [record] are not written: labels and matches own them.
   Future<void> save(EmailRecord record) => _db.transaction(() async {
     await _db.into(_db.emails).insertOnConflictUpdate(_toRow(record));
     await (_db.delete(
@@ -44,7 +46,24 @@ class EmailRepository {
           ),
       ]),
     );
+    await _matchIndex.index(
+      emailId: record.id,
+      recipientPubkey: record.recipientPubkey,
+      from: record.from,
+      subject: record.subject,
+      hasAttachment: record.attachmentRefs.isNotEmpty,
+    );
   });
+
+  /// The folder [id] is in, or null when [recipientPubkey] has no such email.
+  Future<String?> folderOf(String id, {required String recipientPubkey}) {
+    final v = _db.emailStates;
+    return (_db.selectOnly(v)
+          ..addColumns([v.folder])
+          ..where(v.id.equals(id) & v.recipientPubkey.equals(recipientPubkey)))
+        .map((row) => row.read(v.folder)!)
+        .getSingleOrNull();
+  }
 
   /// Returns the email iff it belongs to [recipientPubkey].
   Future<EmailRecord?> getById(
@@ -77,6 +96,25 @@ class EmailRepository {
           v.fromAddress.lower().equalsExp(
             Variable<String>(q.fromAddress!).lower(),
           );
+    }
+    if (q.tag != null) {
+      final labelled = existsQuery(
+        _db.select(_db.labels)..where(
+          (l) =>
+              l.emailId.equalsExp(v.id) &
+              l.recipientPubkey.equals(q.recipientPubkey) &
+              l.label.equals('tag:${q.tag}'),
+        ),
+      );
+      final matched = existsQuery(
+        _db.select(_db.matches)..where(
+          (m) =>
+              m.emailId.equalsExp(v.id) &
+              m.entryId.equals(q.tag!) &
+              m.isFolder.not(),
+        ),
+      );
+      expr = expr & (labelled | matched) & v.folder.isNotIn(['trash', 'spam']);
     }
     if (q.hasAttachments != null) {
       final hasAttachments = existsQuery(
@@ -147,6 +185,35 @@ class EmailRepository {
   /// Dart.
   Future<PaginatedResult<EmailSummary>> querySummaries(EmailQuery q) async {
     final total = await count(q);
+    final items = await _summaries(
+      (v) => _matches(v, q),
+      recipientPubkey: q.recipientPubkey,
+      sort: q.sort,
+      limit: q.limit,
+      offset: q.offset,
+    );
+    return PaginatedResult(items: items, total: total, offset: q.offset ?? 0);
+  }
+
+  /// The summary of [id], or null when [recipientPubkey] has no such email.
+  Future<EmailSummary?> getSummary(
+    String id, {
+    required String recipientPubkey,
+  }) async {
+    final items = await _summaries(
+      (v) => v.id.equals(id) & v.recipientPubkey.equals(recipientPubkey),
+      recipientPubkey: recipientPubkey,
+    );
+    return items.singleOrNull;
+  }
+
+  Future<List<EmailSummary>> _summaries(
+    Expression<bool> Function(EmailStates v) where, {
+    required String recipientPubkey,
+    EmailSort sort = EmailSort.dateDesc,
+    int? limit,
+    int? offset,
+  }) async {
     final v = _db.emailStates;
     final statement = _db.selectOnly(v)
       ..addColumns([
@@ -166,31 +233,30 @@ class EmailRepository {
         v.isBridged,
         v.preview,
       ])
-      ..where(_matches(v, q))
+      ..where(where(v))
       ..orderBy([
         OrderingTerm(
           expression: v.date,
-          mode: q.sort == EmailSort.dateDesc
+          mode: sort == EmailSort.dateDesc
               ? OrderingMode.desc
               : OrderingMode.asc,
         ),
       ]);
-    if (q.limit != null || q.offset != null) {
-      statement.limit(q.limit ?? -1, offset: q.offset);
+    if (limit != null || offset != null) {
+      statement.limit(limit ?? -1, offset: offset);
     }
 
     final rows = await statement.get();
-    if (rows.isEmpty) {
-      return PaginatedResult(items: [], total: total, offset: q.offset ?? 0);
-    }
+    if (rows.isEmpty) return [];
 
     final ids = [for (final row in rows) row.read(v.id)!];
-    final (refs, customLabels) = await (
+    final (refs, customLabels, tags) = await (
       _attachmentRefs(ids),
-      _customLabels(ids, recipientPubkey: q.recipientPubkey),
+      _customLabels(ids, recipientPubkey: recipientPubkey),
+      _tags(ids, recipientPubkey: recipientPubkey),
     ).wait;
 
-    final items = [
+    return [
       for (final row in rows)
         EmailSummary(
           id: row.read(v.id)!,
@@ -210,9 +276,9 @@ class EmailRepository {
           isBridged: row.read(v.isBridged)!,
           attachmentRefs: refs[row.read(v.id)!] ?? const [],
           labels: customLabels[row.read(v.id)!] ?? const [],
+          tags: tags[row.read(v.id)!] ?? const [],
         ),
     ];
-    return PaginatedResult(items: items, total: total, offset: q.offset ?? 0);
   }
 
   /// Get emails by a list of IDs, sorted by date descending.
@@ -284,7 +350,7 @@ class EmailRepository {
     await statement.go();
   }
 
-  /// Attach the refs and custom labels of [rows], in one query each.
+  /// Attach the refs, custom labels and tags of [rows], in one query each.
   Future<List<EmailRecord>> _load(
     List<EmailState> rows, {
     required String recipientPubkey,
@@ -292,9 +358,10 @@ class EmailRepository {
     if (rows.isEmpty) return [];
     final ids = rows.map((r) => r.id).toList();
 
-    final (refs, customLabels) = await (
+    final (refs, customLabels, tags) = await (
       _attachmentRefs(ids),
       _customLabels(ids, recipientPubkey: recipientPubkey),
+      _tags(ids, recipientPubkey: recipientPubkey),
     ).wait;
 
     return [
@@ -324,6 +391,7 @@ class EmailRepository {
           isRead: row.isRead,
           isStarred: row.isStarred,
           labels: customLabels[row.id] ?? const [],
+          tags: tags[row.id] ?? const [],
         ),
     ];
   }
@@ -372,6 +440,34 @@ class EmailRepository {
       byEmail.putIfAbsent(row.emailId, () => {}).add(row.label);
     }
     return byEmail.map((id, labels) => MapEntry(id, labels.toList()));
+  }
+
+  /// Ids of the user tags holding [ids], by label or by match, keyed by
+  /// email id.
+  Future<Map<String, List<String>>> _tags(
+    List<String> ids, {
+    required String recipientPubkey,
+  }) async {
+    final (labelled, matched) = await (
+      (_db.select(_db.labels)..where(
+            (l) =>
+                l.emailId.isIn(ids) &
+                l.recipientPubkey.equals(recipientPubkey) &
+                l.label.like('tag:%'),
+          ))
+          .get(),
+      (_db.select(
+        _db.matches,
+      )..where((m) => m.emailId.isIn(ids) & m.isFolder.not())).get(),
+    ).wait;
+    final byEmail = <String, Set<String>>{};
+    for (final row in labelled) {
+      byEmail.putIfAbsent(row.emailId, () => {}).add(row.label.substring(4));
+    }
+    for (final row in matched) {
+      byEmail.putIfAbsent(row.emailId, () => {}).add(row.entryId);
+    }
+    return byEmail.map((id, tags) => MapEntry(id, tags.toList()));
   }
 
   static bool _isStateLabel(String label) =>

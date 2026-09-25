@@ -1,33 +1,71 @@
-## 3.2.4
+## 4.0.0
 
-- **Breaking**: labels travel in gift wraps, as
+User folders and tags, labels hidden from relays, and a Bcc leak closed on
+large emails.
+
+### Upgrading
+
+- Move to `ndk: ^0.10.0-dev.7`.
+- Update every app sharing an account at once: devices on 3.x no longer see
+  the labels and deletions this version publishes.
+- Nothing to migrate locally. The schema moves to 5 and is rebuilt from the
+  NDK cache on first launch, keeping the decryptions already stored.
+
+### Breaking
+
+- **Labels are private.** They travel in gift wraps, as
   [Nostr Mail Labels](https://github.com/nogringo/protocols/blob/main/nostr-mail-labels.md)
-  defines. A label is signed, wrapped without a seal to the account itself
-  and published to its DM relays, so relays no longer see what is labelled
-  nor when. Removing a label deletes its wrap (`kind:5` with `k` 1059). A
-  client reading only `kind:1985` labels published in clear no longer sees
-  new ones. Those published by earlier versions are still read, and removed
-  by their own id.
-- **Fix**: a label applied on two devices before they synced is removed
-  whole. Removing it named only the event this device knew, and the other
-  one brought the label back.
-- **Fix**: deleting a gift-wrapped email no longer names its rumor id, which
-  no relay holds and which told its sender and other recipients the email was
-  deleted. The deletion names the wraps only, and other devices resolve them
-  to the email. Deletions from earlier versions are still applied.
-- **Fix**: public emails follow NIP-65. They go to the sender's write relays
-  and to the read relays of each `to`/`cc` recipient, and are received on the
-  account's read relays. They used to reach a recipient only when both
+  defines, so relays no longer see what is labelled nor when. A label is
+  signed and wrapped without a seal to the account itself, on its DM relays.
+  Removing one deletes its wrap (`kind:5` with `k` 1059). A client reading
+  only `kind:1985` in clear no longer sees new labels. Those published by
+  earlier versions are still read, and removed by their own id.
+- **Deleting an email no longer tells its sender.** The deletion names the
+  gift wraps, not the rumor id, which no relay holds and which the sender
+  and the other recipients could match. Devices on 3.x do not apply these
+  deletions. Deletions from earlier versions are still applied.
+- **Dependencies.** Require `ndk: ^0.10.0-dev.7` and
+  `blossom_upload_queue_shim_for_ndk: ^0.8.0`, since 0.7.x does not compile
+  against ndk dev.7.
+
+### Added
+
+- **User folders and tags**, as
+  [Nostr Mail Labels](https://github.com/nogringo/protocols/blob/main/nostr-mail-labels.md)
+  and [Nostr Mail Settings](https://github.com/nogringo/protocols/blob/main/nostr-mail-settings.md)
+  define them. `createFolder`, `updateFolder`, `deleteFolder` and the same
+  for tags store them in the private settings, which gain `folders` and
+  `tags` (`MailEntry`). `moveToFolder(id, folder)`, `addTag` and `removeTag`
+  label an email `folder:<id>` / `tag:<id>`. Deleting a folder or a tag
+  leaves the labels on the emails.
+- **Automatic sorting.** A folder or tag with a `match` condition
+  (`MailMatch`: sender, subject, attachment) holds the emails it matches,
+  without any label event. An email with no folder label lands in the first
+  matching folder, by position.
+- **Listing by tag.** `getSummaries`, `getUnreadCount` and `watchUnreadCount`
+  take a `tag`, whose listing leaves out trash and spam, and `folder` takes a
+  user folder id. `EmailSummary` and `EmailRecord` carry their `tags`.
+- **Restore to the right folder.** `moveToTrash` and `moveToArchive` record
+  the user folder the email leaves (`prev-folder`), and `restoreFromTrash` /
+  `restoreFromArchive` move it back there.
+- `getFailedCount()` and `getFailedGiftWraps()` also count label wraps, which
+  cannot be told from an email before they are decrypted.
+
+### Fixed
+
+- **Bcc leak on large emails.** An email over 32 KB put its `Bcc:` header in
+  the Blossom blob every recipient could open. Recipients now get a blob
+  without it, and only the sender's copy keeps it. A public email's self copy
+  also goes through Blossom instead of carrying the whole MIME inline.
+- **Public emails reach their recipients.** They follow NIP-65: sent to the
+  sender's write relays and to the read relays of each `to`/`cc` recipient,
+  received on the account's read relays. They used to arrive only when both
   accounts' write relays overlapped.
-- **Fix**: an email over 32 KB no longer reveals its Bcc recipients. Its
-  Blossom blob held the MIME with the `Bcc:` header, and every recipient had
-  the key. Recipients now get a blob without it, and only the sender's copy
-  keeps it. A public email's self copy also goes through Blossom instead of
-  carrying the whole MIME inline.
-- `getFailedCount()` and `getFailedGiftWraps()` also count the wraps of
-  labels, which cannot be told from an email before they are decrypted.
-- The schema version moves to 4: the projection is rebuilt from the NDK cache
-  on upgrade, and the decryptions already stored are kept.
+- **A removed label stays removed.** A label applied on two devices before
+  they synced came back, since removing it named only the event this device
+  knew.
+- **Settings written by a newer client survive.** Writing the private
+  settings kept only the fields this version knows and dropped the others.
 
 ## 3.2.3
 

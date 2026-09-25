@@ -34,6 +34,9 @@ const genericRepostKind = 16;
 /// Label namespace for mail-related labels
 const labelNamespace = 'mail';
 
+/// Folders every mailbox has. Never issued as the id of a user folder or tag.
+const reservedFolders = {'inbox', 'sent', 'archive', 'trash', 'spam'};
+
 /// Maximum size for inline MIME content (32KB).
 /// NIP-44 (used in Gift Wraps) has a strict 65,535-byte plaintext limit.
 /// Because NIP-59 uses double wrapping (Rumor → Seal → Gift Wrap),

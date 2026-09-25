@@ -11,8 +11,9 @@ import '../../utils/body_preview.dart';
 /// envelope whose attachment parts have empty bodies, so list queries never
 /// pull megabytes off disk.
 ///
-/// [folder], [isRead], [isStarred] and [labels] are derived from the labels
-/// table: filled when a record is read, ignored when one is saved.
+/// [folder], [isRead], [isStarred], [labels] and [tags] are derived from the
+/// labels and matches tables: filled when a record is read, ignored when one
+/// is saved.
 class EmailRecord {
   final String id;
   final String senderPubkey;
@@ -64,9 +65,9 @@ class EmailRecord {
   /// One-line snippet for a listing, see [bodyPreview].
   final String preview;
 
-  // ── Derived from the labels table ───────────────────────────────────────
+  // ── Derived from the labels and matches tables ──────────────────────────
 
-  /// Current folder. Mutually exclusive: inbox, sent, trash, archive, spam.
+  /// Current folder: inbox, sent, trash, archive, spam, or a user folder id.
   final String folder;
 
   final bool isRead;
@@ -74,6 +75,9 @@ class EmailRecord {
 
   /// Non-folder labels (custom tags).
   final List<String> labels;
+
+  /// Ids of the user tags holding this email, by label or by match.
+  final List<String> tags;
 
   final bool isBridged;
 
@@ -99,6 +103,7 @@ class EmailRecord {
     this.isRead = false,
     this.isStarred = false,
     this.labels = const [],
+    this.tags = const [],
     this.blossomHash,
     this.decryptionKey,
     this.decryptionNonce,

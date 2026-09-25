@@ -4,6 +4,7 @@ import 'package:ndk/ndk.dart' hide RelaySet;
 import '../constants.dart';
 import '../exceptions.dart';
 import '../models/mail_event.dart';
+import '../storage/email_repository.dart';
 import '../storage/gift_wrap_repository.dart';
 import '../storage/label_repository.dart';
 import '../storage/tombstone_repository.dart';
@@ -18,6 +19,7 @@ import 'relay_resolver.dart';
 class LabelManager {
   final Ndk _ndk;
   final LabelRepository _labels;
+  final EmailRepository _emails;
   final GiftWrapRepository _giftWraps;
   final TombstoneRepository _tombstones;
   final RelayResolver _relays;
@@ -27,6 +29,7 @@ class LabelManager {
   LabelManager(
     this._ndk,
     this._labels,
+    this._emails,
     this._giftWraps,
     this._tombstones,
     this._relays,
@@ -42,8 +45,13 @@ class LabelManager {
     }
   }
 
-  /// Add a label to an email (local-first).
-  Future<void> addLabel(String emailId, String label) async {
+  /// Add a label to an email (local-first). [prevFolder] names the user
+  /// folder a `folder:trash` or `folder:archive` label moves the email out of.
+  Future<void> addLabel(
+    String emailId,
+    String label, {
+    String? prevFolder,
+  }) async {
     _assertPubkey();
     final pubkey = _pubkey!;
 
@@ -71,6 +79,7 @@ class LabelManager {
         ['L', labelNamespace],
         ['l', label, labelNamespace],
         ['e', emailId, '', 'labelled'],
+        if (prevFolder != null) ['prev-folder', prevFolder],
       ],
       content: '',
     );
@@ -96,6 +105,7 @@ class LabelManager {
       wrapId: wrap.id,
       timestamp: signed.createdAt,
       recipientPubkey: pubkey,
+      prevFolder: prevFolder,
     );
 
     // Notify listeners immediately
@@ -170,13 +180,52 @@ class LabelManager {
     return _labels.hasLabel(emailId, label, recipientPubkey: _pubkey!);
   }
 
-  Future<void> moveToTrash(String emailId) => addLabel(emailId, 'folder:trash');
-  Future<void> restoreFromTrash(String emailId) =>
-      removeLabel(emailId, 'folder:trash');
-  Future<void> moveToArchive(String emailId) =>
-      addLabel(emailId, 'folder:archive');
+  /// Move an email to a reserved folder (`inbox`, `sent`, `archive`,
+  /// `trash`, `spam`) or to a user folder by id.
+  Future<void> moveToFolder(String emailId, String folder) => switch (folder) {
+    'trash' => moveToTrash(emailId),
+    'archive' => moveToArchive(emailId),
+    _ => addLabel(emailId, 'folder:$folder'),
+  };
+
+  Future<void> moveToTrash(String emailId) => _stash(emailId, 'trash');
+  Future<void> restoreFromTrash(String emailId) => _restore(emailId, 'trash');
+  Future<void> moveToArchive(String emailId) => _stash(emailId, 'archive');
   Future<void> restoreFromArchive(String emailId) =>
-      removeLabel(emailId, 'folder:archive');
+      _restore(emailId, 'archive');
+
+  Future<void> _stash(String emailId, String folder) async {
+    _assertPubkey();
+    final current = await _emails.folderOf(emailId, recipientPubkey: _pubkey!);
+    await addLabel(
+      emailId,
+      'folder:$folder',
+      prevFolder: current == null || reservedFolders.contains(current)
+          ? null
+          : current,
+    );
+  }
+
+  /// Back to the user folder the email left, when its label names one, else
+  /// to wherever it falls without a folder label.
+  Future<void> _restore(String emailId, String folder) async {
+    _assertPubkey();
+    final events = await _labels.getLabelEvents(
+      emailId,
+      'folder:$folder',
+      recipientPubkey: _pubkey!,
+    );
+    final named = events.where((e) => e.prevFolder != null).toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    if (named.isEmpty) return removeLabel(emailId, 'folder:$folder');
+    await addLabel(emailId, 'folder:${named.first.prevFolder}');
+  }
+
+  /// A tag held by its match condition stays: only the label is removed.
+  Future<void> addTag(String emailId, String tagId) =>
+      addLabel(emailId, 'tag:$tagId');
+  Future<void> removeTag(String emailId, String tagId) =>
+      removeLabel(emailId, 'tag:$tagId');
   Future<void> markAsRead(String emailId) => addLabel(emailId, 'state:read');
   Future<void> markAsUnread(String emailId) =>
       removeLabel(emailId, 'state:read');

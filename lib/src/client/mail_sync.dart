@@ -638,6 +638,7 @@ class MailSync {
     );
     if (emailTag.isEmpty) return false;
     final emailId = emailTag[1];
+    final prevFolder = event.getFirstTag('prev-folder');
 
     if (await _labels.hasLabelEvent(event.id, recipientPubkey: pubkey)) {
       return true;
@@ -655,6 +656,7 @@ class MailSync {
       wrapId: wrapId,
       timestamp: event.createdAt,
       recipientPubkey: pubkey,
+      prevFolder: prevFolder,
     );
 
     if (alreadyApplied) return true;

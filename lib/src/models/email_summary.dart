@@ -38,7 +38,7 @@ class EmailSummary {
   /// MIME date, falling back to the Nostr event date.
   final DateTime date;
 
-  /// Mutually exclusive: inbox, sent, trash, archive, spam.
+  /// Inbox, sent, trash, archive, spam, or the id of a user folder.
   final String folder;
 
   final bool isRead;
@@ -46,6 +46,9 @@ class EmailSummary {
 
   /// Non-folder labels (custom tags).
   final List<String> labels;
+
+  /// Ids of the user tags holding this email, by label or by match.
+  final List<String> tags;
 
   /// One ref per attachment, in original MIME tree order. Metadata only
   /// (filename, content type, size, sha256), so a row stays cheap even for a
@@ -74,6 +77,7 @@ class EmailSummary {
     this.bcc = const [],
     this.attachmentRefs = const [],
     this.labels = const [],
+    this.tags = const [],
   });
 
   bool get hasAttachments => attachmentRefs.isNotEmpty;

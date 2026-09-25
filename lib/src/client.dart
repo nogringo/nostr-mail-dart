@@ -28,6 +28,7 @@ import 'models/attachment_ref.dart';
 import 'models/email.dart';
 import 'models/email_summary.dart';
 import 'models/gift_wrap_state.dart';
+import 'models/mail_entry.dart';
 import 'models/mail_event.dart';
 import 'models/ndk_data_response.dart';
 import 'models/paginated_result.dart';
@@ -283,6 +284,7 @@ class NostrMailClient {
       labels: LabelManager(
         ndk,
         labelRepo,
+        emailRepo,
         giftWrapRepo,
         tombstoneRepo,
         relayResolver,
@@ -353,8 +355,10 @@ class NostrMailClient {
   /// [Email.mime] is read, its parsed part tree: fine for one open email,
   /// far too much for a screenful of rows.
   ///
-  /// [folder] is `'inbox'`, `'sent'`, `'trash'`, `'archive'`, `'spam'`, or
-  /// null to span every folder. Pass [limit] and [offset] to page: without
+  /// [folder] is `'inbox'`, `'sent'`, `'trash'`, `'archive'`, `'spam'`, the
+  /// id of a user folder, or null to span every folder. [tag] is the id of a
+  /// user tag, whose listing leaves out trash and spam. Pass [limit] and
+  /// [offset] to page: without
   /// [limit] the whole mailbox is returned. [search] matches the same indexed
   /// text as [search].
   ///
@@ -368,6 +372,7 @@ class NostrMailClient {
   /// when the user opens a row.
   Future<PaginatedResult<EmailSummary>> getSummaries({
     String? folder,
+    String? tag,
     bool? isRead,
     bool? isStarred,
     bool? hasAttachments,
@@ -381,6 +386,7 @@ class NostrMailClient {
       EmailQuery(
         recipientPubkey: _requirePubkey(),
         folder: folder,
+        tag: tag,
         isRead: isRead,
         isStarred: isStarred,
         hasAttachments: hasAttachments,
@@ -392,6 +398,10 @@ class NostrMailClient {
       ),
     );
   }
+
+  /// The row of one email, with the folder and tags [getEmail] leaves out.
+  Future<EmailSummary?> getSummary(String id) =>
+      _emailRepo.getSummary(id, recipientPubkey: _requirePubkey());
 
   Future<Email?> getEmail(String id) async {
     final record = await _emailRepo.getById(
@@ -602,13 +612,14 @@ class NostrMailClient {
   // ── Counts ──────────────────────────────────────────────────────────────
 
   /// Number of unread emails, optionally scoped to a [folder]
-  /// (`'inbox'`, `'archive'`, `'sent'`, `'trash'`, ...).
-  /// Pass `null` to count across all folders.
-  Future<int> getUnreadCount({String? folder}) {
+  /// (`'inbox'`, `'archive'`, `'sent'`, `'trash'`, a user folder id...) or a
+  /// user [tag]. Pass `null` to count across all folders.
+  Future<int> getUnreadCount({String? folder, String? tag}) {
     return _emailRepo.count(
       EmailQuery(
         recipientPubkey: _requirePubkey(),
         folder: folder,
+        tag: tag,
         isRead: false,
       ),
     );
@@ -620,7 +631,7 @@ class NostrMailClient {
   /// may have changed (new email received, mark as read/unread, folder
   /// change, deletion). Ideal for driving a folder badge with
   /// `StreamBuilder`.
-  Stream<int> watchUnreadCount({String? folder}) {
+  Stream<int> watchUnreadCount({String? folder, String? tag}) {
     return Rx.defer(() {
       return Rx.merge<Object?>([
             Stream.value(null),
@@ -634,7 +645,9 @@ class NostrMailClient {
                 )
                 .debounceTime(const Duration(milliseconds: 50)),
           ])
-          .switchMap((_) => Stream.fromFuture(getUnreadCount(folder: folder)))
+          .switchMap(
+            (_) => Stream.fromFuture(getUnreadCount(folder: folder, tag: tag)),
+          )
           .distinct();
     }, reusable: true);
   }
@@ -942,6 +955,12 @@ class NostrMailClient {
   Future<bool> hasLabel(String emailId, String label) =>
       _labels.hasLabel(emailId, label);
 
+  /// Move an email to `'inbox'`, `'sent'`, `'archive'`, `'trash'`, `'spam'`
+  /// or a user folder id. Folder labels are exclusive: the previous one goes.
+  Future<void> moveToFolder(String emailId, String folder) =>
+      _labels.moveToFolder(emailId, folder);
+
+  /// When the email leaves a user folder, restoring it goes back there.
   Future<void> moveToTrash(String emailId) => _labels.moveToTrash(emailId);
   Future<void> restoreFromTrash(String emailId) =>
       _labels.restoreFromTrash(emailId);
@@ -952,6 +971,14 @@ class NostrMailClient {
   Future<void> markAsUnread(String emailId) => _labels.markAsUnread(emailId);
   Future<void> star(String emailId) => _labels.star(emailId);
   Future<void> unstar(String emailId) => _labels.unstar(emailId);
+
+  Future<void> addTag(String emailId, String tagId) =>
+      _labels.addTag(emailId, tagId);
+
+  /// Removes the label only: a tag whose match condition holds the email
+  /// keeps it.
+  Future<void> removeTag(String emailId, String tagId) =>
+      _labels.removeTag(emailId, tagId);
 
   Future<bool> isTrashed(String emailId) => _labels.isTrashed(emailId);
   Future<bool> isArchived(String emailId) => _labels.isArchived(emailId);
@@ -1181,19 +1208,91 @@ class NostrMailClient {
     String? signature,
     List<String>? bridges,
     List<MailAddress>? identities,
+    List<MailEntry>? folders,
+    List<MailEntry>? tags,
     bool clearSignature = false,
     bool clearBridges = false,
     bool clearIdentities = false,
+    bool clearFolders = false,
+    bool clearTags = false,
     String? pubkey,
   }) => _settings.updatePrivateSettings(
     signature: signature,
     bridges: bridges,
     identities: identities,
+    folders: folders,
+    tags: tags,
     clearSignature: clearSignature,
     clearBridges: clearBridges,
     clearIdentities: clearIdentities,
+    clearFolders: clearFolders,
+    clearTags: clearTags,
     pubkey: pubkey,
   );
+
+  // ── User folders and tags ───────────────────────────────────────────────
+  //
+  // Stored in the private settings of the logged account. Read them from
+  // [PrivateSettings.folders] and [PrivateSettings.tags].
+
+  /// Throws [NostrMailException] when [name] is empty after trimming, longer
+  /// than 64 characters, or already taken case-insensitively.
+  Future<MailEntry> createFolder(
+    String name, {
+    String? color,
+    MailMatch? match,
+  }) => _settings.createFolder(name, color: color, match: match);
+
+  Future<MailEntry> updateFolder(
+    String id, {
+    String? name,
+    String? color,
+    int? position,
+    MailMatch? match,
+    bool clearColor = false,
+    bool clearPosition = false,
+    bool clearMatch = false,
+  }) => _settings.updateFolder(
+    id,
+    name: name,
+    color: color,
+    position: position,
+    match: match,
+    clearColor: clearColor,
+    clearPosition: clearPosition,
+    clearMatch: clearMatch,
+  );
+
+  /// Removes the folder from the settings only: emails moved into it keep
+  /// their label, and list under its id.
+  Future<void> deleteFolder(String id) => _settings.deleteFolder(id);
+
+  Future<MailEntry> createTag(String name, {String? color, MailMatch? match}) =>
+      _settings.createTag(name, color: color, match: match);
+
+  Future<MailEntry> updateTag(
+    String id, {
+    String? name,
+    String? color,
+    int? position,
+    MailMatch? match,
+    bool clearColor = false,
+    bool clearPosition = false,
+    bool clearMatch = false,
+  }) => _settings.updateTag(
+    id,
+    name: name,
+    color: color,
+    position: position,
+    match: match,
+    clearColor: clearColor,
+    clearPosition: clearPosition,
+    clearMatch: clearMatch,
+  );
+
+  /// Removes the tag from the settings only: emails tagged with it keep
+  /// their label, and list under its id.
+  Future<void> deleteTag(String id) => _settings.deleteTag(id);
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
 

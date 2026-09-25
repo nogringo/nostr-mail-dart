@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart' hide RelaySet;
@@ -6,6 +8,7 @@ import 'package:rxdart/rxdart.dart';
 
 import '../constants.dart';
 import '../exceptions.dart';
+import '../models/mail_entry.dart';
 import '../models/ndk_data_response.dart';
 import '../models/private_settings.dart';
 import '../storage/settings_repository.dart';
@@ -226,12 +229,7 @@ class SettingsManager {
     final signed = await account.signer.sign(event);
 
     await _repo.save(pubkey: pubkey, json: settings.toJson());
-    _cache[pubkey] = PrivateSettings(
-      sourceEvent: signed,
-      signature: settings.signature,
-      bridges: settings.bridges,
-      identities: settings.identities,
-    );
+    _cache[pubkey] = settings.withSource(signed);
 
     await _broadcastQueue.broadcast(
       signed,
@@ -245,9 +243,13 @@ class SettingsManager {
     String? signature,
     List<String>? bridges,
     List<MailAddress>? identities,
+    List<MailEntry>? folders,
+    List<MailEntry>? tags,
     bool clearSignature = false,
     bool clearBridges = false,
     bool clearIdentities = false,
+    bool clearFolders = false,
+    bool clearTags = false,
     String? pubkey,
   }) async {
     final current =
@@ -257,11 +259,182 @@ class SettingsManager {
       signature: signature,
       bridges: bridges,
       identities: identities,
+      folders: folders,
+      tags: tags,
       clearSignature: clearSignature,
       clearBridges: clearBridges,
       clearIdentities: clearIdentities,
+      clearFolders: clearFolders,
+      clearTags: clearTags,
     );
     await setPrivateSettings(updated, pubkey: pubkey);
+  }
+
+  // ── User folders and tags ───────────────────────────────────────────────
+
+  Future<MailEntry> createFolder(
+    String name, {
+    String? color,
+    MailMatch? match,
+  }) => _create(folders: true, name: name, color: color, match: match);
+
+  Future<MailEntry> createTag(String name, {String? color, MailMatch? match}) =>
+      _create(folders: false, name: name, color: color, match: match);
+
+  Future<MailEntry> updateFolder(
+    String id, {
+    String? name,
+    String? color,
+    int? position,
+    MailMatch? match,
+    bool clearColor = false,
+    bool clearPosition = false,
+    bool clearMatch = false,
+  }) => _update(
+    folders: true,
+    id: id,
+    edit: (entry) => entry.copyWith(
+      name: name,
+      color: color,
+      position: position,
+      match: match,
+      clearColor: clearColor,
+      clearPosition: clearPosition,
+      clearMatch: clearMatch,
+    ),
+  );
+
+  Future<MailEntry> updateTag(
+    String id, {
+    String? name,
+    String? color,
+    int? position,
+    MailMatch? match,
+    bool clearColor = false,
+    bool clearPosition = false,
+    bool clearMatch = false,
+  }) => _update(
+    folders: false,
+    id: id,
+    edit: (entry) => entry.copyWith(
+      name: name,
+      color: color,
+      position: position,
+      match: match,
+      clearColor: clearColor,
+      clearPosition: clearPosition,
+      clearMatch: clearMatch,
+    ),
+  );
+
+  /// Emails labelled with the folder keep the label, under its id.
+  Future<void> deleteFolder(String id) => _delete(folders: true, id: id);
+
+  /// Emails labelled with the tag keep the label, under its id.
+  Future<void> deleteTag(String id) => _delete(folders: false, id: id);
+
+  static final _random = Random.secure();
+  static final _colorPattern = RegExp(r'^#[0-9a-fA-F]{6}$');
+
+  Future<MailEntry> _create({
+    required bool folders,
+    required String name,
+    String? color,
+    MailMatch? match,
+  }) async {
+    final current = await _current();
+    final entries = _entriesOf(current, folders: folders);
+    final taken = {
+      for (final e in [...?current.folders, ...?current.tags]) e.id,
+    };
+    String id;
+    do {
+      id = [
+        for (var i = 0; i < 8; i++)
+          _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+      ].join();
+    } while (taken.contains(id));
+
+    final positions = entries.map((e) => e.position).nonNulls;
+    final entry = _validated(
+      MailEntry(
+        id: id,
+        name: name,
+        color: color,
+        position: positions.isEmpty ? 0 : positions.reduce(max) + 1,
+        match: match,
+      ),
+      entries,
+    );
+    await _save(current, folders: folders, entries: [...entries, entry]);
+    return entry;
+  }
+
+  Future<MailEntry> _update({
+    required bool folders,
+    required String id,
+    required MailEntry Function(MailEntry) edit,
+  }) async {
+    final current = await _current();
+    final entries = _entriesOf(current, folders: folders);
+    final index = entries.indexWhere((e) => e.id == id);
+    if (index < 0) throw NostrMailException('No such folder or tag: $id');
+    final entry = _validated(edit(entries[index]), entries);
+    await _save(
+      current,
+      folders: folders,
+      entries: [...entries]..[index] = entry,
+    );
+    return entry;
+  }
+
+  Future<void> _delete({required bool folders, required String id}) async {
+    final current = await _current();
+    final entries = _entriesOf(current, folders: folders);
+    if (!entries.any((e) => e.id == id)) return;
+    await _save(
+      current,
+      folders: folders,
+      entries: entries.where((e) => e.id != id).toList(),
+    );
+  }
+
+  Future<PrivateSettings> _current() async =>
+      await getLocalPrivateSettings() ?? const PrivateSettings();
+
+  static List<MailEntry> _entriesOf(
+    PrivateSettings settings, {
+    required bool folders,
+  }) => (folders ? settings.folders : settings.tags) ?? const [];
+
+  Future<void> _save(
+    PrivateSettings current, {
+    required bool folders,
+    required List<MailEntry> entries,
+  }) => setPrivateSettings(
+    folders
+        ? current.copyWith(folders: entries)
+        : current.copyWith(tags: entries),
+  );
+
+  /// [entry] with its name trimmed, once checked against the other [entries]
+  /// of its array.
+  static MailEntry _validated(MailEntry entry, List<MailEntry> entries) {
+    final name = entry.name.trim();
+    if (name.isEmpty || name.length > 64) {
+      throw NostrMailException('A name takes 1 to 64 characters');
+    }
+    final lower = name.toLowerCase();
+    if (entries.any(
+      (e) => e.id != entry.id && e.name.trim().toLowerCase() == lower,
+    )) {
+      throw NostrMailException('"$name" already exists');
+    }
+    final color = entry.color;
+    if (color != null && !_colorPattern.hasMatch(color)) {
+      throw NostrMailException('A color is #RRGGBB, got "$color"');
+    }
+    return entry.copyWith(name: name);
   }
 
   void clearCache({String? pubkey}) {

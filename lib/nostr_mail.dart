@@ -14,6 +14,7 @@ export 'src/models/paginated_result.dart' show PaginatedResult;
 export 'src/models/encrypted_blob.dart';
 export 'src/models/gift_wrap_state.dart'
     show FailedGiftWrap, GiftWrapFailure, GiftWrapProgress, GiftWrapStage;
+export 'src/models/mail_entry.dart';
 export 'src/models/mail_event.dart';
 export 'src/models/ndk_data_response.dart';
 export 'src/models/private_settings.dart' show PrivateSettings;

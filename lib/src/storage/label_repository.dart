@@ -23,6 +23,7 @@ class LabelRepository {
     String? wrapId,
     required int timestamp,
     required String recipientPubkey,
+    String? prevFolder,
   }) async {
     await _db
         .into(_db.labels)
@@ -34,6 +35,7 @@ class LabelRepository {
             wrapId: wrapId,
             timestamp: timestamp,
             recipientPubkey: recipientPubkey,
+            prevFolder: prevFolder,
           ),
         );
   }

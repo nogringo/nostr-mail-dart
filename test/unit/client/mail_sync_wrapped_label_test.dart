@@ -82,6 +82,7 @@ void main() {
       KeyPair? signer,
       String? author,
       int createdAt = 1000,
+      List<List<String>> extraTags = const [],
     }) async {
       final event = Nip01Event(
         pubKey: author ?? alice,
@@ -91,6 +92,7 @@ void main() {
           ['L', labelNamespace],
           ['l', label, labelNamespace],
           ['e', emailId, '', 'labelled'],
+          ...extraTags,
         ],
         content: '',
       );
@@ -133,6 +135,20 @@ void main() {
 
       await sync.onDeletion(deletionOf(wrap.id));
       expect(await isRead(), isFalse);
+    });
+
+    test('a trash label keeps the folder the email left', () async {
+      final wrap = await wrappedLabel(
+        'folder:trash',
+        extraTags: [
+          ['prev-folder', '9f2c1a7b4d3e5f60'],
+        ],
+      );
+
+      await sync.onGiftWrap(wrap);
+
+      final row = await labels.getLabelEvent(wrap.id, recipientPubkey: alice);
+      expect(row?.prevFolder, '9f2c1a7b4d3e5f60');
     });
 
     test('a wrap deleted before it lands is never applied', () async {
