@@ -819,43 +819,54 @@ class NostrMailClient {
       recipientPubkey: pubkey,
     );
 
-    // The wrap is the only thing a relay holds: the rumor id inside it was
-    // never published, so naming it alone asks for an event nobody has. NIP-59
-    // has the relay honor a deletion whose signer matches the wrap's p tag,
-    // which is us. The rumor id stays in the request all the same, as the id
-    // other devices match against their own rows.
-    final giftWrapIds = await _giftWrapRepo.getIdsByRumorIdsForRecipient(
+    // A rumor was never published, so the request names the wraps carrying
+    // it: NIP-59 has a relay honor a deletion signed by the wrap's p tag. The
+    // rumor id stays out, since the sender and every other recipient know it.
+    final wrapIdsByRumorId = await _giftWrapRepo.getIdsByRumorIdForRecipient(
       uniqueIds,
       recipientPubkey: pubkey,
     );
+    final giftWrapIds = wrapIdsByRumorId.values.expand((ids) => ids).toList();
+    // A public email that arrived in the clear is a signed event of its own.
+    final signedEmailIds = [
+      for (final email in emails)
+        if (email.isPublic && !wrapIdsByRumorId.containsKey(email.id)) email.id,
+    ];
 
     final deletionIds = [
-      ...uniqueIds,
+      ...signedEmailIds,
       ...labels.map((l) => l.deletionTarget),
       ...giftWrapIds,
     ];
     final targetKinds = {
-      ...emails.map((email) => email.isPublic ? emailKind : giftWrapKind),
+      if (signedEmailIds.isNotEmpty) emailKind,
+      if (giftWrapIds.isNotEmpty) giftWrapKind,
       ...labels.map((l) => l.deletionKind),
     };
-    final deletionEvent = Nip01Event(
-      pubKey: pubkey,
-      kind: deletionRequestKind,
-      tags: [
-        ...deletionIds.map((id) => ['e', id]),
-        ...targetKinds.map((kind) => ['k', kind.toString()]),
-      ],
-      content: '',
-    );
 
-    final signed = await _ndk.accounts.sign(deletionEvent);
+    final signed = deletionIds.isEmpty
+        ? null
+        : await _ndk.accounts.sign(
+            Nip01Event(
+              pubKey: pubkey,
+              kind: deletionRequestKind,
+              tags: [
+                ...deletionIds.map((id) => ['e', id]),
+                ...targetKinds.map((kind) => ['k', kind.toString()]),
+              ],
+              content: '',
+            ),
+          );
 
     // Local-first: remove from local storage immediately, then enqueue the
     // deletion request for durable broadcast. The queue persists the event
     // before any network attempt and retries until every targeted relay has
     // acked.
     await Future.wait([
-      _tombstoneRepo.addMany(deletionIds, recipientPubkey: pubkey),
+      _tombstoneRepo.addMany([
+        ...uniqueIds,
+        ...deletionIds,
+      ], recipientPubkey: pubkey),
       _emailRepo.deleteByIds(uniqueIds, recipientPubkey: pubkey),
       _labelRepo.deleteLabelsForEmails(uniqueIds, recipientPubkey: pubkey),
       _giftWrapRepo.removeByRumorIdsForRecipient(
@@ -868,6 +879,7 @@ class NostrMailClient {
       _bus.emit(EmailDeleted(emailId: id));
     }
 
+    if (signed == null) return;
     final targets = <RelaySet>[
       if (targetKinds.contains(giftWrapKind))
         _relayResolver.dmRelaySet([pubkey]),

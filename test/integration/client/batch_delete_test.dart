@@ -34,7 +34,7 @@ void main() {
       await relay.stopServer();
     });
 
-    EmailRecord makeRecord(String id) {
+    EmailRecord makeRecord(String id, {bool isPublic = false}) {
       return EmailRecord(
         id: id,
         senderPubkey: 'sender-pubkey',
@@ -42,7 +42,7 @@ void main() {
         lightMimeText:
             'From: from@test.com\r\nSubject: Test $id\r\n\r\nTest Body',
         attachmentRefs: const [],
-        isPublic: false,
+        isPublic: isPublic,
         createdAt: 1000,
         date: 1000,
         from: 'from@test.com',
@@ -105,15 +105,30 @@ void main() {
 
       expect(deletionEvents, hasLength(1));
       expect(deletionEvents.single.getTags('e').toSet(), {
-        'email-1',
-        'email-2',
         'label-1',
         'label-2',
       });
-      expect(deletionEvents.single.getTags('k').toSet(), {
-        giftWrapKind.toString(),
-        labelKind.toString(),
-      });
+      expect(deletionEvents.single.getTags('k'), [labelKind.toString()]);
+    });
+
+    test('names a public email by its own id', () async {
+      await emails.save(makeRecord('public-1', isPublic: true));
+
+      await user.client.delete(['public-1']);
+      await waitForBroadcasts(user.client.broadcastQueue);
+
+      final deletionEvents = await user.ndk.requests
+          .query(
+            filter: Filter(
+              kinds: [deletionRequestKind],
+              authors: [user.keyPair.publicKey],
+            ),
+            explicitRelays: [relay.url],
+          )
+          .future;
+
+      expect(deletionEvents.single.getTags('e'), ['public-1']);
+      expect(deletionEvents.single.getTags('k'), [emailKind.toString()]);
     });
 
     test('names the gift wrap carrying a label', () async {
@@ -140,17 +155,15 @@ void main() {
           )
           .future;
 
-      expect(deletionEvents.single.getTags('e').toSet(), {
-        'email-1',
-        'label-wrap-1',
-      });
+      expect(deletionEvents.single.getTags('e'), ['label-wrap-1']);
       expect(deletionEvents.single.getTags('k'), [giftWrapKind.toString()]);
     });
 
-    // A relay holds the wrap and has never seen the rumor inside it, so a
-    // request naming only the email id asks it to delete nothing at all.
-    // NIP-59 has it honor a deletion signed by the pubkey in the wrap's p tag.
-    test('names the gift wrap carrying the email', () async {
+    // A relay holds the wrap and has never seen the rumor inside it, while the
+    // sender and the other recipients know the rumor id: naming it would tell
+    // them the email was deleted, and delete nothing. NIP-59 has a relay honor
+    // a deletion signed by the pubkey in the wrap's p tag.
+    test('names the gift wrap carrying the email, not the rumor', () async {
       await emails.save(makeRecord('email-1'));
 
       final giftWraps = GiftWrapRepository(user.database);
@@ -202,7 +215,8 @@ void main() {
           )
           .future;
 
-      expect(deletionEvents.single.getTags('e').toSet(), {'email-1', 'wrap-1'});
+      expect(deletionEvents.single.getTags('e'), ['wrap-1']);
+      expect(deletionEvents.single.getTags('k'), [giftWrapKind.toString()]);
     });
   });
 }

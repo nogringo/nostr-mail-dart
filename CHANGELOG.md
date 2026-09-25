@@ -11,6 +11,10 @@
 - **Fix**: a label applied on two devices before they synced is removed
   whole. Removing it named only the event this device knew, and the other
   one brought the label back.
+- **Fix**: deleting a gift-wrapped email no longer names its rumor id, which
+  no relay holds and which told its sender and other recipients the email was
+  deleted. The deletion names the wraps only, and other devices resolve them
+  to the email. Deletions from earlier versions are still applied.
 - `getFailedCount()` and `getFailedGiftWraps()` also count the wraps of
   labels, which cannot be told from an email before they are decrypted.
 - The schema version moves to 4: the projection is rebuilt from the NDK cache

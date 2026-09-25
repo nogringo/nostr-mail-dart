@@ -171,15 +171,28 @@ class GiftWrapRepository {
 
     await _remove([
       ...uniqueIds,
-      ...await _wrapIdsByRumorIds(uniqueIds.toList()),
+      for (final wrapIds in (await _wrapIdsByRumorIds(
+        uniqueIds.toList(),
+      )).values)
+        ...wrapIds,
     ]);
   }
 
   /// Outer event ids of [recipientPubkey]'s wraps carrying [rumorIds].
-  ///
-  /// Deletions target the rumor id, which is only readable after decryption;
-  /// callers use this to tombstone the wraps themselves.
   Future<List<String>> getIdsByRumorIdsForRecipient(
+    Iterable<String> rumorIds, {
+    required String recipientPubkey,
+  }) async => [
+    for (final wrapIds in (await getIdsByRumorIdForRecipient(
+      rumorIds,
+      recipientPubkey: recipientPubkey,
+    )).values)
+      ...wrapIds,
+  ];
+
+  /// Outer event ids of [recipientPubkey]'s wraps carrying [rumorIds], keyed
+  /// by rumor id. A rumor id with no opened wrap is left out.
+  Future<Map<String, List<String>>> getIdsByRumorIdForRecipient(
     Iterable<String> rumorIds, {
     required String recipientPubkey,
   }) => _wrapIdsByRumorIds(
@@ -187,14 +200,24 @@ class GiftWrapRepository {
     recipientPubkey: recipientPubkey,
   );
 
+  /// The id of the rumor [giftWrapId] carried, once it has been opened.
+  Future<String?> getRumorIdForRecipient(
+    String giftWrapId, {
+    required String recipientPubkey,
+  }) async {
+    final row = await _unsealedRow(giftWrapId);
+    if (row == null || row.recipientPubkey != recipientPubkey) return null;
+    return row.rumorId;
+  }
+
   /// Remove gift wrap records by rumor id only if they belong to [recipientPubkey].
   Future<void> removeByRumorIdsForRecipient(
     Iterable<String> rumorIds, {
     required String recipientPubkey,
   }) async {
     await _remove(
-      await _wrapIdsByRumorIds(
-        rumorIds.toSet().toList(),
+      await getIdsByRumorIdsForRecipient(
+        rumorIds,
         recipientPubkey: recipientPubkey,
       ),
     );
@@ -321,24 +344,30 @@ class GiftWrapRepository {
     _db.unsealed,
   )..where((u) => u.wrapId.equals(wrapId))).getSingleOrNull();
 
-  Future<List<String>> _wrapIdsByRumorIds(
+  Future<Map<String, List<String>>> _wrapIdsByRumorIds(
     List<String> rumorIds, {
     String? recipientPubkey,
   }) async {
-    if (rumorIds.isEmpty) return [];
+    if (rumorIds.isEmpty) return {};
 
     final u = _db.unsealed;
     final byRumor = u.rumorId.isIn(rumorIds);
     final rows =
         await (_db.selectOnly(u)
-              ..addColumns([u.wrapId])
+              ..addColumns([u.rumorId, u.wrapId])
               ..where(
                 recipientPubkey == null
                     ? byRumor
                     : byRumor & u.recipientPubkey.equals(recipientPubkey),
               ))
             .get();
-    return rows.map((r) => r.read(u.wrapId)!).toList();
+    final wrapIds = <String, List<String>>{};
+    for (final row in rows) {
+      wrapIds
+          .putIfAbsent(row.read(u.rumorId)!, () => [])
+          .add(row.read(u.wrapId)!);
+    }
+    return wrapIds;
   }
 
   GiftWrapProgress _progressOf(GiftWrapRow row) {

@@ -519,29 +519,30 @@ class MailSync {
         // hands it back) before the relay has acted on this deletion.
         await _tombstones.add(deletedEventId, recipientPubkey: pubkey);
 
-        // Try as email first (gift wrap or public email)
-        final email = await _emails.getById(
-          deletedEventId,
-          recipientPubkey: pubkey,
-        );
+        // A wrap is named by its own id, a public email too. Earlier versions
+        // named the rumor, which still matches the email row directly.
+        final emailId =
+            await _giftWraps.getRumorIdForRecipient(
+              deletedEventId,
+              recipientPubkey: pubkey,
+            ) ??
+            deletedEventId;
+        final email = await _emails.getById(emailId, recipientPubkey: pubkey);
         if (email != null) {
-          await _emails.delete(deletedEventId, recipientPubkey: pubkey);
-          await _labels.deleteLabelsForEmail(
-            deletedEventId,
-            recipientPubkey: pubkey,
-          );
+          await _emails.delete(emailId, recipientPubkey: pubkey);
+          await _labels.deleteLabelsForEmail(emailId, recipientPubkey: pubkey);
           // Tombstone the wraps before dropping their rows, so a relay
           // re-serving them costs a lookup rather than a decryption.
-          await _tombstones.addMany(
-            await _giftWraps.getIdsByRumorIdsForRecipient([
-              deletedEventId,
+          await _tombstones.addMany([
+            emailId,
+            ...await _giftWraps.getIdsByRumorIdsForRecipient([
+              emailId,
             ], recipientPubkey: pubkey),
-            recipientPubkey: pubkey,
-          );
-          await _giftWraps.removeByRumorIdsForRecipient([
-            deletedEventId,
           ], recipientPubkey: pubkey);
-          _bus.emit(EmailDeleted(emailId: deletedEventId));
+          await _giftWraps.removeByRumorIdsForRecipient([
+            emailId,
+          ], recipientPubkey: pubkey);
+          _bus.emit(EmailDeleted(emailId: emailId));
           continue;
         }
 
