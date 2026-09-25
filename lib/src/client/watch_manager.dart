@@ -121,10 +121,10 @@ class WatchManager {
     final allRelays = {...dmRelays, ...writeRelays}.toList();
     final auth = authFor(_ndk, pubkey);
 
-    // Gift wraps (emails). Authenticated before the relay asks: the first
-    // default DM relay serves nothing anonymously, the sync engine already
-    // holds an authenticated connection to that set, and a relay that stays
-    // silent instead of refusing never triggers a late authentication.
+    // Gift wraps (emails and labels). Authenticated before the relay asks:
+    // the first default DM relay serves nothing anonymously, the sync engine
+    // already holds an authenticated connection to that set, and a relay that
+    // stays silent instead of refusing never triggers a late authentication.
     _open(
       _ndk.requests.subscription(
         filter: emailFilter(pubkey)..limit = 0,
@@ -148,7 +148,7 @@ class WatchManager {
       process: _sync.onPublicEmail,
     );
 
-    // Label additions
+    // Labels published in clear by earlier versions
     _open(
       _ndk.requests.subscription(
         filter: labelFilter(pubkey)..limit = 0,

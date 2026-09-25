@@ -1,3 +1,21 @@
+## 3.2.4
+
+- **Breaking**: labels travel in gift wraps, as
+  [Nostr Mail Labels](https://github.com/nogringo/protocols/blob/main/nostr-mail-labels.md)
+  defines. A label is signed, wrapped without a seal to the account itself
+  and published to its DM relays, so relays no longer see what is labelled
+  nor when. Removing a label deletes its wrap (`kind:5` with `k` 1059). A
+  client reading only `kind:1985` labels published in clear no longer sees
+  new ones. Those published by earlier versions are still read, and removed
+  by their own id.
+- **Fix**: a label applied on two devices before they synced is removed
+  whole. Removing it named only the event this device knew, and the other
+  one brought the label back.
+- `getFailedCount()` and `getFailedGiftWraps()` also count the wraps of
+  labels, which cannot be told from an email before they are decrypted.
+- The schema version moves to 4: the projection is rebuilt from the NDK cache
+  on upgrade, and the decryptions already stored are kept.
+
 ## 3.2.3
 
 - Require `ndk: ^0.10.0-dev.6`, `nostr_event_scheduler: ^0.5.4` and

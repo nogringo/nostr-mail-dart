@@ -4,6 +4,7 @@ import 'package:ndk/ndk.dart' hide RelaySet;
 import '../constants.dart';
 import '../exceptions.dart';
 import '../models/mail_event.dart';
+import '../storage/gift_wrap_repository.dart';
 import '../storage/label_repository.dart';
 import '../storage/tombstone_repository.dart';
 import 'event_bus.dart';
@@ -11,12 +12,13 @@ import 'relay_resolver.dart';
 
 /// Manages NIP-32 labels with local-first semantics.
 ///
-/// Labels are applied to local storage immediately and broadcast to relays
-/// via the offline broadcast queue, which persists the signed event and
-/// retries until every targeted write relay has acknowledged delivery.
+/// Labels are applied to local storage immediately and broadcast via the
+/// offline broadcast queue, which persists the event and retries until every
+/// targeted relay has acknowledged delivery.
 class LabelManager {
   final Ndk _ndk;
   final LabelRepository _labels;
+  final GiftWrapRepository _giftWraps;
   final TombstoneRepository _tombstones;
   final RelayResolver _relays;
   final EventBus _bus;
@@ -25,6 +27,7 @@ class LabelManager {
   LabelManager(
     this._ndk,
     this._labels,
+    this._giftWraps,
     this._tombstones,
     this._relays,
     this._bus,
@@ -62,6 +65,8 @@ class LabelManager {
     final labelEvent = Nip01Event(
       pubKey: pubkey,
       kind: labelKind,
+      // Explicit: left at 0, ndk hashes the id under a second clock read.
+      createdAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       tags: [
         ['L', labelNamespace],
         ['l', label, labelNamespace],
@@ -72,11 +77,23 @@ class LabelManager {
 
     final signed = await _ndk.accounts.sign(labelEvent);
 
-    // Save locally FIRST
+    // Signed, then wrapped without a seal to the account itself, so relays
+    // see neither what is labelled nor when (nostr-mail-labels).
+    final wrap = await GiftWrap.wrapEvent(
+      recipientPublicKey: pubkey,
+      sealEvent: signed,
+      eventSignerFactory: _ndk.giftWrap.eventSignerFactory,
+      randomizeCreatedAtBefore: signed.createdAt,
+    );
+
+    // Recorded open, so the sync does not ask the signer to decrypt it again
+    // when it comes back from the relays.
+    await _giftWraps.saveOpened(wrap, recipientPubkey: pubkey, rumor: signed);
     await _labels.saveLabel(
       emailId: emailId,
       label: label,
       labelEventId: signed.id,
+      wrapId: wrap.id,
       timestamp: signed.createdAt,
       recipientPubkey: pubkey,
     );
@@ -87,12 +104,12 @@ class LabelManager {
     );
 
     // Enqueue for durable broadcast. The outbox persists the event before
-    // any network attempt and retries until every write relay has acked,
-    // so a label survives offline use and process death. It resolves the
-    // write relays itself, so labelling never waits on a relay list.
+    // any network attempt and retries until every DM relay has acked, so a
+    // label survives offline use and process death. It resolves the DM
+    // relays itself, so labelling never waits on a relay list.
     await _broadcastQueue.broadcast(
-      signed,
-      relaySet: _relays.writeRelaySet(pubkey),
+      wrap,
+      relaySet: _relays.dmRelaySet([pubkey]),
       pubkey: pubkey,
     );
   }

@@ -18,6 +18,9 @@ class TestUser {
   String? schedulerDvm;
   List<String>? schedulerDvmReadRelays;
 
+  /// Another device of the same account when set.
+  final KeyPair? _existingKeyPair;
+
   late KeyPair keyPair;
   late Ndk ndk;
   late NostrMailDatabase database;
@@ -33,10 +36,11 @@ class TestUser {
     this.nip05Overrides,
     this.schedulerDvm,
     this.schedulerDvmReadRelays,
-  });
+    KeyPair? keyPair,
+  }) : _existingKeyPair = keyPair;
 
   Future<TestUser> create() async {
-    keyPair = Bip340.generatePrivateKey();
+    keyPair = _existingKeyPair ?? Bip340.generatePrivateKey();
     ndk = Ndk(
       NdkConfig(
         eventVerifier: Bip340EventVerifier(),

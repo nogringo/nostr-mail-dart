@@ -286,9 +286,9 @@ class MailSync {
     final pubkey = _pubkey;
     if (pubkey == null) return;
 
-    // Gift wraps and public emails run in parallel, up to
-    // [maxProcessingConcurrency] at a time. Deletions and labels stay
-    // sequential to avoid races.
+    // Gift wraps, labels included, and public emails run in parallel, up to
+    // [maxProcessingConcurrency] at a time. Deletions and labels published in
+    // clear stay sequential.
     //
     // A cancelled signer request ends the round: the only error that reaches
     // here, and the wraps left would each ask the user again.
@@ -400,6 +400,12 @@ class MailSync {
           seal: unwrapped.seal,
           rumor: unwrapped.payload,
         );
+      }
+
+      if (unwrapped.seal == null) {
+        final applied = await _applyWrappedLabel(unwrapped.payload, event.id);
+        await _giftWraps.markStored(event.id);
+        return applied;
       }
 
       final rumor = unwrapped.payload;
@@ -571,42 +577,62 @@ class MailSync {
     }
   }
 
-  Future<void> onLabelAddition(Nip01Event event) async {
+  /// A label published in clear, as versions before gift-wrapped labels did.
+  Future<void> onLabelAddition(Nip01Event event) => _applyLabel(event);
+
+  /// A label that arrived in a gift wrap, without a seal. Anyone can address
+  /// a wrap to this account and ndk checks nothing inside it, so the label
+  /// must carry the account's own valid signature.
+  Future<bool> _applyWrappedLabel(Nip01Event label, String wrapId) async {
+    if (label.kind != labelKind) return false;
+    if (!await _ndk.config.eventVerifier.verify(label)) return false;
+    return _applyLabel(label, wrapId: wrapId);
+  }
+
+  /// Records [event] as one of the events carrying its label, and reports
+  /// whether it is a label of the active account that still stands.
+  Future<bool> _applyLabel(Nip01Event event, {String? wrapId}) async {
     final pubkey = _pubkey;
-    if (pubkey == null) return;
+    if (pubkey == null) return false;
 
     // A label event must be authored by the active account — labels are
     // published by the account that owns them, so a label whose author
     // differs from the active pubkey belongs to someone else.
-    if (event.pubKey != pubkey) return;
+    if (event.pubKey != pubkey) return false;
 
     // Skip events the user has deleted: relays that don't honor NIP-09
-    // and NDK's in-memory cache can both re-serve these.
-    if (await _tombstones.contains(event.id, recipientPubkey: pubkey)) {
-      return;
+    // and NDK's in-memory cache can both re-serve these. A wrapped label is
+    // deleted by its wrap.
+    if (await _tombstones.contains(
+      wrapId ?? event.id,
+      recipientPubkey: pubkey,
+    )) {
+      return false;
     }
 
     final namespaceTag = event.tags.firstWhere(
       (t) => t.isNotEmpty && t[0] == 'L' && t[1] == labelNamespace,
       orElse: () => [],
     );
-    if (namespaceTag.isEmpty) return;
+    if (namespaceTag.isEmpty) return false;
 
     final labelTag = event.tags.firstWhere(
       (t) => t.length >= 3 && t[0] == 'l' && t[2] == labelNamespace,
       orElse: () => [],
     );
-    if (labelTag.isEmpty) return;
+    if (labelTag.isEmpty) return false;
     final label = labelTag[1];
 
     final emailTag = event.tags.firstWhere(
       (t) => t.isNotEmpty && t[0] == 'e',
       orElse: () => [],
     );
-    if (emailTag.isEmpty) return;
+    if (emailTag.isEmpty) return false;
     final emailId = emailTag[1];
 
-    if (await _labels.hasLabelEvent(event.id, recipientPubkey: pubkey)) return;
+    if (await _labels.hasLabelEvent(event.id, recipientPubkey: pubkey)) {
+      return true;
+    }
     final alreadyApplied = await _labels.hasLabel(
       emailId,
       label,
@@ -617,11 +643,12 @@ class MailSync {
       emailId: emailId,
       label: label,
       labelEventId: event.id,
+      wrapId: wrapId,
       timestamp: event.createdAt,
       recipientPubkey: pubkey,
     );
 
-    if (alreadyApplied) return;
+    if (alreadyApplied) return true;
     _bus.emit(
       LabelAdded(
         emailId: emailId,
@@ -630,15 +657,23 @@ class MailSync {
         timestamp: DateTime.fromMillisecondsSinceEpoch(event.createdAt * 1000),
       ),
     );
+    return true;
   }
 
   // ── Gift wrap helpers ───────────────────────────────────────────────────
 
+  /// A wrap is dispatched on the kind of what it carries: a seal holds an
+  /// email, anything else was wrapped as is, as a label is.
   Future<UnwrappedGiftWrap?> _unwrapGiftWrap(Nip01Event giftWrapEvent) async {
     try {
-      final seal = await _ndk.giftWrap.unwrapEvent(wrappedEvent: giftWrapEvent);
-      final rumor = await _ndk.giftWrap.unsealRumor(sealedEvent: seal);
-      return UnwrappedGiftWrap(seal: seal, payload: rumor);
+      final inner = await _ndk.giftWrap.unwrapEvent(
+        wrappedEvent: giftWrapEvent,
+      );
+      if (inner.kind != GiftWrap.kSealEventKind) {
+        return UnwrappedGiftWrap(payload: inner);
+      }
+      final rumor = await _ndk.giftWrap.unsealRumor(sealedEvent: inner);
+      return UnwrappedGiftWrap(seal: inner, payload: rumor);
     } on SignerRequestCancelledException {
       rethrow;
     } catch (error) {

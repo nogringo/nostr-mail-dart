@@ -283,6 +283,7 @@ class NostrMailClient {
       labels: LabelManager(
         ndk,
         labelRepo,
+        giftWrapRepo,
         tombstoneRepo,
         relayResolver,
         bus,

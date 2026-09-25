@@ -116,6 +116,37 @@ void main() {
       });
     });
 
+    test('names the gift wrap carrying a label', () async {
+      await emails.save(makeRecord('email-1'));
+      await labels.saveLabel(
+        emailId: 'email-1',
+        label: 'state:read',
+        labelEventId: 'label-1',
+        wrapId: 'label-wrap-1',
+        timestamp: 1000,
+        recipientPubkey: user.keyPair.publicKey,
+      );
+
+      await user.client.delete(['email-1']);
+      await waitForBroadcasts(user.client.broadcastQueue);
+
+      final deletionEvents = await user.ndk.requests
+          .query(
+            filter: Filter(
+              kinds: [deletionRequestKind],
+              authors: [user.keyPair.publicKey],
+            ),
+            explicitRelays: [relay.url],
+          )
+          .future;
+
+      expect(deletionEvents.single.getTags('e').toSet(), {
+        'email-1',
+        'label-wrap-1',
+      });
+      expect(deletionEvents.single.getTags('k'), [giftWrapKind.toString()]);
+    });
+
     // A relay holds the wrap and has never seen the rumor inside it, so a
     // request naming only the email id asks it to delete nothing at all.
     // NIP-59 has it honor a deletion signed by the pubkey in the wrap's p tag.
