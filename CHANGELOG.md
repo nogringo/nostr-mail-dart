@@ -19,6 +19,11 @@
   and to the read relays of each `to`/`cc` recipient, and are received on the
   account's read relays. They used to reach a recipient only when both
   accounts' write relays overlapped.
+- **Fix**: an email over 32 KB no longer reveals its Bcc recipients. Its
+  Blossom blob held the MIME with the `Bcc:` header, and every recipient had
+  the key. Recipients now get a blob without it, and only the sender's copy
+  keeps it. A public email's self copy also goes through Blossom instead of
+  carrying the whole MIME inline.
 - `getFailedCount()` and `getFailedGiftWraps()` also count the wraps of
   labels, which cannot be told from an email before they are decrypted.
 - The schema version moves to 4: the projection is rebuilt from the NDK cache

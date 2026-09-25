@@ -68,4 +68,54 @@ void main() {
     expect(email.senderPubkey, sender.keyPair.publicKey);
     expect(email.recipientPubkey, recipient.keyPair.publicKey);
   }, timeout: const Timeout(Duration(seconds: 300)));
+
+  test('a large email keeps Bcc out of the blob recipients can open', () async {
+    final relay = MockRelay(name: 'relay');
+    await relay.startServer();
+    addTearDown(() async => await relay.stopServer());
+
+    final blossomServer = MockBlossomServer();
+    await blossomServer.start();
+    addTearDown(() async => await blossomServer.stop());
+
+    Future<TestUser> user(String name) async {
+      final u = await TestUser(
+        name,
+        defaultDmRelays: [relay.url],
+        defaultBlossomServers: ['http://localhost:${blossomServer.port}'],
+      ).create();
+      addTearDown(() async => await u.destroy());
+      return u;
+    }
+
+    final sender = await user('bcc_leak_sender');
+    final toUser = await user('bcc_leak_to');
+    final bccUser = await user('bcc_leak_bcc');
+
+    await Future.delayed(const Duration(seconds: 3));
+
+    await sender.client.send(
+      to: [NostrRecipient.fromPubkey(toUser.keyPair.publicKey)],
+      bcc: [NostrRecipient.fromPubkey(bccUser.keyPair.publicKey)],
+      subject: 'Large Bcc',
+      body: 'A' * (100 * 1024),
+    );
+
+    final uploads = await sender.client.blossomUploadQueue.listAll();
+    expect(uploads.map((u) => u.sha256).toSet(), hasLength(2));
+
+    await Future.delayed(const Duration(seconds: 2));
+    await toUser.client.fetchRecent();
+    await bccUser.client.fetchRecent();
+    await Future.delayed(const Duration(seconds: 1));
+
+    final sent = (await sender.client.getSentEmails()).single;
+    expect(sent.mime.bcc, isNotEmpty);
+
+    for (final recipient in [toUser, bccUser]) {
+      final email = (await recipient.client.getInboxEmails()).single;
+      expect(email.body, contains('AAAAAAA'));
+      expect(email.mime.bcc ?? const [], isEmpty);
+    }
+  }, timeout: const Timeout(Duration(seconds: 300)));
 }

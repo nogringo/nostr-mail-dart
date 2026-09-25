@@ -281,7 +281,12 @@ class EmailSender {
     final bccRecipientPubkeys = {...bccNostr};
 
     final rawContent = message.renderMessage();
-    final rawContentBytes = utf8.encode(rawContent);
+    final recipientContent = removeBccHeaders(rawContent);
+    final senderInline = utf8.encode(rawContent).length < maxInlineSize;
+    final recipientInline =
+        utf8.encode(recipientContent).length < maxInlineSize;
+    final senderBody = senderInline ? rawContent : '';
+    final recipientBody = recipientInline ? recipientContent : '';
 
     final targetPubkeys = {...toNostr, ...ccNostr, ...bccNostr};
     if (keepCopy) targetPubkeys.add(senderPubkey);
@@ -292,59 +297,32 @@ class EmailSender {
 
     final baseTags = <List<String>>[];
     if (mailFrom != null) baseTags.add(['mail-from', mailFrom]);
-    String content = '';
 
-    if (rawContentBytes.length >= maxInlineSize) {
-      final encryptedBlob = await encryptBlob(
-        Uint8List.fromList(rawContentBytes),
-      );
-
-      final allInvolvedPubkeys = <String>{...recipientPubkeys};
-      if (keepCopy) allInvolvedPubkeys.add(senderPubkey);
-
-      final allBlossomServers = <String>[];
-      final servers = await _ndk.blossomUserServerList.getUserServerList(
-        pubkeys: allInvolvedPubkeys.toList(),
-      );
-      if (servers != null) allBlossomServers.addAll(servers);
-      if (allBlossomServers.isEmpty) {
-        allBlossomServers.addAll(_defaultBlossomServers);
+    // Recipients hold the key of their blob, so the one carrying the Bcc
+    // header is kept for the sender's own copy.
+    var senderBlobTags = const <List<String>>[];
+    var recipientBlobTags = const <List<String>>[];
+    if (!senderInline) {
+      final servers = await _blossomServers({
+        ...recipientPubkeys,
+        if (keepCopy) senderPubkey,
+      });
+      senderBlobTags = await _uploadBlob(rawContent, servers, senderPubkey);
+      if (recipientContent == rawContent) {
+        recipientBlobTags = senderBlobTags;
+      } else if (!recipientInline) {
+        recipientBlobTags = await _uploadBlob(
+          recipientContent,
+          servers,
+          senderPubkey,
+        );
       }
-
-      // The queue reads bytes from the cache when it actually uploads, so
-      // the blob has to be there before we enqueue.
-      final descriptor = await _blossomCache.put(
-        encryptedBlob.bytes,
-        type: 'application/octet-stream',
-      );
-      final sha256Hash = descriptor.sha256;
-      // The pubkey binds every retry to the sending account instead of
-      // whoever happens to be logged in when the retry fires.
-      await _blossomUploadQueue.upload(
-        sha256: sha256Hash,
-        servers: allBlossomServers.toSet().toList(),
-        contentType: 'application/octet-stream',
-        pubkey: senderPubkey,
-      );
-
-      baseTags
-        ..add(['x', sha256Hash])
-        ..add(['encryption-algorithm', 'aes-gcm'])
-        ..add(['decryption-key', encryptedBlob.key])
-        ..add(['decryption-nonce', encryptedBlob.nonce]);
     }
+    final senderTags = [...baseTags, ...senderBlobTags];
+    final recipientTags = [...baseTags, ...recipientBlobTags];
 
     if (isPublic) {
-      final targetContent = removeBccHeaders(rawContent);
-      final targetContentBytes = utf8.encode(targetContent);
-      final String finalContent;
-      if (targetContentBytes.length < maxInlineSize) {
-        finalContent = targetContent;
-      } else {
-        finalContent = content;
-      }
-
-      final tags = List<List<String>>.from(baseTags);
+      final tags = List<List<String>>.from(recipientTags);
       for (final pubkey in publicRecipientPubkeys) {
         tags.add(['p', pubkey]);
       }
@@ -353,7 +331,7 @@ class EmailSender {
         pubKey: senderPubkey,
         kind: emailKind,
         tags: tags,
-        content: finalContent,
+        content: recipientBody,
         createdAt: delivery.rumorCreatedAt,
       );
 
@@ -375,13 +353,14 @@ class EmailSender {
       // From here on every step is either a local write or a durable
       // enqueue, so a crash between save and broadcast cannot leave the
       // user without a Sent entry.
-      final senderTags = List<List<String>>.from(baseTags)
-        ..add(['p', senderPubkey]);
       final senderEmailEvent = Nip01Event(
         pubKey: senderPubkey,
         kind: emailKind,
-        tags: senderTags,
-        content: rawContent,
+        tags: [
+          ...senderTags,
+          ['p', senderPubkey],
+        ],
+        content: senderBody,
         createdAt: delivery.rumorCreatedAt,
       );
       senderRumor = signRumor
@@ -399,14 +378,14 @@ class EmailSender {
 
       await delivery.deliverEvent(signedPublicEvent, publicEventRelays);
 
-      final bccTags = List<List<String>>.from(baseTags)
+      final bccTags = List<List<String>>.from(recipientTags)
         ..add(['public-ref', signedPublicEvent.id, ...writeRelays]);
 
       final bccRumor = Nip01Event(
         pubKey: senderPubkey,
         kind: emailKind,
         tags: bccTags,
-        content: finalContent,
+        content: recipientBody,
         createdAt: delivery.rumorCreatedAt,
       );
 
@@ -428,16 +407,14 @@ class EmailSender {
       // is a local write or a durable enqueue. Saving up-front guarantees
       // the email lands in the local Sent folder even if a per-recipient
       // sign call fails inside the parallel publish below.
-      final senderContent = utf8.encode(rawContent).length < maxInlineSize
-          ? rawContent
-          : content;
-      final senderTags = List<List<String>>.from(baseTags)
-        ..insert(0, ['p', senderPubkey]);
       final senderEvent = Nip01Event(
         pubKey: senderPubkey,
         kind: emailKind,
-        tags: senderTags,
-        content: senderContent,
+        tags: [
+          ['p', senderPubkey],
+          ...senderTags,
+        ],
+        content: senderBody,
         createdAt: delivery.rumorCreatedAt,
       );
       senderRumor = signRumor
@@ -460,20 +437,14 @@ class EmailSender {
           return;
         }
 
-        final targetContent = removeBccHeaders(rawContent);
-        final targetContentBytes = utf8.encode(targetContent);
-        final finalContent = targetContentBytes.length < maxInlineSize
-            ? targetContent
-            : content;
-
-        final tags = List<List<String>>.from(baseTags)
-          ..insert(0, ['p', pubkey]);
-
         final emailEvent = Nip01Event(
           pubKey: senderPubkey,
           kind: emailKind,
-          tags: tags,
-          content: finalContent,
+          tags: [
+            ['p', pubkey],
+            ...recipientTags,
+          ],
+          content: recipientBody,
           createdAt: delivery.rumorCreatedAt,
         );
 
@@ -494,14 +465,52 @@ class EmailSender {
       rcptToByBridge: rcptToByBridge,
       fromAddress: fromAddress,
       explicitMailFrom: mailFrom,
-      baseTags: baseTags,
-      rawContent: rawContent,
-      largeEmailContent: content,
+      baseTags: recipientTags,
+      content: recipientBody,
       signRumor: signRumor,
       delivery: delivery,
     );
 
     return senderRumor;
+  }
+
+  Future<List<String>> _blossomServers(Set<String> pubkeys) async {
+    final servers = await _ndk.blossomUserServerList.getUserServerList(
+      pubkeys: pubkeys.toList(),
+    );
+    if (servers == null || servers.isEmpty) return _defaultBlossomServers;
+    return servers.toSet().toList();
+  }
+
+  /// Encrypts [content] into a Blossom blob and returns the tags pointing to it.
+  Future<List<List<String>>> _uploadBlob(
+    String content,
+    List<String> servers,
+    String senderPubkey,
+  ) async {
+    final encryptedBlob = await encryptBlob(
+      Uint8List.fromList(utf8.encode(content)),
+    );
+    // The queue reads bytes from the cache when it actually uploads, so
+    // the blob has to be there before we enqueue.
+    final descriptor = await _blossomCache.put(
+      encryptedBlob.bytes,
+      type: 'application/octet-stream',
+    );
+    // The pubkey binds every retry to the sending account instead of
+    // whoever happens to be logged in when the retry fires.
+    await _blossomUploadQueue.upload(
+      sha256: descriptor.sha256,
+      servers: servers,
+      contentType: 'application/octet-stream',
+      pubkey: senderPubkey,
+    );
+    return [
+      ['x', descriptor.sha256],
+      ['encryption-algorithm', 'aes-gcm'],
+      ['decryption-key', encryptedBlob.key],
+      ['decryption-nonce', encryptedBlob.nonce],
+    ];
   }
 
   /// Send each SMTP bridge a gift-wrapped rumor with the envelope it relays on:
@@ -513,17 +522,11 @@ class EmailSender {
     required String? fromAddress,
     required String? explicitMailFrom,
     required List<List<String>> baseTags,
-    required String rawContent,
-    required String largeEmailContent,
+    required String content,
     required bool signRumor,
     required Delivery delivery,
   }) async {
     if (rcptToByBridge.isEmpty) return;
-
-    final bridgeMime = removeBccHeaders(rawContent);
-    final bridgeContent = utf8.encode(bridgeMime).length < maxInlineSize
-        ? bridgeMime
-        : largeEmailContent;
 
     final futures = rcptToByBridge.entries.map((entry) async {
       final bridgePubkey = entry.key;
@@ -541,7 +544,7 @@ class EmailSender {
         pubKey: senderPubkey,
         kind: emailKind,
         tags: tags,
-        content: bridgeContent,
+        content: content,
         createdAt: delivery.rumorCreatedAt,
       );
       final rumor = signRumor ? await _ndk.accounts.sign(event) : event;
