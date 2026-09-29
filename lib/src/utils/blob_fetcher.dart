@@ -5,12 +5,16 @@ import 'package:ndk/ndk.dart';
 
 import '../constants.dart';
 
-/// Return the encrypted Blossom blob for [blossomHash].
+/// The [BlossomCache] pin holder for [pubkey]'s blobs. Prefixed because the
+/// cache belongs to the caller and may be shared with other consumers.
+String blobPinHolder(String pubkey) => 'nostr_mail:$pubkey';
+
+/// Return the encrypted Blossom blob for [blossomHash], pinned on behalf of
+/// [pubkey] so it is exempt from LRU eviction until that account releases it.
 ///
 /// Fast path: read from [cache] if present.
 ///
-/// Slow path: download from [serverUrls], then store the bytes in [cache]
-/// pinned so they are exempt from LRU eviction.
+/// Slow path: download from [serverUrls], then store the bytes in [cache].
 ///
 /// Throws whatever the underlying [Ndk.blossom.getBlob] call throws when no
 /// server in [serverUrls] holds the blob.
@@ -19,9 +23,14 @@ Future<Uint8List> fetchOrLoadEncryptedBlob({
   required List<String> serverUrls,
   required BlossomCache cache,
   required Ndk ndk,
+  required String pubkey,
 }) async {
   final cached = await cache.get(blossomHash);
-  if (cached != null) return cached;
+  if (cached != null) {
+    // Another account may hold the only pin and release it on logout.
+    await cache.pin(blossomHash, by: blobPinHolder(pubkey));
+    return cached;
+  }
 
   final downloadResult = await ndk.blossom.getBlob(
     sha256: blossomHash,
@@ -32,7 +41,7 @@ Future<Uint8List> fetchOrLoadEncryptedBlob({
     downloadResult.data,
     sha256: blossomHash,
     type: 'application/octet-stream',
-    pinned: true,
+    pinBy: blobPinHolder(pubkey),
   );
 
   return downloadResult.data;

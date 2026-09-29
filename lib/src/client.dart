@@ -265,8 +265,10 @@ class NostrMailClient {
         db: db,
       ),
       emailSender,
+      blossomCache,
       defaultDvm: schedulerDvm,
       dvmReadRelays: schedulerDvmReadRelays,
+      defaultBlossomServers: defaultBlossomServers,
     );
 
     return NostrMailClient._internal(
@@ -748,6 +750,7 @@ class NostrMailClient {
         serverUrls: serverUrls,
         cache: _blossomCache,
         ndk: _ndk,
+        pubkey: email.recipientPubkey,
       );
       final decrypted = await decryptBlob(
         encryptedBytes: encrypted,
@@ -766,37 +769,6 @@ class NostrMailClient {
     final rumor = Nip01EventModel.fromJson(record['rumor'] as Map);
     final content = rumor.content;
     return content.isEmpty ? null : content;
-  }
-
-  /// Reconstruct the full MIME text carried by a scheduled email's self-copy
-  /// [rumor]: inline in its `content`, or an encrypted Blossom blob referenced
-  /// by its `x`/`decryption-*` tags. Mirrors [_reconstructFullMimeText] for a
-  /// rumor that never became a stored [Email].
-  Future<String?> _reconstructRumorMimeText(Nip01Event rumor) async {
-    final hash = rumor.getFirstTag('x');
-    if (hash != null) {
-      final key = rumor.getFirstTag('decryption-key');
-      final nonce = rumor.getFirstTag('decryption-nonce');
-      if (key == null || nonce == null) return null;
-      final serverUrls = await resolveBlobServers(
-        ndk: _ndk,
-        pubkeys: [rumor.pubKey],
-        defaultBlossomServers: _defaultBlossomServers,
-      );
-      final encrypted = await fetchOrLoadEncryptedBlob(
-        blossomHash: hash,
-        serverUrls: serverUrls,
-        cache: _blossomCache,
-        ndk: _ndk,
-      );
-      final decrypted = await decryptBlob(
-        encryptedBytes: encrypted,
-        key: key,
-        nonce: nonce,
-      );
-      return utf8.decode(decrypted);
-    }
-    return rumor.content.isEmpty ? null : rumor.content;
   }
 
   // ── Deletion ────────────────────────────────────────────────────────────
@@ -1161,13 +1133,10 @@ class NostrMailClient {
 
   /// Reconstruct the full editable MIME of a scheduled email so it can be
   /// re-opened in a composer. Unlike [ScheduledEmail], this restores the
-  /// complete body and every attachment. Returns null if the package is gone
-  /// or its source content is unavailable locally (Blossom blob evicted
-  /// without re-download).
+  /// complete body and every attachment. Returns null if the package is gone.
+  /// Throws when its Blossom blob is neither cached nor downloadable.
   Future<MimeMessage?> getScheduledMime(String packageId) async {
-    final rumor = await _schedule.getPackageRumor(packageId);
-    if (rumor == null) return null;
-    final text = await _reconstructRumorMimeText(rumor);
+    final text = await _schedule.getPackageMimeText(packageId);
     if (text == null) return null;
     return MimeMessage.parseFromText(text);
   }
@@ -1319,6 +1288,7 @@ class NostrMailClient {
       _giftWrapRepo.clearAll(recipientPubkey: pubkey),
       _settingsRepo.clear(pubkey: pubkey),
       _tombstoneRepo.clearAll(recipientPubkey: pubkey),
+      _blossomCache.unpinAll(blobPinHolder(pubkey)),
       if (_ownsBroadcastQueue)
         broadcastQueue.clearLocalAccountData(pubkey: pubkey),
       if (_ownsBlossomUploadQueue)

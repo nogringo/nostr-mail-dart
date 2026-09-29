@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:blossom_cache/blossom_cache.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/entities.dart' show Nip01Event, Nip01EventModel;
 import 'package:ndk/ndk.dart' show Ndk;
@@ -9,7 +10,9 @@ import '../constants.dart';
 import '../exceptions.dart';
 import '../models/recipient.dart';
 import '../models/scheduled_email.dart';
+import '../utils/blob_fetcher.dart';
 import '../utils/body_preview.dart';
+import '../utils/decrypt_blob.dart';
 import 'email_sender.dart';
 
 /// Schedules emails for future delivery via a Scheduler DVM (kind:5905 requests
@@ -24,15 +27,19 @@ class ScheduleManager {
   final Ndk _ndk;
   final EventScheduler _scheduler;
   final EmailSender _sender;
+  final BlossomCache _blossomCache;
   final String? defaultDvm;
   final List<String>? dvmReadRelays;
+  final List<String>? defaultBlossomServers;
 
   ScheduleManager(
     this._ndk,
     this._scheduler,
-    this._sender, {
+    this._sender,
+    this._blossomCache, {
     this.defaultDvm,
     this.dvmReadRelays,
+    this.defaultBlossomServers,
   });
 
   bool _listening = false;
@@ -164,7 +171,7 @@ class ScheduleManager {
   /// All scheduled emails, soonest send time first.
   Future<List<ScheduledEmail>> list() async {
     final packages = await _scheduler.listPackages(pubkey: _requirePubkey());
-    return sortBySendTime(packages.map(_tryMap));
+    return sortBySendTime(await Future.wait(packages.map(_tryMap)));
   }
 
   /// Reactive [list]: re-emits whenever a schedule is added, cancelled, or its
@@ -172,11 +179,13 @@ class ScheduleManager {
   Stream<List<ScheduledEmail>> watch() {
     return _scheduler
         .schedulesStream(pubkey: _requirePubkey())
-        .map(
-          (items) => sortBySendTime(
-            items
-                .where((i) => i.type == ScheduledItemType.package)
-                .map((i) => _tryMap(i.package)),
+        .asyncMap(
+          (items) async => sortBySendTime(
+            await Future.wait(
+              items
+                  .where((i) => i.type == ScheduledItemType.package)
+                  .map((i) => _tryMap(i.package)),
+            ),
           ),
         );
   }
@@ -190,16 +199,48 @@ class ScheduleManager {
   /// DVM feedback. [watch] re-emits with the refreshed state.
   Future<void> resync() => _scheduler.resync(pubkey: _requirePubkey());
 
-  /// The self-copy rumor stored as [packageId]'s content, or null if no such
-  /// package exists. The rumor carries the full email, so callers can
-  /// reconstruct its MIME (inline in the rumor's content, or a Blossom blob
-  /// referenced by its tags) to re-open the scheduled email in a composer.
-  Future<Nip01Event?> getPackageRumor(String packageId) async {
+  /// The full MIME text of [packageId]'s self-copy rumor, or null if no such
+  /// package exists or its Blossom reference lacks a key or nonce. Throws when
+  /// its Blossom blob is neither cached nor downloadable.
+  Future<String?> getPackageMimeText(String packageId) async {
     final packages = await _scheduler.listPackages(pubkey: _requirePubkey());
     for (final package in packages) {
-      if (package.packageId == packageId) return _decodeRumor(package.content);
+      if (package.packageId == packageId) {
+        return _rumorMimeText(_decodeRumor(package.content));
+      }
     }
     return null;
+  }
+
+  /// The MIME text a rumor carries: inline in its `content`, or an encrypted
+  /// Blossom blob referenced by its `x`/`decryption-*` tags. Scheduling pins
+  /// the blob for the account, so the cache is read before resolving any
+  /// server.
+  Future<String?> _rumorMimeText(Nip01Event rumor) async {
+    final hash = rumor.getFirstTag('x');
+    if (hash == null) return rumor.content.isEmpty ? null : rumor.content;
+    final key = rumor.getFirstTag('decryption-key');
+    final nonce = rumor.getFirstTag('decryption-nonce');
+    if (key == null || nonce == null) return null;
+    final encrypted =
+        await _blossomCache.get(hash) ??
+        await fetchOrLoadEncryptedBlob(
+          blossomHash: hash,
+          serverUrls: await resolveBlobServers(
+            ndk: _ndk,
+            pubkeys: [rumor.pubKey],
+            defaultBlossomServers: defaultBlossomServers,
+          ),
+          cache: _blossomCache,
+          ndk: _ndk,
+          pubkey: _requirePubkey(),
+        );
+    final decrypted = await decryptBlob(
+      encryptedBytes: encrypted,
+      key: key,
+      nonce: nonce,
+    );
+    return utf8.decode(decrypted);
   }
 
   // ── Mapping ────────────────────────────────────────────────────────────────
@@ -215,10 +256,10 @@ class ScheduleManager {
   }
 
   /// Map a package to a [ScheduledEmail], or null if its content is not ours.
-  ScheduledEmail? _tryMap(ScheduledPackage? package) {
+  Future<ScheduledEmail?> _tryMap(ScheduledPackage? package) async {
     if (package == null) return null;
     try {
-      return _toScheduledEmail(package);
+      return await _toScheduledEmail(package);
     } catch (_) {
       return null;
     }
@@ -226,9 +267,9 @@ class ScheduleManager {
 
   /// The package content is the self-copy rumor. Decode it and read the email
   /// straight from its MIME, so nothing about the schedule is stored twice.
-  ScheduledEmail _toScheduledEmail(ScheduledPackage package) {
+  Future<ScheduledEmail> _toScheduledEmail(ScheduledPackage package) async {
     final rumor = _decodeRumor(package.content);
-    final message = MimeMessage.parseFromText(rumor.content);
+    final message = MimeMessage.parseFromText(await _displayMimeText(rumor));
     List<String> addrs(List<MailAddress>? a) =>
         a?.map((m) => m.email).toList() ?? const [];
     final status = aggregateStatus(package.jobs.map((j) => j.status));
@@ -249,6 +290,15 @@ class ScheduleManager {
       statusMessage: statusMessage(package.jobs, status),
       createdAt: DateTime.fromMillisecondsSinceEpoch(package.createdAt * 1000),
     );
+  }
+
+  /// An unreachable blob keeps the schedule listed, with empty fields.
+  Future<String> _displayMimeText(Nip01Event rumor) async {
+    try {
+      return await _rumorMimeText(rumor) ?? rumor.content;
+    } catch (_) {
+      return rumor.content;
+    }
   }
 
   String _encodeRumor(Nip01Event rumor) =>

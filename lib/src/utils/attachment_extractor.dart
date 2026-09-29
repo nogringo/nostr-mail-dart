@@ -58,7 +58,7 @@ Future<void> _walk(
   final filename = part.decodeFileName();
   final contentId = _stripAngleBrackets(part.getHeaderValue('content-id'));
 
-  final descriptor = await cache.put(bytes, type: contentType, pinned: false);
+  final descriptor = await cache.put(bytes, type: contentType);
 
   refs.add(
     AttachmentRef(

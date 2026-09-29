@@ -14,7 +14,7 @@ void main() {
   test(
     'a real Scheduler DVM delivers the scheduled email at the schedule time',
     () async {
-      final relay = MockRelay(name: 'relay', explicitPort: 19031);
+      final relay = MockRelay(name: 'relay', explicitPort: 19038);
       await relay.startServer();
       addTearDown(() async => await relay.stopServer());
 

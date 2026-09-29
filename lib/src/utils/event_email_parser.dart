@@ -58,6 +58,7 @@ Future<Email> parseEmailEvent({
     blossomHash: blossomHash,
     decryptionKey: decryptionKey,
     decryptionNonce: decryptionNonce,
+    recipientPubkey: recipientPubkey,
     involvedPubkeys: [event.pubKey, recipientPubkey],
     defaultBlossomServers: defaultBlossomServers,
     blossomCache: blossomCache,
@@ -94,6 +95,7 @@ Future<Email> parseEmailEvent({
 Future<String> _parseMime({
   required Ndk ndk,
   required String rawContent,
+  required String recipientPubkey,
   required List<String> involvedPubkeys,
   required BlossomCache blossomCache,
   String? blossomHash,
@@ -119,6 +121,7 @@ Future<String> _parseMime({
       serverUrls: serverUrls,
       cache: blossomCache,
       ndk: ndk,
+      pubkey: recipientPubkey,
     );
 
     // A blob that does not decrypt or is not text is malformed for good,

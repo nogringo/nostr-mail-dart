@@ -1,7 +1,7 @@
 # nostr_mail — Agent Guide
 
 > Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59 gift-wrapped messages.
-> Version: 4.0.0 | Dart SDK: ^3.12.0 | Platforms: Android, iOS, Linux, macOS, Web, Windows
+> Version: 5.0.0 | Dart SDK: ^3.12.0 | Platforms: Android, iOS, Linux, macOS, Web, Windows
 
 ---
 
@@ -52,7 +52,7 @@ dart run build_runner build --delete-conflicting-outputs
 dart test
 
 # Run a specific test file
-dart test test/nostr_mail_test.dart
+dart test test/unit/email_test.dart
 
 # Verbose test output
 dart test --reporter=expanded
@@ -60,12 +60,10 @@ dart test --reporter=expanded
 
 ### Known Test Behaviours
 
-- **146 of 147 tests pass**.
-- **`test/blossom_integration_test.dart`** uses `MockBlossomServer` + `MockRelay` — fully offline and deterministic. Takes ~40s because `enough_mail_plus` `buildMimeMessage()` is pathologically slow with 100KB bodies (see `test/enough_mail_large_body_perf_test.dart`).
-- **`test/enough_mail_large_body_perf_test.dart`** documents the upstream `enough_mail_plus` performance bug.
-- **`test/cc_bcc_test.dart`** still **fails** — it hard-codes `ws://localhost:7777` without starting a `MockRelay`. This is a known pre-existing issue.
-- Most integration tests spin up local `MockRelay` WebSocket servers and `MockBlossomServer` HTTP servers, so they are self-contained.
-- The mail store in tests is `testDatabase()` (`test/helpers/test_database.dart`), an in-memory drift database closed with the test. The sembast database the sync engine and the queues need is still opened with **isolated in-memory names** (`test_db_${DateTime.now().millisecondsSinceEpoch}`) to avoid state bleeding between tests.
+- **Every test passes**, offline, in about 15 s for the whole suite.
+- Integration tests spin up local `MockRelay` WebSocket servers and `MockBlossomServer` HTTP servers, so they are self-contained.
+- `dart test` runs files in parallel: a `MockRelay` given an `explicitPort` must not share it with any other test file, or one of them fails to bind.
+- The mail store in tests is `testDatabase()` (`test/helpers/test_database.dart`), an in-memory drift database closed with the test. The sembast database the sync engine and the queues need is opened in memory under the `TestUser` id, so each user gets its own.
 
 ---
 
@@ -120,14 +118,21 @@ lib/
         └── attachment_counter.dart   # Counts attachments via MimeMessage
 
 test/
-├── nostr_mail_test.dart         # Unit tests for models, parser, repositories, resolver
+├── unit/                        # No network: models, parser, utils, client internals
+│   └── storage/                 # One file per repository, on testDatabase()
+├── integration/
+│   ├── client/                  # Client features: labels, folders, schedule, deletion, sync
+│   └── send_receive/            # Delivery: Blossom, bridges, Cc/Bcc, public emails
 ├── mocks/
-│   ├── mock_relay.dart          # Full WebSocket Nostr relay mock (~800 lines)
+│   ├── mock_relay.dart          # Full WebSocket Nostr relay mock
 │   ├── mock_blossom_server.dart # Shelf-based Blossom server mock (supports dynamic ports)
 │   └── mock_bridge.dart         # SMTP bridge simulator using NostrMailClient
-├── models/
-│   └── test_user.dart           # Helper: create user + NDK + in-memory DB
-└── <feature>_test.dart          # Per-feature integration tests
+└── helpers/
+    ├── test_user.dart           # Helper: create user + NDK + both databases + client
+    ├── test_database.dart       # testDatabase(), in-memory drift store
+    ├── test_blossom_cache.dart  # In-memory BlossomCache
+    ├── test_sync_engine.dart
+    └── wait_for_broadcasts.dart
 ```
 
 ### Architecture Notes
@@ -213,7 +218,7 @@ await NostrMailClient.create({
 
 1. **Unit tests** (`test/unit/`) — no network; repositories run on `testDatabase()`, sembast on `databaseFactoryMemory`.
 2. **Integration tests with mocks** — start `MockRelay` / `MockBlossomServer`, create `TestUser` objects, send emails between them, assert on local DB state.
-3. **State isolation** — always use unique DB names per test. Never reuse `'test_db'` strings.
+3. **State isolation**: give each `TestUser` a unique id, it names its sembast database. Leave `MockRelay`'s port unset (a random free port) unless the test needs a fixed one, and then pick one no other file uses.
 4. **Tear-down pattern** for mock relays:
    ```dart
    final relay = MockRelay(name: 'relay');
@@ -225,19 +230,12 @@ await NostrMailClient.create({
 
 ### Running Tests Reliably
 
-The full suite is now hermetic (no live network required):
+The full suite is hermetic (no live network required):
 
 ```bash
-# Fast, offline-only tests
-dart test test/nostr_mail_test.dart
-dart test test/bridges_test.dart
-dart test test/folder_label_exclusion_test.dart
-
-# Slow tests (mock-based but heavy)
-dart test test/blossom_integration_test.dart   # ~40s (blocked by enough_mail_plus perf)
-
-# Known broken
-dart test test/cc_bcc_test.dart                # hard-codes ws://localhost:7777, no mock relay
+dart test                    # everything
+dart test test/unit          # no network at all
+dart test test/integration   # mock relays and Blossom servers
 ```
 
 ---
@@ -315,7 +313,7 @@ An email is bridged when its rumor carries a `mail-from` tag. Its `senderPubkey`
 ## When Modifying This Codebase
 
 - **Keep `NostrMailClient` backwards-compatible** if possible; consumers rely heavily on `send()`, `fetchRecent()`, and `watch()`.
-- **Add tests** for new storage operations in `nostr_mail_test.dart` or a new feature-specific file.
+- **Add tests** for new storage operations in `test/unit/storage/`, and for features in a file under `test/integration/`.
 - **Update `CHANGELOG.md`** with user-visible changes.
 - **Update `AGENTS.md`** if you change the architecture, testing patterns, or file layout.
 - **Do not commit `.qwen/` or `pubspec.lock`** (both are gitignored).

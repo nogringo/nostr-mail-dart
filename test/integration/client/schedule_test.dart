@@ -3,6 +3,7 @@ import 'package:ndk/entities.dart' show ReadWriteMarker;
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:nostr_event_scheduler/nostr_event_scheduler.dart';
 import 'package:nostr_mail/nostr_mail.dart';
+import 'package:nostr_mail/src/utils/blob_fetcher.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_user.dart';
@@ -128,4 +129,44 @@ void main() {
       );
     },
   );
+
+  test('a schedule stored on Blossom lists its subject and reopens', () async {
+    final relay = MockRelay(name: 'relay', explicitPort: 19037);
+    await relay.startServer();
+    addTearDown(() async => await relay.stopServer());
+
+    final dvm = Bip340.generatePrivateKey();
+    final recipient = Bip340.generatePrivateKey();
+
+    final sender = await TestUser(
+      'scheduler blossom sender',
+      defaultDmRelays: [relay.url],
+      schedulerDvm: dvm.publicKey,
+      schedulerDvmReadRelays: [relay.url],
+    ).create();
+    addTearDown(() async => await sender.destroy());
+
+    final body = 'x' * (maxInlineSize + 1);
+    final scheduled = await sender.client.scheduleEmail(
+      to: [NostrRecipient.fromPubkey(recipient.publicKey)],
+      subject: 'large report',
+      body: body,
+      at: DateTime.now().add(const Duration(days: 30)),
+    );
+
+    expect(scheduled.subject, 'large report');
+    expect(scheduled.bodyPreview, startsWith('xxx'));
+    final blob = (await sender.blossomCache.list()).single;
+    expect(blob.pinnedBy, contains(blobPinHolder(sender.keyPair.publicKey)));
+    final list = await sender.client.getScheduledEmails();
+    expect(list.single.subject, 'large report');
+    final watched = await sender.client.watchScheduledEmails().firstWhere(
+      (l) => l.isNotEmpty,
+    );
+    expect(watched.single.subject, 'large report');
+
+    final mime = await sender.client.getScheduledMime(scheduled.packageId);
+    expect(mime?.decodeSubject(), 'large report');
+    expect(mime?.decodeTextPlainPart()?.replaceAll(RegExp(r'\s'), ''), body);
+  });
 }

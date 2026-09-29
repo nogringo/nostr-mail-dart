@@ -1,3 +1,24 @@
+## 5.0.0
+
+Blossom blobs released per account, and large scheduled emails shown in full.
+
+### Breaking
+
+- **Dependencies.** Require `blossom_cache: ^0.5.0` and
+  `blossom_upload_queue_shim_for_ndk: ^0.9.0`. A custom `BlossomCache` must
+  now take a holder in `pin` / `unpin` and provide `unpinAll`.
+
+### Fixed
+
+- **Logging out releases the account's Blossom blobs.** A downloaded blob
+  was pinned for good, and the sender's own copy of a large email not at
+  all. Both are now pinned for the account, and `clearLocalAccountData`
+  releases that account's pins, so the cache can evict what no remaining
+  account reads.
+- **Large scheduled emails.** A scheduled email over 32 KB, whose body lives
+  on Blossom, listed with no subject, recipients or preview. It now lists in
+  full.
+
 ## 4.0.0
 
 User folders and tags, labels hidden from relays, and a Bcc leak closed on

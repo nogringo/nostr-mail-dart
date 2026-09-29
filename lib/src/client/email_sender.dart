@@ -18,6 +18,7 @@ import '../storage/email_repository.dart';
 import '../storage/gift_wrap_repository.dart';
 import '../storage/models/email_record.dart';
 import '../utils/attachment_extractor.dart';
+import '../utils/blob_fetcher.dart';
 import '../utils/encrypt_blob.dart';
 import '../utils/mime_message_cleaner.dart';
 import 'settings_manager.dart';
@@ -307,7 +308,12 @@ class EmailSender {
         ...recipientPubkeys,
         if (keepCopy) senderPubkey,
       });
-      senderBlobTags = await _uploadBlob(rawContent, servers, senderPubkey);
+      senderBlobTags = await _uploadBlob(
+        rawContent,
+        servers,
+        senderPubkey,
+        pinBy: blobPinHolder(senderPubkey),
+      );
       if (recipientContent == rawContent) {
         recipientBlobTags = senderBlobTags;
       } else if (!recipientInline) {
@@ -486,8 +492,9 @@ class EmailSender {
   Future<List<List<String>>> _uploadBlob(
     String content,
     List<String> servers,
-    String senderPubkey,
-  ) async {
+    String senderPubkey, {
+    String? pinBy,
+  }) async {
     final encryptedBlob = await encryptBlob(
       Uint8List.fromList(utf8.encode(content)),
     );
@@ -496,6 +503,7 @@ class EmailSender {
     final descriptor = await _blossomCache.put(
       encryptedBlob.bytes,
       type: 'application/octet-stream',
+      pinBy: pinBy,
     );
     // The pubkey binds every retry to the sending account instead of
     // whoever happens to be logged in when the retry fires.
