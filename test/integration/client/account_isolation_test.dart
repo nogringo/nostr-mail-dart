@@ -211,6 +211,7 @@ void main() {
     }
 
     tearDown(() async {
+      await client.dispose();
       await ndk.destroy();
       await db.close();
       await relay.stopServer();
