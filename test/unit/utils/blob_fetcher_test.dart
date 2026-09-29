@@ -22,10 +22,10 @@ void main() {
     for (final pubkey in ['alice', 'bob']) {
       await fetchOrLoadEncryptedBlob(
         blossomHash: blob.sha256,
-        serverUrls: const [],
+        involvedPubkeys: const [],
         cache: cache,
         ndk: ndk,
-        pubkey: pubkey,
+        pinFor: pubkey,
       );
     }
 

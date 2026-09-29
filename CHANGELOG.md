@@ -15,6 +15,10 @@ Blossom blobs released per account, and large scheduled emails shown in full.
   all. Both are now pinned for the account, and `clearLocalAccountData`
   releases that account's pins, so the cache can evict what no remaining
   account reads.
+- **Large emails open without waiting on relays.** Opening an email over
+  32 KB, or processing it again during sync, looked up the Blossom server
+  lists on the relays (up to 5 s) even when its blob was already in the
+  cache. The lookup now happens only when the blob has to be downloaded.
 - **Large scheduled emails.** A scheduled email over 32 KB, whose body lives
   on Blossom, listed with no subject, recipients or preview. It now lists in
   full.

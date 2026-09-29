@@ -10,38 +10,45 @@ import '../constants.dart';
 String blobPinHolder(String pubkey) => 'nostr_mail:$pubkey';
 
 /// Return the encrypted Blossom blob for [blossomHash], pinned on behalf of
-/// [pubkey] so it is exempt from LRU eviction until that account releases it.
+/// the [pinFor] account so it is exempt from LRU eviction until that account
+/// releases it.
 ///
 /// Fast path: read from [cache] if present.
 ///
-/// Slow path: download from [serverUrls], then store the bytes in [cache].
+/// Slow path: download from the Blossom servers of [involvedPubkeys], then
+/// store the bytes in [cache].
 ///
 /// Throws whatever the underlying [Ndk.blossom.getBlob] call throws when no
-/// server in [serverUrls] holds the blob.
+/// server holds the blob.
 Future<Uint8List> fetchOrLoadEncryptedBlob({
   required String blossomHash,
-  required List<String> serverUrls,
+  required List<String> involvedPubkeys,
   required BlossomCache cache,
   required Ndk ndk,
-  required String pubkey,
+  required String pinFor,
+  List<String>? defaultBlossomServers,
 }) async {
   final cached = await cache.get(blossomHash);
   if (cached != null) {
     // Another account may hold the only pin and release it on logout.
-    await cache.pin(blossomHash, by: blobPinHolder(pubkey));
+    await cache.pin(blossomHash, by: blobPinHolder(pinFor));
     return cached;
   }
 
   final downloadResult = await ndk.blossom.getBlob(
     sha256: blossomHash,
-    serverUrls: serverUrls,
+    serverUrls: await _resolveBlobServers(
+      ndk: ndk,
+      pubkeys: involvedPubkeys,
+      defaultBlossomServers: defaultBlossomServers,
+    ),
   );
 
   await cache.put(
     downloadResult.data,
     sha256: blossomHash,
     type: 'application/octet-stream',
-    pinBy: blobPinHolder(pubkey),
+    pinBy: blobPinHolder(pinFor),
   );
 
   return downloadResult.data;
@@ -63,7 +70,7 @@ Future<Uint8List> fetchOrLoadEncryptedBlob({
 /// fetch hits every plausible source rather than committing to one tier.
 /// Blossom blobs are content-addressed and un-authenticated, so any server
 /// holding the bytes can serve them.
-Future<List<String>> resolveBlobServers({
+Future<List<String>> _resolveBlobServers({
   required Ndk ndk,
   required List<String> pubkeys,
   List<String>? defaultBlossomServers,

@@ -740,17 +740,13 @@ class NostrMailClient {
       final key = email.decryptionKey;
       final nonce = email.decryptionNonce;
       if (key == null || nonce == null) return null;
-      final serverUrls = await resolveBlobServers(
-        ndk: _ndk,
-        pubkeys: [email.senderPubkey, email.recipientPubkey],
-        defaultBlossomServers: _defaultBlossomServers,
-      );
       final encrypted = await fetchOrLoadEncryptedBlob(
         blossomHash: hash,
-        serverUrls: serverUrls,
+        involvedPubkeys: [email.senderPubkey, email.recipientPubkey],
+        defaultBlossomServers: _defaultBlossomServers,
         cache: _blossomCache,
         ndk: _ndk,
-        pubkey: email.recipientPubkey,
+        pinFor: email.recipientPubkey,
       );
       final decrypted = await decryptBlob(
         encryptedBytes: encrypted,

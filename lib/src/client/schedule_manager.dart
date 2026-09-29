@@ -213,28 +213,21 @@ class ScheduleManager {
   }
 
   /// The MIME text a rumor carries: inline in its `content`, or an encrypted
-  /// Blossom blob referenced by its `x`/`decryption-*` tags. Scheduling pins
-  /// the blob for the account, so the cache is read before resolving any
-  /// server.
+  /// Blossom blob referenced by its `x`/`decryption-*` tags.
   Future<String?> _rumorMimeText(Nip01Event rumor) async {
     final hash = rumor.getFirstTag('x');
     if (hash == null) return rumor.content.isEmpty ? null : rumor.content;
     final key = rumor.getFirstTag('decryption-key');
     final nonce = rumor.getFirstTag('decryption-nonce');
     if (key == null || nonce == null) return null;
-    final encrypted =
-        await _blossomCache.get(hash) ??
-        await fetchOrLoadEncryptedBlob(
-          blossomHash: hash,
-          serverUrls: await resolveBlobServers(
-            ndk: _ndk,
-            pubkeys: [rumor.pubKey],
-            defaultBlossomServers: defaultBlossomServers,
-          ),
-          cache: _blossomCache,
-          ndk: _ndk,
-          pubkey: _requirePubkey(),
-        );
+    final encrypted = await fetchOrLoadEncryptedBlob(
+      blossomHash: hash,
+      involvedPubkeys: [rumor.pubKey],
+      defaultBlossomServers: defaultBlossomServers,
+      cache: _blossomCache,
+      ndk: _ndk,
+      pinFor: _requirePubkey(),
+    );
     final decrypted = await decryptBlob(
       encryptedBytes: encrypted,
       key: key,

@@ -110,18 +110,13 @@ Future<String> _parseMime({
       );
     }
 
-    final serverUrls = await resolveBlobServers(
-      ndk: ndk,
-      pubkeys: involvedPubkeys,
-      defaultBlossomServers: defaultBlossomServers,
-    );
-
     final encryptedBytes = await fetchOrLoadEncryptedBlob(
       blossomHash: blossomHash,
-      serverUrls: serverUrls,
+      involvedPubkeys: involvedPubkeys,
+      defaultBlossomServers: defaultBlossomServers,
       cache: blossomCache,
       ndk: ndk,
-      pubkey: recipientPubkey,
+      pinFor: recipientPubkey,
     );
 
     // A blob that does not decrypt or is not text is malformed for good,
