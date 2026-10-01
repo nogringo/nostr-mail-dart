@@ -76,6 +76,12 @@ void main() {
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     expect(second.createdAt, greaterThan(first.createdAt));
 
+    // Dated ahead of the clock, and the sync engine never asks for the future.
+    await Future.delayed(
+      DateTime.fromMillisecondsSinceEpoch(
+        second.createdAt * 1000,
+      ).difference(DateTime.now()),
+    );
     await desktop.client.fetchRecent();
     expect(await desktop.client.getSenderVerdict('bob'), SenderVerdict.block);
   });
