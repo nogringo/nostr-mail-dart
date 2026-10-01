@@ -11,6 +11,12 @@ sender.
 
 ### Added
 
+- **Sender verdicts.** `allowSender` and `blockSender` record a verdict on a
+  sender, `getSenderVerdict` reads it back and `onSender` reports changes.
+  Verdicts live in an append-only list (`kind:1990` / `1991`, `d` tag
+  `nostr-mail/senders`), encrypted to the account itself and published to its
+  write relays, so every device shares them. Removals and deletions published
+  by other clients are applied.
 - **`senderKey`** on `Email` and `EmailSummary`, and as a `getSummaries`
   filter: the sender's pubkey, plus the lowercased From address when the
   email is bridged. It tells apart the senders behind one bridge, and replaces

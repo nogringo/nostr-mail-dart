@@ -79,6 +79,9 @@ class WatchManager {
   Stream<MailEvent> get onStarred =>
       onLabel.where((e) => _getLabelFromEvent(e) == 'flag:starred');
 
+  Stream<SenderVerdictChanged> get onSender =>
+      _bus.stream.where((e) => e is SenderVerdictChanged).cast();
+
   String? _getLabelFromEvent(MailEvent e) {
     if (e is LabelAdded) return e.label;
     if (e is LabelRemoved) return e.label;

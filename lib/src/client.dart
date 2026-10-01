@@ -16,6 +16,7 @@ import 'dart:typed_data';
 import 'client/email_sender.dart';
 import 'client/event_bus.dart';
 import 'client/label_manager.dart';
+import 'client/sender_manager.dart';
 import 'client/settings_manager.dart';
 import 'client/mail_sync.dart';
 import 'client/watch_manager.dart';
@@ -35,6 +36,7 @@ import 'models/paginated_result.dart';
 import 'models/private_settings.dart';
 import 'models/recipient.dart';
 import 'models/scheduled_email.dart';
+import 'models/sender_verdict.dart';
 
 import 'storage/database.dart';
 import 'storage/email_repository.dart';
@@ -65,6 +67,7 @@ class NostrMailClient {
   final EventBus _bus;
   final EmailSender _sender;
   final LabelManager _labels;
+  final SenderManager _senders;
   final SettingsManager _settings;
   final MailSync _sync;
   final WatchManager _watch;
@@ -298,6 +301,7 @@ class NostrMailClient {
         bus,
         queue,
       ),
+      senders: SenderManager(ndk, senderRepo, relayResolver, bus, queue),
       settings: settingsManager,
       sync: mailSync,
       watch: WatchManager(ndk, mailSync, bus, relayResolver),
@@ -322,6 +326,7 @@ class NostrMailClient {
     required this._blossomCache,
     required this._sender,
     required this._labels,
+    required this._senders,
     required this._settings,
     required this._sync,
     required this._watch,
@@ -966,6 +971,27 @@ class NostrMailClient {
   Future<List<String>> getStarredEmailIds() => _labels.getStarredEmailIds();
   Future<List<String>> getReadEmailIds() => _labels.getReadEmailIds();
 
+  // ── Senders ─────────────────────────────────────────────────────────────
+  //
+  // Verdicts on senders, keyed by [EmailSummary.senderKey] and kept in the
+  // account's senders list. Received mail with no folder label goes to the
+  // inbox when its sender is allowed, to spam when it is blocked, and to
+  // requests when it has no verdict.
+
+  /// Accepts [senderKey] from requests, or unblocks it from spam. Applied at
+  /// once, and published to the account's write relays.
+  Future<void> allowSender(String senderKey) =>
+      _senders.setVerdict(senderKey, SenderVerdict.allow);
+
+  /// Refuses [senderKey] from requests, or blocks it. Applied at once, and
+  /// published to the account's write relays.
+  Future<void> blockSender(String senderKey) =>
+      _senders.setVerdict(senderKey, SenderVerdict.block);
+
+  /// The verdict on [senderKey], null when it has none.
+  Future<SenderVerdict?> getSenderVerdict(String senderKey) =>
+      _senders.verdictOf(senderKey);
+
   // ── Watch ───────────────────────────────────────────────────────────────
 
   Stream<MailEvent> watch() => _watch.watch();
@@ -980,6 +1006,9 @@ class NostrMailClient {
   Stream<MailEvent> get onTrash => _watch.onTrash;
   Stream<MailEvent> get onRead => _watch.onRead;
   Stream<MailEvent> get onStarred => _watch.onStarred;
+
+  /// Verdicts changed here or on another device.
+  Stream<SenderVerdictChanged> get onSender => _watch.onSender;
 
   // ── Sync ────────────────────────────────────────────────────────────────
 
