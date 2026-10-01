@@ -21,6 +21,7 @@ import 'package:nostr_mail/src/storage/tombstone_repository.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
 
+import '../../helpers/allow_sender.dart';
 import '../../helpers/test_blossom_cache.dart';
 import '../../helpers/test_database.dart';
 import '../../mocks/mock_relay.dart';
@@ -62,10 +63,17 @@ void main() {
     late EmailRepository emails;
     late LabelRepository labels;
 
-    setUp(() {
+    setUp(() async {
       final database = testDatabase();
       emails = EmailRepository(database);
       labels = LabelRepository(database);
+      for (final account in [alice, bob]) {
+        await allowSender(
+          database,
+          recipientPubkey: account,
+          senderKey: sender,
+        );
+      }
     });
 
     test("inbox query for Alice does not leak Bob's emails", () async {
@@ -238,6 +246,11 @@ void main() {
           folder: 'inbox',
           isBridged: false,
         ),
+      );
+      await allowSender(
+        database,
+        recipientPubkey: recipient,
+        senderKey: 'sender',
       );
     }
 

@@ -115,7 +115,12 @@ class EmailRepository {
               m.isFolder.not(),
         ),
       );
-      expr = expr & (labelled | matched) & v.folder.isNotIn(['trash', 'spam']);
+      // Outside requests too: a stranger's mail must not reach a tag through
+      // a condition it can meet on purpose.
+      expr =
+          expr &
+          (labelled | matched) &
+          v.folder.isNotIn(['trash', 'spam', 'requests']);
     }
     if (q.hasAttachments != null) {
       final hasAttachments = existsQuery(
@@ -151,6 +156,18 @@ class EmailRepository {
               ..where(_matches(_db.emailStates, q)))
             .getSingle();
     return row.read(total)!;
+  }
+
+  /// How many distinct senders the emails matching [q] come from.
+  Future<int> countSenderKeys(EmailQuery q) async {
+    final v = _db.emailStates;
+    final senders = v.senderKey.count(distinct: true);
+    final row =
+        await (_db.selectOnly(v)
+              ..addColumns([senders])
+              ..where(_matches(v, q)))
+            .getSingle();
+    return row.read(senders)!;
   }
 
   /// Query emails with filters, sorting and pagination.

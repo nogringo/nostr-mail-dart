@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
 import 'package:ndk/ndk.dart' hide RelaySet;
 import 'package:nostr_mail/nostr_mail.dart';
@@ -112,5 +114,48 @@ void main() {
 
     await desktop.client.fetchRecent();
     expect(await desktop.client.getSenderVerdict('bob'), isNull);
+  });
+
+  test('received mail moves with the verdict on its sender', () async {
+    final stranger = await TestUser(
+      'senders_stranger_${DateTime.now().microsecondsSinceEpoch}',
+      defaultDmRelays: [relay.url],
+    ).create();
+    addTearDown(() async => await stranger.destroy());
+    final senderKey = stranger.keyPair.publicKey;
+
+    await stranger.client.send(
+      to: [NostrRecipient.fromPubkey(me)],
+      subject: 'Hello',
+      body: 'Do we know each other?',
+    );
+    await waitForBroadcasts(stranger.client.broadcastQueue);
+    await phone.client.fetchRecent();
+
+    Future<String> folder() async =>
+        (await phone.client.getSummaries()).items.single.folder;
+
+    final row = (await phone.client.getSummaries(
+      folder: 'requests',
+    )).items.single;
+    expect(row.senderKey, senderKey);
+    final pending = StreamIterator(phone.client.watchPendingSenderCount());
+    addTearDown(pending.cancel);
+    expect(await pending.moveNext(), isTrue);
+    expect(pending.current, 1);
+    await expectLater(
+      phone.client.moveToFolder(row.id, 'requests'),
+      throwsA(isA<NostrMailException>()),
+    );
+
+    await phone.client.allowSender(senderKey);
+    expect(await pending.moveNext(), isTrue);
+    expect(pending.current, 0);
+    expect(await folder(), 'inbox');
+    expect(await phone.client.getUnreadCount(folder: 'inbox'), 1);
+
+    await phone.client.blockSender(senderKey);
+    expect(await folder(), 'spam');
+    expect(await phone.client.getPendingSenderCount(), 0);
   });
 }

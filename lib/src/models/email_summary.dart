@@ -41,7 +41,7 @@ class EmailSummary {
   /// MIME date, falling back to the Nostr event date.
   final DateTime date;
 
-  /// Inbox, sent, trash, archive, spam, or the id of a user folder.
+  /// Inbox, sent, trash, archive, spam, requests, or the id of a user folder.
   final String folder;
 
   final bool isRead;

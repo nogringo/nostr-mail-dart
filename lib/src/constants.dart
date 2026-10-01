@@ -41,7 +41,14 @@ const listRemoveKind = 1991;
 const labelNamespace = 'mail';
 
 /// Folders every mailbox has. Never issued as the id of a user folder or tag.
-const reservedFolders = {'inbox', 'sent', 'archive', 'trash', 'spam'};
+const reservedFolders = {
+  'inbox',
+  'sent',
+  'archive',
+  'trash',
+  'spam',
+  'requests',
+};
 
 /// Maximum size for inline MIME content (32KB).
 /// NIP-44 (used in Gift Wraps) has a strict 65,535-byte plaintext limit.

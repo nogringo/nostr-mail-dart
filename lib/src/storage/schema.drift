@@ -145,8 +145,10 @@ WHERE a.is_add AND a.verdict IN ('allow', 'block')
       AND (b.created_at > a.created_at
         OR (b.is_add AND b.created_at = a.created_at AND b.event_id < a.event_id)));
 
--- The folder is the most recent folder label, else the first user folder
--- whose condition holds, else the natural mailbox.
+-- The folder is the most recent folder label. Received mail then goes by the
+-- verdict of its sender: spam when blocked, requests when it has none. What is
+-- left goes to the first user folder whose condition holds, else the natural
+-- mailbox.
 CREATE VIEW email_states AS
 SELECT e.*,
   COALESCE(
@@ -154,6 +156,15 @@ SELECT e.*,
       WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey
         AND l.label LIKE 'folder:%'
       ORDER BY l.timestamp DESC LIMIT 1),
+    CASE WHEN e.sender_pubkey <> e.recipient_pubkey THEN
+      CASE (SELECT s.verdict FROM sender_verdicts s
+            WHERE s.recipient_pubkey = e.recipient_pubkey
+              AND s.sender_key = e.sender_key)
+        WHEN 'allow' THEN NULL
+        WHEN 'block' THEN 'spam'
+        ELSE 'requests'
+      END
+    END,
     (SELECT m.entry_id FROM matches m
       WHERE m.email_id = e.id AND m.is_folder
       ORDER BY m.rank LIMIT 1),

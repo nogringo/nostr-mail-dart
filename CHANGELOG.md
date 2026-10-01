@@ -3,8 +3,27 @@
 Received mail sorted between Inbox, Requests and Spam by the verdict of its
 sender.
 
+### Upgrading
+
+- Every received email with no folder label leaves the inbox for requests
+  until its sender is accepted with `allowSender`. An app that does not list
+  the `requests` folder no longer shows that mail anywhere.
+- Nothing to migrate locally. The schema moves to 8 and is rebuilt from the
+  NDK cache on first launch, keeping the decryptions already stored.
+
 ### Breaking
 
+- **Received mail is routed by the verdict of its sender.** An email with no
+  folder label goes to the inbox when its sender is allowed, to `spam` when it
+  is blocked, and to the new `requests` folder when it has no verdict. The
+  account's own mail is never routed this way. A folder label still wins over
+  any verdict.
+- **User folder conditions only sort mail from allowed senders**, and tag
+  listings leave out requests, so a stranger cannot reach either by meeting a
+  condition on purpose.
+- **`requests` is a reserved folder.** It takes no label:
+  `moveToFolder(id, 'requests')` throws.
+- **`EmailSummary` takes a required `senderKey`.**
 - **`MailEvent` gains `SenderVerdictChanged`**, emitted when the verdict on a
   sender changes, here or on another device. A `switch` covering every
   `MailEvent` needs a case for it.
@@ -17,6 +36,8 @@ sender.
   `nostr-mail/senders`), encrypted to the account itself and published to its
   write relays, so every device shares them. Removals and deletions published
   by other clients are applied.
+- **`getPendingSenderCount` / `watchPendingSenderCount`**: how many senders
+  have mail in requests, for a badge or a banner.
 - **`senderKey`** on `Email` and `EmailSummary`, and as a `getSummaries`
   filter: the sender's pubkey, plus the lowercased From address when the
   email is bridged. It tells apart the senders behind one bridge, and replaces

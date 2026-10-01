@@ -185,6 +185,11 @@ class LabelManager {
   Future<void> moveToFolder(String emailId, String folder) => switch (folder) {
     'trash' => moveToTrash(emailId),
     'archive' => moveToArchive(emailId),
+    'requests' => Future.error(
+      NostrMailException(
+        'Requests holds the mail of senders with no verdict, it takes no label',
+      ),
+    ),
     _ => addLabel(emailId, 'folder:$folder'),
   };
 

@@ -78,7 +78,7 @@ void main() {
       await db.close();
     });
 
-    /// A public email from someone else, so its natural folder is the inbox.
+    /// A public email from a sender with no verdict, so it lands in requests.
     Nip01Event publicEmail() => Nip01Event(
       id: emailId,
       pubKey: 'sender-pubkey',
@@ -148,7 +148,7 @@ void main() {
       await sync.onPublicEmail(publicEmail());
 
       final record = await emails.getById(emailId, recipientPubkey: alice);
-      expect(record!.folder, 'inbox');
+      expect(record!.folder, 'requests');
       expect(
         await labels.getLabelsForEmail(emailId, recipientPubkey: alice),
         isEmpty,
@@ -161,7 +161,7 @@ void main() {
       await sync.onPublicEmail(publicEmail());
 
       final record = await emails.getById(emailId, recipientPubkey: alice);
-      expect(record!.folder, 'inbox');
+      expect(record!.folder, 'requests');
     });
 
     test('a label applied twice stays until both events are deleted', () async {

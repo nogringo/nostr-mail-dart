@@ -157,7 +157,8 @@ void main() {
       },
     );
 
-    test('SMTP → Nostr delivers a legacy email through the bridge', () async {
+    test('SMTP → Nostr delivers a legacy email through the bridge, held '
+        'in requests until its sender is accepted', () async {
       final relay = MockRelay(name: 'relay', explicitPort: 19018);
       await relay.startServer();
       addTearDown(() async => await relay.stopServer());
@@ -179,7 +180,7 @@ void main() {
       addTearDown(() async => await user.destroy());
 
       final builder = MessageBuilder()
-        ..from = [MailAddress(null, 'alice@gmail.com')]
+        ..from = [MailAddress(null, 'Alice@Gmail.com')]
         ..to = [
           MailAddress(
             null,
@@ -196,11 +197,36 @@ void main() {
       );
 
       await user.client.fetchRecent();
-      final inbox = await user.client.getInboxEmails();
+      final request = (await user.client.getSummaries(
+        folder: 'requests',
+      )).items.single;
+      expect(request.subject, 'Hello from SMTP');
+      expect(request.senderPubkey, bridge.keyPair.publicKey);
+      expect(request.senderKey, '${bridge.keyPair.publicKey}:alice@gmail.com');
+      expect(await user.client.getPendingSenderCount(), 1);
 
-      expect(inbox.length, 1);
-      expect(inbox.first.mime.decodeSubject(), 'Hello from SMTP');
-      expect(inbox.first.senderPubkey, bridge.keyPair.publicKey);
+      await user.client.allowSender(request.senderKey);
+      final inbox = await user.client.getInboxEmails();
+      expect(inbox.single.mime.decodeSubject(), 'Hello from SMTP');
+      expect(await user.client.getPendingSenderCount(), 0);
+
+      // Another sender behind the same bridge is not accepted with Alice.
+      final fromBob = MessageBuilder()
+        ..from = [MailAddress(null, 'bob@gmail.com')]
+        ..to = builder.to
+        ..subject = 'Hello from Bob'
+        ..text = 'Another sender.';
+      await bridge.receiveMailFromSmtp(
+        MailAddress(null, 'bob@gmail.com'),
+        fromBob.buildMimeMessage(),
+      );
+      await user.client.fetchRecent();
+      expect(
+        (await user.client.getSummaries(
+          folder: 'requests',
+        )).items.single.subject,
+        'Hello from Bob',
+      );
     });
   });
 }

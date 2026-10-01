@@ -54,7 +54,7 @@ void main() {
     await recipient.client.fetchRecent();
     await Future.delayed(const Duration(seconds: 1));
 
-    final received = await recipient.client.getInboxEmails();
+    final received = await recipient.client.getEmails();
     expect(received, isNotEmpty);
 
     final email = received.firstWhere(
@@ -113,7 +113,7 @@ void main() {
     expect(sent.mime.bcc, isNotEmpty);
 
     for (final recipient in [toUser, bccUser]) {
-      final email = (await recipient.client.getInboxEmails()).single;
+      final email = (await recipient.client.getEmails()).single;
       expect(email.body, contains('AAAAAAA'));
       expect(email.mime.bcc ?? const [], isEmpty);
     }

@@ -88,7 +88,7 @@ void main() {
       while (received == null && DateTime.now().isBefore(deadline)) {
         await Future.delayed(const Duration(milliseconds: 400));
         await recipient.client.fetchRecent();
-        final matches = (await recipient.client.getInboxEmails())
+        final matches = (await recipient.client.getEmails())
             .where((e) => e.subject == 'rendez-vous lundi')
             .toList();
         if (matches.isNotEmpty) received = matches.first;

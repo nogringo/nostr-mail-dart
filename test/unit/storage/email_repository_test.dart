@@ -1,22 +1,26 @@
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:nostr_mail/src/models/attachment_ref.dart';
 import 'package:nostr_mail/src/models/email.dart';
+import 'package:nostr_mail/src/storage/database.dart';
 import 'package:nostr_mail/src/storage/email_repository.dart';
 import 'package:nostr_mail/src/storage/label_repository.dart';
 import 'package:nostr_mail/src/storage/models/email_query.dart';
 import 'package:nostr_mail/src/storage/models/email_record.dart';
+import 'package:nostr_mail/src/storage/sender_repository.dart';
 import 'package:test/test.dart';
 
+import '../../helpers/allow_sender.dart';
 import '../../helpers/test_database.dart';
 
 void main() {
   group('EmailRepository', () {
     const rpk = 'rpk';
+    late NostrMailDatabase database;
     late EmailRepository repo;
     late LabelRepository labels;
 
     setUp(() {
-      final database = testDatabase();
+      database = testDatabase();
       repo = EmailRepository(database);
       labels = LabelRepository(database);
     });
@@ -59,10 +63,18 @@ void main() {
       );
     }
 
-    /// The state fields of a record are derived from labels, so seeding one
-    /// means saving the row and then the labels that produce its state.
+    /// The state fields of a record are derived from labels and from the
+    /// verdict on its sender, so seeding one means saving the row, then what
+    /// produces its state.
     Future<void> save(EmailRecord record) async {
       await repo.save(record);
+      if (record.folder == 'inbox') {
+        await allowSender(
+          database,
+          recipientPubkey: record.recipientPubkey,
+          senderKey: record.senderKey,
+        );
+      }
       final wanted = [
         if (record.folder != 'inbox') 'folder:${record.folder}',
         if (record.isRead) 'state:read',
@@ -78,6 +90,99 @@ void main() {
         );
       }
     }
+
+    group('routing by sender verdict', () {
+      Future<void> verdict(String senderKey, String verdict) =>
+          SenderRepository(database).saveEntries(
+            eventId: '$verdict-$senderKey',
+            recipientPubkey: rpk,
+            isAdd: true,
+            createdAt: 1,
+            entries: [(key: senderKey, verdict: verdict)],
+          );
+
+      Future<String?> folderOf(String id) =>
+          repo.folderOf(id, recipientPubkey: rpk);
+
+      test('sends received mail by verdict: none, allow, block', () async {
+        await repo.save(makeRecord('stranger', senderPubkey: 'stranger'));
+        await repo.save(makeRecord('friend', senderPubkey: 'friend'));
+        await repo.save(makeRecord('spammer', senderPubkey: 'spammer'));
+        await verdict('friend', 'allow');
+        await verdict('spammer', 'block');
+
+        expect(await folderOf('stranger'), 'requests');
+        expect(await folderOf('friend'), 'inbox');
+        expect(await folderOf('spammer'), 'spam');
+      });
+
+      test('keeps the account\'s own mail in sent', () async {
+        await repo.save(makeRecord('own', senderPubkey: rpk));
+        expect(await folderOf('own'), 'sent');
+      });
+
+      test('a folder label wins over the verdict', () async {
+        await repo.save(makeRecord('archived', senderPubkey: 'spammer'));
+        await verdict('spammer', 'block');
+        await labels.saveLabel(
+          emailId: 'archived',
+          label: 'folder:archive',
+          labelEventId: 'archive',
+          timestamp: 1,
+          recipientPubkey: rpk,
+        );
+        await repo.save(makeRecord('marked', senderPubkey: 'friend'));
+        await verdict('friend', 'allow');
+        await labels.saveLabel(
+          emailId: 'marked',
+          label: 'folder:spam',
+          labelEventId: 'spam',
+          timestamp: 1,
+          recipientPubkey: rpk,
+        );
+
+        expect(await folderOf('archived'), 'archive');
+        expect(await folderOf('marked'), 'spam');
+      });
+
+      test('tells apart the senders behind one bridge', () async {
+        await repo.save(
+          makeRecord(
+            'alice',
+            senderPubkey: 'bridge',
+            senderKey: 'bridge:alice@example.com',
+            isBridged: true,
+          ),
+        );
+        await repo.save(
+          makeRecord(
+            'bob',
+            senderPubkey: 'bridge',
+            senderKey: 'bridge:bob@example.com',
+            isBridged: true,
+          ),
+        );
+        await verdict('bridge:alice@example.com', 'allow');
+
+        expect(await folderOf('alice'), 'inbox');
+        expect(await folderOf('bob'), 'requests');
+      });
+
+      test('countSenderKeys counts each sender once', () async {
+        await repo.save(makeRecord('a1', senderPubkey: 'alice'));
+        await repo.save(makeRecord('a2', senderPubkey: 'alice'));
+        await repo.save(makeRecord('b1', senderPubkey: 'bob'));
+        await repo.save(makeRecord('c1', senderPubkey: 'carol'));
+        await verdict('carol', 'allow');
+
+        expect(
+          await repo.countSenderKeys(
+            const EmailQuery(recipientPubkey: rpk, folder: 'requests'),
+          ),
+          2,
+        );
+      });
+    });
 
     group('save / get', () {
       test('save and getById', () async {

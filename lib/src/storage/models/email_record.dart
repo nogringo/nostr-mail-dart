@@ -70,7 +70,8 @@ class EmailRecord {
 
   // ── Derived from the labels and matches tables ──────────────────────────
 
-  /// Current folder: inbox, sent, trash, archive, spam, or a user folder id.
+  /// Current folder: inbox, sent, trash, archive, spam, requests, or a user
+  /// folder id.
   final String folder;
 
   final bool isRead;
@@ -113,8 +114,8 @@ class EmailRecord {
     this.decryptionNonce,
   }) : senderKey = senderKey ?? senderPubkey;
 
-  /// The mailbox an email lands in before any folder label: sent for a
-  /// self-copy, inbox otherwise.
+  /// Sent for a self-copy, inbox otherwise: where an email goes when no label,
+  /// verdict or user folder places it.
   static String naturalFolder({
     required String senderPubkey,
     required String recipientPubkey,

@@ -4989,7 +4989,7 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
   @override
   Map<SqlDialect, String> get createViewStatements => {
     SqlDialect.sqlite:
-        'CREATE VIEW email_states AS SELECT e.*, COALESCE((SELECT substr(l.label, 8) FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label LIKE \'folder:%\' ORDER BY l.timestamp DESC LIMIT 1), (SELECT m.entry_id FROM matches AS m WHERE m.email_id = e.id AND m.is_folder ORDER BY m.rank LIMIT 1), CASE WHEN e.sender_pubkey = e.recipient_pubkey THEN \'sent\' ELSE \'inbox\' END) AS folder, EXISTS (SELECT 1 FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label = \'state:read\') AS is_read, EXISTS (SELECT 1 FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label = \'flag:starred\') AS is_starred FROM emails AS e',
+        'CREATE VIEW email_states AS SELECT e.*, COALESCE((SELECT substr(l.label, 8) FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label LIKE \'folder:%\' ORDER BY l.timestamp DESC LIMIT 1), CASE WHEN e.sender_pubkey <> e.recipient_pubkey THEN CASE (SELECT s.verdict FROM sender_verdicts AS s WHERE s.recipient_pubkey = e.recipient_pubkey AND s.sender_key = e.sender_key) WHEN \'allow\' THEN NULL WHEN \'block\' THEN \'spam\' ELSE \'requests\' END END, (SELECT m.entry_id FROM matches AS m WHERE m.email_id = e.id AND m.is_folder ORDER BY m.rank LIMIT 1), CASE WHEN e.sender_pubkey = e.recipient_pubkey THEN \'sent\' ELSE \'inbox\' END) AS folder, EXISTS (SELECT 1 FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label = \'state:read\') AS is_read, EXISTS (SELECT 1 FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label = \'flag:starred\') AS is_starred FROM emails AS e',
   };
   @override
   EmailStates get asDslTable => this;
@@ -5250,7 +5250,12 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
   @override
   Query? get query => null;
   @override
-  Set<String> get readTables => const {'emails', 'labels', 'matches'};
+  Set<String> get readTables => const {
+    'emails',
+    'labels',
+    'matches',
+    'sender_ops',
+  };
 }
 
 class EmailSearch extends Table

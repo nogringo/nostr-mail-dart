@@ -368,9 +368,10 @@ class NostrMailClient {
   /// [Email.mime] is read, its parsed part tree: fine for one open email,
   /// far too much for a screenful of rows.
   ///
-  /// [folder] is `'inbox'`, `'sent'`, `'trash'`, `'archive'`, `'spam'`, the
-  /// id of a user folder, or null to span every folder. [tag] is the id of a
-  /// user tag, whose listing leaves out trash and spam. Pass [limit] and
+  /// [folder] is `'inbox'`, `'sent'`, `'trash'`, `'archive'`, `'spam'`,
+  /// `'requests'`, the id of a user folder, or null to span every folder.
+  /// [tag] is the id of a user tag, whose listing leaves out trash, spam and
+  /// requests. Pass [limit] and
   /// [offset] to page: without
   /// [limit] the whole mailbox is returned. [search] matches the same indexed
   /// text as [search].
@@ -644,26 +645,26 @@ class NostrMailClient {
   ///
   /// Emits the current value immediately, then re-emits whenever the count
   /// may have changed (new email received, mark as read/unread, folder
-  /// change, deletion). Ideal for driving a folder badge with
-  /// `StreamBuilder`.
-  Stream<int> watchUnreadCount({String? folder, String? tag}) {
+  /// change, deletion, verdict on a sender). Ideal for driving a folder badge
+  /// with `StreamBuilder`.
+  Stream<int> watchUnreadCount({String? folder, String? tag}) =>
+      _watchCount(() => getUnreadCount(folder: folder, tag: tag));
+
+  /// How many senders have mail in requests, waiting for a verdict.
+  Future<int> getPendingSenderCount() => _emailRepo.countSenderKeys(
+    EmailQuery(recipientPubkey: _requirePubkey(), folder: 'requests'),
+  );
+
+  /// Reactive stream of [getPendingSenderCount], emitted like
+  /// [watchUnreadCount].
+  Stream<int> watchPendingSenderCount() => _watchCount(getPendingSenderCount);
+
+  Stream<int> _watchCount(Future<int> Function() read) {
     return Rx.defer(() {
       return Rx.merge<Object?>([
-            Stream.value(null),
-            _watch.events
-                .where(
-                  (e) =>
-                      e is EmailReceived ||
-                      e is LabelAdded ||
-                      e is LabelRemoved ||
-                      e is EmailDeleted,
-                )
-                .debounceTime(const Duration(milliseconds: 50)),
-          ])
-          .switchMap(
-            (_) => Stream.fromFuture(getUnreadCount(folder: folder, tag: tag)),
-          )
-          .distinct();
+        Stream.value(null),
+        _watch.events.debounceTime(const Duration(milliseconds: 50)),
+      ]).switchMap((_) => Stream.fromFuture(read())).distinct();
     }, reusable: true);
   }
 
@@ -938,6 +939,7 @@ class NostrMailClient {
 
   /// Move an email to `'inbox'`, `'sent'`, `'archive'`, `'trash'`, `'spam'`
   /// or a user folder id. Folder labels are exclusive: the previous one goes.
+  /// Requests takes no label: it holds what the senders' verdicts leave there.
   Future<void> moveToFolder(String emailId, String folder) =>
       _labels.moveToFolder(emailId, folder);
 

@@ -8,12 +8,12 @@
 class EmailQuery {
   final String recipientPubkey;
 
-  /// A reserved folder (`inbox`, `sent`, `archive`, `trash`, `spam`) or the
-  /// id of a user folder.
+  /// A reserved folder (`inbox`, `sent`, `archive`, `trash`, `spam`,
+  /// `requests`) or the id of a user folder.
   final String? folder;
 
   /// The id of a user tag: the emails it holds by label or by match, outside
-  /// trash and spam.
+  /// trash, spam and requests.
   final String? tag;
   final bool? isRead;
   final bool? isStarred;

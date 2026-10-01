@@ -82,16 +82,17 @@ void main() {
         '${npub(bcc2User.keyPair.publicKey)}@nostr',
       );
 
-      void expectInboxHidesBcc(MimeMessage mime) {
+      void expectCopyHidesBcc(MimeMessage mime) {
         expect(mime.to!.first.email, '${npub(toUser.keyPair.publicKey)}@nostr');
         expect(mime.cc!.first.email, '${npub(ccUser.keyPair.publicKey)}@nostr');
         expect(mime.bcc == null || mime.bcc!.isEmpty, isTrue);
       }
 
-      expectInboxHidesBcc((await toUser.client.getInboxEmails()).first.mime);
-      expectInboxHidesBcc((await ccUser.client.getInboxEmails()).first.mime);
-      expectInboxHidesBcc((await bcc1User.client.getInboxEmails()).first.mime);
-      expectInboxHidesBcc((await bcc2User.client.getInboxEmails()).first.mime);
+      // Received from a sender with no verdict, so in requests.
+      expectCopyHidesBcc((await toUser.client.getEmails()).single.mime);
+      expectCopyHidesBcc((await ccUser.client.getEmails()).single.mime);
+      expectCopyHidesBcc((await bcc1User.client.getEmails()).single.mime);
+      expectCopyHidesBcc((await bcc2User.client.getEmails()).single.mime);
     },
   );
 }
