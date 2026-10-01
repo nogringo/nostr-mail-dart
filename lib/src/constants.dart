@@ -31,6 +31,12 @@ const textRepostKind = 6;
 /// Generic repost kind (NIP-18)
 const genericRepostKind = 16;
 
+/// Append-only list Add kind (Append-Only Lists NIP)
+const listAddKind = 1990;
+
+/// Append-only list Remove kind (Append-Only Lists NIP)
+const listRemoveKind = 1991;
+
 /// Label namespace for mail-related labels
 const labelNamespace = 'mail';
 
@@ -86,3 +92,6 @@ const publicSettingsDTag = 'nostr-mail/settings';
 
 /// D-tag for private (encrypted) settings
 const privateSettingsDTag = 'nostr-mail/settings/private';
+
+/// D-tag of the append-only list holding the sender verdicts
+const sendersListDTag = 'nostr-mail/senders';

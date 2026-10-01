@@ -13,14 +13,14 @@ class NostrMailDatabase extends _$NostrMailDatabase {
   /// only other source is the signer, and every approval it asks its user for.
   /// A schema change leaves them alone; only [clearAll] on the repositories
   /// empties them.
-  static const _rawTables = {'unsealed', 'settings'};
+  static const _rawTables = {'unsealed', 'settings', 'sender_list_decryptions'};
 
   /// Bump on any schema change. Everything outside [_rawTables] is a
   /// projection of the NDK cache and of those tables, so a mismatch drops and
   /// recreates it instead of migrating. Indexes are dropped either way: they
   /// hold nothing of their own, and `createAll` would trip over one it finds.
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   bool _droppedProjection = false;
 

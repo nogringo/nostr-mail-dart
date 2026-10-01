@@ -99,6 +99,14 @@ void main() {
     await first
         .into(first.settings)
         .insert(SettingsCompanion.insert(pubkey: 'a', json: '{}'));
+    await first
+        .into(first.senderListDecryptions)
+        .insert(
+          SenderListDecryptionsCompanion.insert(
+            eventId: 'list',
+            recipientPubkey: 'a',
+          ),
+        );
     await first.close();
 
     final reset = sqlite3.open(file.path);
@@ -110,6 +118,10 @@ void main() {
     await database.openAndReportDrop();
     await expectLater(
       database.settings.select().get(),
+      completion(hasLength(1)),
+    );
+    await expectLater(
+      database.senderListDecryptions.select().get(),
       completion(hasLength(1)),
     );
   });

@@ -110,6 +110,41 @@ CREATE TABLE settings (
   json TEXT NOT NULL
 ) AS SettingsRow;
 
+-- What the signer made of a senders list event. Raw: only the signer can
+-- produce it again.
+CREATE TABLE sender_list_decryptions (
+  event_id TEXT NOT NULL PRIMARY KEY,
+  recipient_pubkey TEXT NOT NULL,
+  -- Null until decrypted.
+  plaintext TEXT,
+  failure TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0
+) AS SenderListDecryptionRow;
+
+-- One row per entry of a senders list event, an Add or a Remove.
+CREATE TABLE sender_ops (
+  event_id TEXT NOT NULL,
+  recipient_pubkey TEXT NOT NULL,
+  sender_key TEXT NOT NULL,
+  is_add BOOLEAN NOT NULL,
+  verdict TEXT,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (event_id, sender_key)
+) AS SenderOpRow;
+CREATE INDEX sender_ops_sender ON sender_ops (recipient_pubkey, sender_key, created_at);
+
+-- The verdict of the most recent Add, unless a Remove is strictly later. Two
+-- Adds in the same second: the lowest event id wins. A winning Add holding
+-- neither allow nor block leaves the sender with no verdict.
+CREATE VIEW sender_verdicts AS SenderVerdictRow AS
+SELECT a.recipient_pubkey, a.sender_key, a.verdict
+FROM sender_ops a
+WHERE a.is_add AND a.verdict IN ('allow', 'block')
+  AND NOT EXISTS (SELECT 1 FROM sender_ops b
+    WHERE b.recipient_pubkey = a.recipient_pubkey AND b.sender_key = a.sender_key
+      AND (b.created_at > a.created_at
+        OR (b.is_add AND b.created_at = a.created_at AND b.event_id < a.event_id)));
+
 -- The folder is the most recent folder label, else the first user folder
 -- whose condition holds, else the natural mailbox.
 CREATE VIEW email_states AS
