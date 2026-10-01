@@ -3,6 +3,12 @@
 Received mail sorted between Inbox, Requests and Spam by the verdict of its
 sender.
 
+### Breaking
+
+- **`MailEvent` gains `SenderVerdictChanged`**, emitted when the verdict on a
+  sender changes, here or on another device. A `switch` covering every
+  `MailEvent` needs a case for it.
+
 ### Added
 
 - **`senderKey`** on `Email` and `EmailSummary`, and as a `getSummaries`

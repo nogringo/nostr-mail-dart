@@ -41,6 +41,7 @@ import 'storage/email_repository.dart';
 import 'storage/gift_wrap_repository.dart';
 import 'storage/label_repository.dart';
 import 'storage/legacy_sembast_cleanup.dart';
+import 'storage/sender_repository.dart';
 import 'storage/settings_repository.dart';
 import 'storage/tombstone_repository.dart';
 import 'storage/models/email_query.dart';
@@ -60,6 +61,7 @@ class NostrMailClient {
   final GiftWrapRepository _giftWrapRepo;
   final SettingsRepository _settingsRepo;
   final TombstoneRepository _tombstoneRepo;
+  final SenderRepository _senderRepo;
   final EventBus _bus;
   final EmailSender _sender;
   final LabelManager _labels;
@@ -168,6 +170,7 @@ class NostrMailClient {
     final giftWrapRepo = GiftWrapRepository(database);
     final settingsRepo = SettingsRepository(database);
     final tombstoneRepo = TombstoneRepository(database);
+    final senderRepo = SenderRepository(database);
     final bus = EventBus();
 
     final relayResolver = RelayResolver(ndk, defaultDmRelays: defaultDmRelays);
@@ -220,6 +223,7 @@ class NostrMailClient {
       labelRepo,
       giftWrapRepo,
       tombstoneRepo,
+      senderRepo,
       bus,
       relayResolver,
       defaultBlossomServers: defaultBlossomServers,
@@ -278,6 +282,7 @@ class NostrMailClient {
       giftWrapRepo: giftWrapRepo,
       settingsRepo: settingsRepo,
       tombstoneRepo: tombstoneRepo,
+      senderRepo: senderRepo,
       bus: bus,
       blossomCache: blossomCache,
       defaultBlossomServers: defaultBlossomServers,
@@ -312,6 +317,7 @@ class NostrMailClient {
     required this._giftWrapRepo,
     required this._settingsRepo,
     required this._tombstoneRepo,
+    required this._senderRepo,
     required this._bus,
     required this._blossomCache,
     required this._sender,
@@ -1286,6 +1292,7 @@ class NostrMailClient {
       _giftWrapRepo.clearAll(recipientPubkey: pubkey),
       _settingsRepo.clear(pubkey: pubkey),
       _tombstoneRepo.clearAll(recipientPubkey: pubkey),
+      _senderRepo.clearAll(recipientPubkey: pubkey),
       _blossomCache.unpinAll(blobPinHolder(pubkey)),
       if (_ownsBroadcastQueue)
         broadcastQueue.clearLocalAccountData(pubkey: pubkey),
@@ -1306,6 +1313,7 @@ class NostrMailClient {
       _giftWrapRepo.clearAll(),
       _settingsRepo.clear(),
       _tombstoneRepo.clearAll(),
+      _senderRepo.clearAll(),
       if (_ownsBroadcastQueue) broadcastQueue.clearAllLocalData(),
       if (_ownsBlossomUploadQueue) blossomUploadQueue.clearAllLocalData(),
     ]);

@@ -161,6 +161,18 @@ class WatchManager {
       process: _sync.onLabelAddition,
     );
 
+    // Sender verdicts
+    _open(
+      _ndk.requests.subscription(
+        filter: sendersFilter(pubkey)..limit = 0,
+        explicitRelays: writeRelays,
+        cacheWrite: true,
+        auth: auth,
+      ),
+      generation,
+      process: _sync.onSendersList,
+    );
+
     // Unified deletions (emails, labels, reposts)
     _open(
       _ndk.requests.subscription(

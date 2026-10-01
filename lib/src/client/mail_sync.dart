@@ -8,12 +8,15 @@ import '../constants.dart';
 import '../exceptions.dart';
 import '../models/gift_wrap_state.dart';
 import '../models/mail_event.dart';
+import '../models/sender_verdict.dart';
 import '../models/unwrapped_gift_wrap.dart';
 import '../storage/email_repository.dart';
 import '../storage/gift_wrap_repository.dart';
 import '../storage/label_repository.dart';
 import '../storage/models/email_record.dart';
+import '../storage/sender_repository.dart';
 import '../storage/tombstone_repository.dart';
+import '../utils/senders_list.dart';
 import '../utils/throttle.dart';
 import 'cache_window.dart';
 import 'relay_resolver.dart';
@@ -37,6 +40,7 @@ class MailSync {
   final LabelRepository _labels;
   final GiftWrapRepository _giftWraps;
   final TombstoneRepository _tombstones;
+  final SenderRepository _senders;
   final EventBus _bus;
   final RelayResolver _relays;
   final List<String> _defaultBlossomServers;
@@ -67,6 +71,7 @@ class MailSync {
     this._labels,
     this._giftWraps,
     this._tombstones,
+    this._senders,
     this._bus,
     this._relays, {
     required this._blossomCache,
@@ -181,6 +186,7 @@ class MailSync {
         'write',
         [
           labelFilter(pubkey),
+          sendersFilter(pubkey),
           repostFilter(pubkey),
           settingsFilter(pubkey),
           metadataFilter(pubkey),
@@ -295,11 +301,17 @@ class MailSync {
     if (pubkey == null) return;
 
     // Gift wraps, labels included, and public emails run in parallel, up to
-    // [maxProcessingConcurrency] at a time. Deletions and labels published in
-    // clear stay sequential.
+    // [maxProcessingConcurrency] at a time. The senders list, deletions and
+    // labels published in clear stay sequential.
     //
     // A cancelled signer request ends the round: the only error that reaches
     // here, and the wraps left would each ask the user again.
+
+    // Verdicts first, so the emails this round announces are already routed.
+    for (final event in await _fromCache(sendersFilter(pubkey), window)) {
+      await onSendersList(event);
+    }
+
     await forEachThrottled(
       await _fromCache(emailFilter(pubkey), window),
       maxProcessingConcurrency,
@@ -581,9 +593,102 @@ class MailSync {
               ),
             );
           }
+          continue;
         }
+
+        _emitVerdicts(
+          await _senders.removeEvent(deletedEventId, recipientPubkey: pubkey),
+          event.createdAt,
+        );
       }
     }
+  }
+
+  /// An Add or a Remove on the account's senders list, whose entries travel
+  /// in content encrypted to the account itself.
+  Future<void> onSendersList(Nip01Event event) async {
+    final account = _ndk.accounts.getLoggedAccount();
+    if (account == null || event.pubKey != account.pubkey) return;
+    if (event.kind != listAddKind && event.kind != listRemoveKind) return;
+    if (event.getDtag() != sendersListDTag) return;
+
+    final pubkey = account.pubkey;
+    if (await _tombstones.contains(event.id, recipientPubkey: pubkey)) return;
+    if (await _senders.hasEvent(event.id, recipientPubkey: pubkey)) return;
+
+    final plaintext = await _sendersListPlaintext(event, account);
+    if (plaintext == null) return;
+
+    _emitVerdicts(
+      await _senders.saveEntries(
+        eventId: event.id,
+        recipientPubkey: pubkey,
+        isAdd: event.kind == listAddKind,
+        createdAt: event.createdAt,
+        entries: sendersListEntries(event, plaintext),
+      ),
+      event.createdAt,
+    );
+  }
+
+  /// The decrypted content of [event], read back once the signer produced it.
+  /// Like a gift wrap, an event is given up on after a failure on a key we
+  /// hold, or after [maxSignerAttempts] errors from a remote signer.
+  Future<String?> _sendersListPlaintext(
+    Nip01Event event,
+    Account account,
+  ) async {
+    if (event.content.isEmpty) return '';
+    final pubkey = account.pubkey;
+    final stored = await _senders.getDecryption(
+      event.id,
+      recipientPubkey: pubkey,
+    );
+    if (stored?.plaintext case final plaintext?) return plaintext;
+    if (stored?.failure == GiftWrapFailure.permanent.name) return null;
+    if (stored?.failure == GiftWrapFailure.signer.name &&
+        stored!.attempts >= maxSignerAttempts) {
+      return null;
+    }
+    if (!account.signer.canSign()) return null;
+
+    try {
+      final plaintext = await account.signer.decryptNip44(
+        ciphertext: event.content,
+        senderPubKey: pubkey,
+      );
+      if (plaintext == null) {
+        throw NostrMailException('Cannot decrypt the senders list');
+      }
+      await _senders.saveDecryption(
+        eventId: event.id,
+        recipientPubkey: pubkey,
+        plaintext: plaintext,
+      );
+      return plaintext;
+    } on SignerRequestCancelledException {
+      rethrow;
+    } catch (error) {
+      await _senders.recordFailure(
+        eventId: event.id,
+        recipientPubkey: pubkey,
+        failure: _decryptionFailure(error),
+      );
+      return null;
+    }
+  }
+
+  void _emitVerdicts(Map<String, SenderVerdict?> changes, int createdAt) {
+    final timestamp = DateTime.fromMillisecondsSinceEpoch(createdAt * 1000);
+    changes.forEach(
+      (senderKey, verdict) => _bus.emit(
+        SenderVerdictChanged(
+          senderKey: senderKey,
+          verdict: verdict,
+          timestamp: timestamp,
+        ),
+      ),
+    );
   }
 
   /// A label published in clear, as versions before gift-wrapped labels did.

@@ -11,6 +11,7 @@ import 'package:nostr_mail/src/client/relay_resolver.dart';
 import 'package:nostr_mail/src/storage/email_repository.dart';
 import 'package:nostr_mail/src/storage/gift_wrap_repository.dart';
 import 'package:nostr_mail/src/storage/label_repository.dart';
+import 'package:nostr_mail/src/storage/sender_repository.dart';
 import 'package:nostr_mail/src/storage/tombstone_repository.dart';
 import 'package:sembast/sembast_memory.dart' hide Filter;
 import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
@@ -63,6 +64,7 @@ void main() {
         labels,
         giftWraps,
         TombstoneRepository(database),
+        SenderRepository(database),
         EventBus(),
         RelayResolver(ndk),
         blossomCache: await openTestBlossomCache('wrapped_label_test'),
