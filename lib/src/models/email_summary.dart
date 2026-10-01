@@ -15,6 +15,9 @@ class EmailSummary {
   final String id;
   final String senderPubkey;
 
+  /// See `Email.senderKey`.
+  final String senderKey;
+
   /// Sender address as indexed at sync time. For a native nostr sender this
   /// is `<npub>@nostr`, and their real name lives in the profile behind
   /// [senderPubkey]; resolve that first and fall back to these.
@@ -62,6 +65,7 @@ class EmailSummary {
   const EmailSummary({
     required this.id,
     required this.senderPubkey,
+    required this.senderKey,
     required this.from,
     required this.subject,
     required this.preview,

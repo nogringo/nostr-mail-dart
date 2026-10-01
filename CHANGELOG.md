@@ -1,3 +1,15 @@
+## 6.0.0
+
+Received mail sorted between Inbox, Requests and Spam by the verdict of its
+sender.
+
+### Added
+
+- **`senderKey`** on `Email` and `EmailSummary`, and as a `getSummaries`
+  filter: the sender's pubkey, plus the lowercased From address when the
+  email is bridged. It tells apart the senders behind one bridge, and replaces
+  `senderPubkey` + `fromAddress` to list what one sender sent.
+
 ## 5.0.0
 
 Blossom blobs released per account, and large scheduled emails shown in full.

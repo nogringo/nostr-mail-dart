@@ -158,15 +158,13 @@ and `isBridged`. For a native nostr sender, `from` is `<npub>@nostr` and the
 real name lives in the profile behind `senderPubkey`: resolve that first and
 fall back to `fromName ?? from`.
 
-To list what one sender sent, filter on the row's `senderPubkey`. A bridged
-email carries the bridge's pubkey, shared by every sender behind it, so add
-the address too:
+To list what one sender sent, filter on the row's `senderKey`. It is the
+sender's pubkey, plus the lowercased From address when the email is bridged,
+since a bridged email carries the bridge's pubkey, shared by every sender
+behind it:
 
 ```dart
-final fromSender = await client.getSummaries(
-  senderPubkey: row.senderPubkey,
-  fromAddress: row.isBridged ? row.from : null,
-);
+final fromSender = await client.getSummaries(senderKey: row.senderKey);
 ```
 
 Load the whole message, body and MIME included, only when a row is opened:

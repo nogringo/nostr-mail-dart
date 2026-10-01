@@ -364,10 +364,10 @@ class NostrMailClient {
   /// [limit] the whole mailbox is returned. [search] matches the same indexed
   /// text as [search].
   ///
-  /// To list what one sender sent, pass the row's [EmailSummary.senderPubkey],
-  /// plus its [EmailSummary.from] as [fromAddress] when the row is bridged:
-  /// the pubkey of a bridged email is the bridge's, shared by every sender
-  /// behind it. [fromAddress] alone would let anyone claim that address.
+  /// To list what one sender sent, pass the row's [EmailSummary.senderKey] as
+  /// [senderKey]: it tells apart the senders behind one bridge, whose emails
+  /// all carry the bridge's pubkey. [fromAddress] alone would let anyone claim
+  /// that address.
   ///
   /// The result carries the matching `total` and a `hasMore`, so an endless
   /// list knows when to stop asking. Load the full message with [getEmail]
@@ -379,6 +379,7 @@ class NostrMailClient {
     bool? isStarred,
     bool? hasAttachments,
     String? senderPubkey,
+    String? senderKey,
     String? fromAddress,
     String? search,
     int? limit,
@@ -393,6 +394,7 @@ class NostrMailClient {
         isStarred: isStarred,
         hasAttachments: hasAttachments,
         senderPubkey: senderPubkey,
+        senderKey: senderKey,
         fromAddress: fromAddress,
         search: search,
         limit: limit,

@@ -32,12 +32,14 @@ void main() {
       String from = 'a@b.com',
       String body = 'body',
       String? senderPubkey,
+      String? senderKey,
       bool isBridged = false,
     }) {
       final ts = (date ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000;
       return EmailRecord(
         id: id,
         senderPubkey: senderPubkey ?? 'pk-$id',
+        senderKey: senderKey,
         recipientPubkey: rpk,
         lightMimeText: 'From: $from\r\nSubject: $subject\r\n\r\n$body',
         attachmentRefs: [
@@ -219,6 +221,37 @@ void main() {
           const EmailQuery(recipientPubkey: rpk, senderPubkey: 'native'),
         );
         expect(native.items.map((e) => e.id), ['spoof']);
+      });
+
+      test('filters by sender key', () async {
+        await save(
+          makeRecord(
+            'github',
+            senderPubkey: 'bridge',
+            senderKey: 'bridge:notifications@github.com',
+            isBridged: true,
+          ),
+        );
+        await save(
+          makeRecord(
+            'bank',
+            senderPubkey: 'bridge',
+            senderKey: 'bridge:alerts@bank.com',
+            isBridged: true,
+          ),
+        );
+
+        final github = await repo.querySummaries(
+          const EmailQuery(
+            recipientPubkey: rpk,
+            senderKey: 'bridge:notifications@github.com',
+          ),
+        );
+        expect(github.items.single.id, 'github');
+        expect(
+          github.items.single.senderKey,
+          'bridge:notifications@github.com',
+        );
       });
 
       test('matches a non-ASCII address in another case', () async {

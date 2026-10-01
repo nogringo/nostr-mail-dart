@@ -1,6 +1,8 @@
 CREATE TABLE emails (
   id TEXT NOT NULL PRIMARY KEY,
   sender_pubkey TEXT NOT NULL,
+  -- Lowercased in Dart: SQLite folds the case of ASCII only.
+  sender_key TEXT NOT NULL,
   recipient_pubkey TEXT NOT NULL,
   is_public BOOLEAN NOT NULL,
   is_bridged BOOLEAN NOT NULL,
@@ -22,6 +24,7 @@ CREATE TABLE emails (
   bcc_addresses TEXT NOT NULL DEFAULT '[]'
 ) AS EmailRow;
 CREATE INDEX emails_recipient_date ON emails (recipient_pubkey, date);
+CREATE INDEX emails_recipient_sender_key ON emails (recipient_pubkey, sender_key);
 
 CREATE TABLE attachments (
   email_id TEXT NOT NULL REFERENCES emails (id) ON DELETE CASCADE,

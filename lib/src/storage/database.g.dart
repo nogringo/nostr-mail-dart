@@ -28,6 +28,17 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
     requiredDuringInsert: true,
     $customConstraints: 'NOT NULL',
   );
+  static const VerificationMeta _senderKeyMeta = const VerificationMeta(
+    'senderKey',
+  );
+  late final GeneratedColumn<String> senderKey = GeneratedColumn<String>(
+    'sender_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
   static const VerificationMeta _recipientPubkeyMeta = const VerificationMeta(
     'recipientPubkey',
   );
@@ -221,6 +232,7 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
   List<GeneratedColumn> get $columns => [
     id,
     senderPubkey,
+    senderKey,
     recipientPubkey,
     isPublic,
     isBridged,
@@ -266,6 +278,14 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
       );
     } else if (isInserting) {
       context.missing(_senderPubkeyMeta);
+    }
+    if (data.containsKey('sender_key')) {
+      context.handle(
+        _senderKeyMeta,
+        senderKey.isAcceptableOrUnknown(data['sender_key']!, _senderKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_senderKeyMeta);
     }
     if (data.containsKey('recipient_pubkey')) {
       context.handle(
@@ -431,6 +451,10 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
         DriftSqlType.string,
         data['${effectivePrefix}sender_pubkey'],
       )!,
+      senderKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sender_key'],
+      )!,
       recipientPubkey: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}recipient_pubkey'],
@@ -514,6 +538,9 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
 class EmailRow extends DataClass implements Insertable<EmailRow> {
   final String id;
   final String senderPubkey;
+
+  /// Lowercased in Dart: SQLite folds the case of ASCII only.
+  final String senderKey;
   final String recipientPubkey;
   final bool isPublic;
   final bool isBridged;
@@ -537,6 +564,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
   const EmailRow({
     required this.id,
     required this.senderPubkey,
+    required this.senderKey,
     required this.recipientPubkey,
     required this.isPublic,
     required this.isBridged,
@@ -560,6 +588,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
     map['sender_pubkey'] = Variable<String>(senderPubkey);
+    map['sender_key'] = Variable<String>(senderKey);
     map['recipient_pubkey'] = Variable<String>(recipientPubkey);
     map['is_public'] = Variable<bool>(isPublic);
     map['is_bridged'] = Variable<bool>(isBridged);
@@ -592,6 +621,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     return EmailsCompanion(
       id: Value(id),
       senderPubkey: Value(senderPubkey),
+      senderKey: Value(senderKey),
       recipientPubkey: Value(recipientPubkey),
       isPublic: Value(isPublic),
       isBridged: Value(isBridged),
@@ -628,6 +658,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     return EmailRow(
       id: serializer.fromJson<String>(json['id']),
       senderPubkey: serializer.fromJson<String>(json['sender_pubkey']),
+      senderKey: serializer.fromJson<String>(json['sender_key']),
       recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
       isPublic: serializer.fromJson<bool>(json['is_public']),
       isBridged: serializer.fromJson<bool>(json['is_bridged']),
@@ -653,6 +684,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
       'sender_pubkey': serializer.toJson<String>(senderPubkey),
+      'sender_key': serializer.toJson<String>(senderKey),
       'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
       'is_public': serializer.toJson<bool>(isPublic),
       'is_bridged': serializer.toJson<bool>(isBridged),
@@ -676,6 +708,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
   EmailRow copyWith({
     String? id,
     String? senderPubkey,
+    String? senderKey,
     String? recipientPubkey,
     bool? isPublic,
     bool? isBridged,
@@ -696,6 +729,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
   }) => EmailRow(
     id: id ?? this.id,
     senderPubkey: senderPubkey ?? this.senderPubkey,
+    senderKey: senderKey ?? this.senderKey,
     recipientPubkey: recipientPubkey ?? this.recipientPubkey,
     isPublic: isPublic ?? this.isPublic,
     isBridged: isBridged ?? this.isBridged,
@@ -724,6 +758,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
       senderPubkey: data.senderPubkey.present
           ? data.senderPubkey.value
           : this.senderPubkey,
+      senderKey: data.senderKey.present ? data.senderKey.value : this.senderKey,
       recipientPubkey: data.recipientPubkey.present
           ? data.recipientPubkey.value
           : this.recipientPubkey,
@@ -767,6 +802,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     return (StringBuffer('EmailRow(')
           ..write('id: $id, ')
           ..write('senderPubkey: $senderPubkey, ')
+          ..write('senderKey: $senderKey, ')
           ..write('recipientPubkey: $recipientPubkey, ')
           ..write('isPublic: $isPublic, ')
           ..write('isBridged: $isBridged, ')
@@ -792,6 +828,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
   int get hashCode => Object.hash(
     id,
     senderPubkey,
+    senderKey,
     recipientPubkey,
     isPublic,
     isBridged,
@@ -816,6 +853,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
       (other is EmailRow &&
           other.id == this.id &&
           other.senderPubkey == this.senderPubkey &&
+          other.senderKey == this.senderKey &&
           other.recipientPubkey == this.recipientPubkey &&
           other.isPublic == this.isPublic &&
           other.isBridged == this.isBridged &&
@@ -838,6 +876,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
 class EmailsCompanion extends UpdateCompanion<EmailRow> {
   final Value<String> id;
   final Value<String> senderPubkey;
+  final Value<String> senderKey;
   final Value<String> recipientPubkey;
   final Value<bool> isPublic;
   final Value<bool> isBridged;
@@ -859,6 +898,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
   const EmailsCompanion({
     this.id = const Value.absent(),
     this.senderPubkey = const Value.absent(),
+    this.senderKey = const Value.absent(),
     this.recipientPubkey = const Value.absent(),
     this.isPublic = const Value.absent(),
     this.isBridged = const Value.absent(),
@@ -881,6 +921,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
   EmailsCompanion.insert({
     required String id,
     required String senderPubkey,
+    required String senderKey,
     required String recipientPubkey,
     required bool isPublic,
     required bool isBridged,
@@ -901,6 +942,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        senderPubkey = Value(senderPubkey),
+       senderKey = Value(senderKey),
        recipientPubkey = Value(recipientPubkey),
        isPublic = Value(isPublic),
        isBridged = Value(isBridged),
@@ -913,6 +955,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
   static Insertable<EmailRow> custom({
     Expression<String>? id,
     Expression<String>? senderPubkey,
+    Expression<String>? senderKey,
     Expression<String>? recipientPubkey,
     Expression<bool>? isPublic,
     Expression<bool>? isBridged,
@@ -935,6 +978,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (senderPubkey != null) 'sender_pubkey': senderPubkey,
+      if (senderKey != null) 'sender_key': senderKey,
       if (recipientPubkey != null) 'recipient_pubkey': recipientPubkey,
       if (isPublic != null) 'is_public': isPublic,
       if (isBridged != null) 'is_bridged': isBridged,
@@ -959,6 +1003,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
   EmailsCompanion copyWith({
     Value<String>? id,
     Value<String>? senderPubkey,
+    Value<String>? senderKey,
     Value<String>? recipientPubkey,
     Value<bool>? isPublic,
     Value<bool>? isBridged,
@@ -981,6 +1026,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     return EmailsCompanion(
       id: id ?? this.id,
       senderPubkey: senderPubkey ?? this.senderPubkey,
+      senderKey: senderKey ?? this.senderKey,
       recipientPubkey: recipientPubkey ?? this.recipientPubkey,
       isPublic: isPublic ?? this.isPublic,
       isBridged: isBridged ?? this.isBridged,
@@ -1010,6 +1056,9 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     }
     if (senderPubkey.present) {
       map['sender_pubkey'] = Variable<String>(senderPubkey.value);
+    }
+    if (senderKey.present) {
+      map['sender_key'] = Variable<String>(senderKey.value);
     }
     if (recipientPubkey.present) {
       map['recipient_pubkey'] = Variable<String>(recipientPubkey.value);
@@ -1073,6 +1122,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     return (StringBuffer('EmailsCompanion(')
           ..write('id: $id, ')
           ..write('senderPubkey: $senderPubkey, ')
+          ..write('senderKey: $senderKey, ')
           ..write('recipientPubkey: $recipientPubkey, ')
           ..write('isPublic: $isPublic, ')
           ..write('isBridged: $isBridged, ')
@@ -3712,6 +3762,7 @@ class SettingsCompanion extends UpdateCompanion<SettingsRow> {
 class EmailState extends DataClass {
   final String id;
   final String senderPubkey;
+  final String senderKey;
   final String recipientPubkey;
   final bool isPublic;
   final bool isBridged;
@@ -3735,6 +3786,7 @@ class EmailState extends DataClass {
   const EmailState({
     required this.id,
     required this.senderPubkey,
+    required this.senderKey,
     required this.recipientPubkey,
     required this.isPublic,
     required this.isBridged,
@@ -3764,6 +3816,7 @@ class EmailState extends DataClass {
     return EmailState(
       id: serializer.fromJson<String>(json['id']),
       senderPubkey: serializer.fromJson<String>(json['sender_pubkey']),
+      senderKey: serializer.fromJson<String>(json['sender_key']),
       recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
       isPublic: serializer.fromJson<bool>(json['is_public']),
       isBridged: serializer.fromJson<bool>(json['is_bridged']),
@@ -3792,6 +3845,7 @@ class EmailState extends DataClass {
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
       'sender_pubkey': serializer.toJson<String>(senderPubkey),
+      'sender_key': serializer.toJson<String>(senderKey),
       'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
       'is_public': serializer.toJson<bool>(isPublic),
       'is_bridged': serializer.toJson<bool>(isBridged),
@@ -3818,6 +3872,7 @@ class EmailState extends DataClass {
   EmailState copyWith({
     String? id,
     String? senderPubkey,
+    String? senderKey,
     String? recipientPubkey,
     bool? isPublic,
     bool? isBridged,
@@ -3841,6 +3896,7 @@ class EmailState extends DataClass {
   }) => EmailState(
     id: id ?? this.id,
     senderPubkey: senderPubkey ?? this.senderPubkey,
+    senderKey: senderKey ?? this.senderKey,
     recipientPubkey: recipientPubkey ?? this.recipientPubkey,
     isPublic: isPublic ?? this.isPublic,
     isBridged: isBridged ?? this.isBridged,
@@ -3871,6 +3927,7 @@ class EmailState extends DataClass {
     return (StringBuffer('EmailState(')
           ..write('id: $id, ')
           ..write('senderPubkey: $senderPubkey, ')
+          ..write('senderKey: $senderKey, ')
           ..write('recipientPubkey: $recipientPubkey, ')
           ..write('isPublic: $isPublic, ')
           ..write('isBridged: $isBridged, ')
@@ -3899,6 +3956,7 @@ class EmailState extends DataClass {
   int get hashCode => Object.hashAll([
     id,
     senderPubkey,
+    senderKey,
     recipientPubkey,
     isPublic,
     isBridged,
@@ -3926,6 +3984,7 @@ class EmailState extends DataClass {
       (other is EmailState &&
           other.id == this.id &&
           other.senderPubkey == this.senderPubkey &&
+          other.senderKey == this.senderKey &&
           other.recipientPubkey == this.recipientPubkey &&
           other.isPublic == this.isPublic &&
           other.isBridged == this.isBridged &&
@@ -3958,6 +4017,7 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
   List<GeneratedColumn> get $columns => [
     id,
     senderPubkey,
+    senderKey,
     recipientPubkey,
     isPublic,
     isBridged,
@@ -4001,6 +4061,10 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
       senderPubkey: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}sender_pubkey'],
+      )!,
+      senderKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sender_key'],
       )!,
       recipientPubkey: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -4093,6 +4157,12 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
   );
   late final GeneratedColumn<String> senderPubkey = GeneratedColumn<String>(
     'sender_pubkey',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+  );
+  late final GeneratedColumn<String> senderKey = GeneratedColumn<String>(
+    'sender_key',
     aliasedName,
     false,
     type: DriftSqlType.string,
@@ -4530,6 +4600,10 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
     'emails_recipient_date',
     'CREATE INDEX emails_recipient_date ON emails (recipient_pubkey, date)',
   );
+  late final Index emailsRecipientSenderKey = Index(
+    'emails_recipient_sender_key',
+    'CREATE INDEX emails_recipient_sender_key ON emails (recipient_pubkey, sender_key)',
+  );
   late final Attachments attachments = Attachments(this);
   late final Labels labels = Labels(this);
   late final Index labelsRecipientLabel = Index(
@@ -4582,6 +4656,7 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     emails,
     emailsRecipientDate,
+    emailsRecipientSenderKey,
     attachments,
     labels,
     labelsRecipientLabel,
@@ -4645,6 +4720,7 @@ typedef $EmailsCreateCompanionBuilder =
     EmailsCompanion Function({
       required String id,
       required String senderPubkey,
+      required String senderKey,
       required String recipientPubkey,
       required bool isPublic,
       required bool isBridged,
@@ -4668,6 +4744,7 @@ typedef $EmailsUpdateCompanionBuilder =
     EmailsCompanion Function({
       Value<String> id,
       Value<String> senderPubkey,
+      Value<String> senderKey,
       Value<String> recipientPubkey,
       Value<bool> isPublic,
       Value<bool> isBridged,
@@ -4746,6 +4823,11 @@ class $EmailsFilterComposer extends Composer<_$NostrMailDatabase, Emails> {
 
   ColumnFilters<String> get senderPubkey => $composableBuilder(
     column: $table.senderPubkey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get senderKey => $composableBuilder(
+    column: $table.senderKey,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4903,6 +4985,11 @@ class $EmailsOrderingComposer extends Composer<_$NostrMailDatabase, Emails> {
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get senderKey => $composableBuilder(
+    column: $table.senderKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get recipientPubkey => $composableBuilder(
     column: $table.recipientPubkey,
     builder: (column) => ColumnOrderings(column),
@@ -5004,6 +5091,9 @@ class $EmailsAnnotationComposer extends Composer<_$NostrMailDatabase, Emails> {
     column: $table.senderPubkey,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get senderKey =>
+      $composableBuilder(column: $table.senderKey, builder: (column) => column);
 
   GeneratedColumn<String> get recipientPubkey => $composableBuilder(
     column: $table.recipientPubkey,
@@ -5155,6 +5245,7 @@ class $EmailsTableManager
               ({
                 Value<String> id = const Value.absent(),
                 Value<String> senderPubkey = const Value.absent(),
+                Value<String> senderKey = const Value.absent(),
                 Value<String> recipientPubkey = const Value.absent(),
                 Value<bool> isPublic = const Value.absent(),
                 Value<bool> isBridged = const Value.absent(),
@@ -5176,6 +5267,7 @@ class $EmailsTableManager
               }) => EmailsCompanion(
                 id: id,
                 senderPubkey: senderPubkey,
+                senderKey: senderKey,
                 recipientPubkey: recipientPubkey,
                 isPublic: isPublic,
                 isBridged: isBridged,
@@ -5199,6 +5291,7 @@ class $EmailsTableManager
               ({
                 required String id,
                 required String senderPubkey,
+                required String senderKey,
                 required String recipientPubkey,
                 required bool isPublic,
                 required bool isBridged,
@@ -5220,6 +5313,7 @@ class $EmailsTableManager
               }) => EmailsCompanion.insert(
                 id: id,
                 senderPubkey: senderPubkey,
+                senderKey: senderKey,
                 recipientPubkey: recipientPubkey,
                 isPublic: isPublic,
                 isBridged: isBridged,

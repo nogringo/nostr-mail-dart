@@ -89,6 +89,7 @@ class EmailRepository {
     if (q.senderPubkey != null) {
       expr = expr & v.senderPubkey.equals(q.senderPubkey!);
     }
+    if (q.senderKey != null) expr = expr & v.senderKey.equals(q.senderKey!);
     if (q.fromAddress != null) {
       // Both sides in SQL: SQLite's lower() folds ASCII only, Dart's Unicode.
       expr =
@@ -219,6 +220,7 @@ class EmailRepository {
       ..addColumns([
         v.id,
         v.senderPubkey,
+        v.senderKey,
         v.fromAddress,
         v.fromName,
         v.toAddresses,
@@ -261,6 +263,7 @@ class EmailRepository {
         EmailSummary(
           id: row.read(v.id)!,
           senderPubkey: row.read(v.senderPubkey)!,
+          senderKey: row.read(v.senderKey)!,
           from: row.read(v.fromAddress)!,
           fromName: row.read(v.fromName),
           to: decodeAddresses(row.read(v.toAddresses)!),
@@ -369,6 +372,7 @@ class EmailRepository {
         EmailRecord(
           id: row.id,
           senderPubkey: row.senderPubkey,
+          senderKey: row.senderKey,
           recipientPubkey: row.recipientPubkey,
           isPublic: row.isPublic,
           isBridged: row.isBridged,
@@ -478,6 +482,7 @@ class EmailRepository {
   static EmailRow _toRow(EmailRecord r) => EmailRow(
     id: r.id,
     senderPubkey: r.senderPubkey,
+    senderKey: r.senderKey,
     recipientPubkey: r.recipientPubkey,
     isPublic: r.isPublic,
     isBridged: r.isBridged,

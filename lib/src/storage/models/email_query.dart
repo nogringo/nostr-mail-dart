@@ -20,6 +20,9 @@ class EmailQuery {
   final bool? hasAttachments;
   final String? senderPubkey;
 
+  /// See `Email.senderKey`.
+  final String? senderKey;
+
   /// Matched case-insensitively.
   final String? fromAddress;
   final String? search;
@@ -35,6 +38,7 @@ class EmailQuery {
     this.isStarred,
     this.hasAttachments,
     this.senderPubkey,
+    this.senderKey,
     this.fromAddress,
     this.search,
     this.limit,
@@ -49,6 +53,7 @@ class EmailQuery {
     this.isStarred,
     this.hasAttachments,
     this.senderPubkey,
+    this.senderKey,
     this.fromAddress,
     this.search,
     this.limit,
@@ -64,6 +69,7 @@ class EmailQuery {
     this.isStarred,
     this.hasAttachments,
     this.senderPubkey,
+    this.senderKey,
     this.fromAddress,
     this.search,
     this.limit,
@@ -79,6 +85,7 @@ class EmailQuery {
     this.isStarred,
     this.hasAttachments,
     this.senderPubkey,
+    this.senderKey,
     this.fromAddress,
     this.search,
     this.limit,
@@ -94,6 +101,7 @@ class EmailQuery {
     this.isStarred,
     this.hasAttachments,
     this.senderPubkey,
+    this.senderKey,
     this.fromAddress,
     this.search,
     this.limit,
@@ -110,6 +118,7 @@ class EmailQuery {
     bool? isStarred,
     bool? hasAttachments,
     String? senderPubkey,
+    String? senderKey,
     String? fromAddress,
     String? search,
     int? limit,
@@ -124,6 +133,7 @@ class EmailQuery {
       isStarred: isStarred ?? this.isStarred,
       hasAttachments: hasAttachments ?? this.hasAttachments,
       senderPubkey: senderPubkey ?? this.senderPubkey,
+      senderKey: senderKey ?? this.senderKey,
       fromAddress: fromAddress ?? this.fromAddress,
       search: search ?? this.search,
       limit: limit ?? this.limit,

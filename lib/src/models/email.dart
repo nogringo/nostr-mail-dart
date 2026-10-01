@@ -107,6 +107,13 @@ class Email {
           ? _mimeMessage.from!.first
           : null);
 
+  /// Who a sender verdict applies to: the pubkey, plus the lowercased From
+  /// address when bridged, since every sender behind a bridge shares its
+  /// pubkey.
+  String get senderKey => isBridged
+      ? '$senderPubkey:${(_mimeMessage.fromEmail ?? '').toLowerCase()}'
+      : senderPubkey;
+
   Map<String, dynamic> toJson() {
     final fromAddresses = _mimeMessage.from;
     String? from;

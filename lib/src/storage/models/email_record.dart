@@ -17,6 +17,9 @@ import '../../utils/body_preview.dart';
 class EmailRecord {
   final String id;
   final String senderPubkey;
+
+  /// See [Email.senderKey].
+  final String senderKey;
   final String recipientPubkey;
   final bool isPublic;
 
@@ -84,6 +87,7 @@ class EmailRecord {
   const EmailRecord({
     required this.id,
     required this.senderPubkey,
+    String? senderKey,
     required this.recipientPubkey,
     required this.lightMimeText,
     required this.attachmentRefs,
@@ -107,7 +111,7 @@ class EmailRecord {
     this.blossomHash,
     this.decryptionKey,
     this.decryptionNonce,
-  });
+  }) : senderKey = senderKey ?? senderPubkey;
 
   /// The mailbox an email lands in before any folder label: sent for a
   /// self-copy, inbox otherwise.
@@ -122,6 +126,7 @@ class EmailRecord {
     return EmailRecord(
       id: email.id,
       senderPubkey: email.senderPubkey,
+      senderKey: email.senderKey,
       recipientPubkey: email.recipientPubkey,
       lightMimeText: email.lightMimeText,
       attachmentRefs: email.attachmentRefs,
