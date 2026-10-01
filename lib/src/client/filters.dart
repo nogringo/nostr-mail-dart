@@ -15,14 +15,22 @@ Filter labelFilter(String pubkey) =>
     Filter(kinds: [labelKind], authors: [pubkey])
       ..setTag('L', [labelNamespace]);
 
-/// Unified deletion filter (kind 5) covering emails, labels and reposts.
+/// Unified deletion filter (kind 5) covering emails, labels, reposts and the
+/// senders list.
 Filter deletionFilter(String pubkey) =>
     Filter(kinds: [deletionRequestKind], authors: [pubkey])..setTag('k', [
       giftWrapKind.toString(),
       emailKind.toString(),
       labelKind.toString(),
       genericRepostKind.toString(),
+      listAddKind.toString(),
+      listRemoveKind.toString(),
     ]);
+
+/// Filter for the senders list (kinds 1990, 1991).
+Filter sendersFilter(String pubkey) =>
+    Filter(kinds: [listAddKind, listRemoveKind], authors: [pubkey])
+      ..setTag('d', [sendersListDTag]);
 
 /// Filter for generic reposts (kind 16).
 Filter repostFilter(String pubkey) =>

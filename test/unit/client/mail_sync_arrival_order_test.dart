@@ -12,6 +12,7 @@ import 'package:nostr_mail/src/client/relay_resolver.dart';
 import 'package:nostr_mail/src/storage/email_repository.dart';
 import 'package:nostr_mail/src/storage/gift_wrap_repository.dart';
 import 'package:nostr_mail/src/storage/label_repository.dart';
+import 'package:nostr_mail/src/storage/sender_repository.dart';
 import 'package:nostr_mail/src/storage/tombstone_repository.dart';
 import 'package:sembast/sembast_memory.dart' hide Filter;
 import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
@@ -64,6 +65,7 @@ void main() {
         labels,
         GiftWrapRepository(database),
         TombstoneRepository(database),
+        SenderRepository(database),
         EventBus(),
         RelayResolver(ndk),
         blossomCache: await openTestBlossomCache('arrival_order_test'),
@@ -76,7 +78,7 @@ void main() {
       await db.close();
     });
 
-    /// A public email from someone else, so its natural folder is the inbox.
+    /// A public email from a sender with no verdict, so it lands in requests.
     Nip01Event publicEmail() => Nip01Event(
       id: emailId,
       pubKey: 'sender-pubkey',
@@ -146,7 +148,7 @@ void main() {
       await sync.onPublicEmail(publicEmail());
 
       final record = await emails.getById(emailId, recipientPubkey: alice);
-      expect(record!.folder, 'inbox');
+      expect(record!.folder, 'requests');
       expect(
         await labels.getLabelsForEmail(emailId, recipientPubkey: alice),
         isEmpty,
@@ -159,7 +161,7 @@ void main() {
       await sync.onPublicEmail(publicEmail());
 
       final record = await emails.getById(emailId, recipientPubkey: alice);
-      expect(record!.folder, 'inbox');
+      expect(record!.folder, 'requests');
     });
 
     test('a label applied twice stays until both events are deleted', () async {

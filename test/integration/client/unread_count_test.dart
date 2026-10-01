@@ -3,6 +3,7 @@ import 'package:nostr_mail/src/storage/label_repository.dart';
 import 'package:nostr_mail/src/storage/models/email_record.dart';
 import 'package:test/test.dart';
 
+import '../../helpers/allow_sender.dart';
 import '../../helpers/test_user.dart';
 import '../../mocks/mock_blossom_server.dart';
 import '../../mocks/mock_relay.dart';
@@ -30,6 +31,11 @@ void main() {
 
       emailRepo = EmailRepository(user.database);
       labelRepo = LabelRepository(user.database);
+      await allowSender(
+        user.database,
+        recipientPubkey: user.keyPair.publicKey,
+        senderKey: 'sender-pubkey',
+      );
     });
 
     tearDown(() async {

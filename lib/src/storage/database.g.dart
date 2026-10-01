@@ -28,6 +28,17 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
     requiredDuringInsert: true,
     $customConstraints: 'NOT NULL',
   );
+  static const VerificationMeta _senderKeyMeta = const VerificationMeta(
+    'senderKey',
+  );
+  late final GeneratedColumn<String> senderKey = GeneratedColumn<String>(
+    'sender_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
   static const VerificationMeta _recipientPubkeyMeta = const VerificationMeta(
     'recipientPubkey',
   );
@@ -221,6 +232,7 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
   List<GeneratedColumn> get $columns => [
     id,
     senderPubkey,
+    senderKey,
     recipientPubkey,
     isPublic,
     isBridged,
@@ -266,6 +278,14 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
       );
     } else if (isInserting) {
       context.missing(_senderPubkeyMeta);
+    }
+    if (data.containsKey('sender_key')) {
+      context.handle(
+        _senderKeyMeta,
+        senderKey.isAcceptableOrUnknown(data['sender_key']!, _senderKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_senderKeyMeta);
     }
     if (data.containsKey('recipient_pubkey')) {
       context.handle(
@@ -431,6 +451,10 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
         DriftSqlType.string,
         data['${effectivePrefix}sender_pubkey'],
       )!,
+      senderKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sender_key'],
+      )!,
       recipientPubkey: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}recipient_pubkey'],
@@ -514,6 +538,9 @@ class Emails extends Table with TableInfo<Emails, EmailRow> {
 class EmailRow extends DataClass implements Insertable<EmailRow> {
   final String id;
   final String senderPubkey;
+
+  /// Lowercased in Dart: SQLite folds the case of ASCII only.
+  final String senderKey;
   final String recipientPubkey;
   final bool isPublic;
   final bool isBridged;
@@ -537,6 +564,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
   const EmailRow({
     required this.id,
     required this.senderPubkey,
+    required this.senderKey,
     required this.recipientPubkey,
     required this.isPublic,
     required this.isBridged,
@@ -560,6 +588,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
     map['sender_pubkey'] = Variable<String>(senderPubkey);
+    map['sender_key'] = Variable<String>(senderKey);
     map['recipient_pubkey'] = Variable<String>(recipientPubkey);
     map['is_public'] = Variable<bool>(isPublic);
     map['is_bridged'] = Variable<bool>(isBridged);
@@ -592,6 +621,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     return EmailsCompanion(
       id: Value(id),
       senderPubkey: Value(senderPubkey),
+      senderKey: Value(senderKey),
       recipientPubkey: Value(recipientPubkey),
       isPublic: Value(isPublic),
       isBridged: Value(isBridged),
@@ -628,6 +658,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     return EmailRow(
       id: serializer.fromJson<String>(json['id']),
       senderPubkey: serializer.fromJson<String>(json['sender_pubkey']),
+      senderKey: serializer.fromJson<String>(json['sender_key']),
       recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
       isPublic: serializer.fromJson<bool>(json['is_public']),
       isBridged: serializer.fromJson<bool>(json['is_bridged']),
@@ -653,6 +684,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
       'sender_pubkey': serializer.toJson<String>(senderPubkey),
+      'sender_key': serializer.toJson<String>(senderKey),
       'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
       'is_public': serializer.toJson<bool>(isPublic),
       'is_bridged': serializer.toJson<bool>(isBridged),
@@ -676,6 +708,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
   EmailRow copyWith({
     String? id,
     String? senderPubkey,
+    String? senderKey,
     String? recipientPubkey,
     bool? isPublic,
     bool? isBridged,
@@ -696,6 +729,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
   }) => EmailRow(
     id: id ?? this.id,
     senderPubkey: senderPubkey ?? this.senderPubkey,
+    senderKey: senderKey ?? this.senderKey,
     recipientPubkey: recipientPubkey ?? this.recipientPubkey,
     isPublic: isPublic ?? this.isPublic,
     isBridged: isBridged ?? this.isBridged,
@@ -724,6 +758,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
       senderPubkey: data.senderPubkey.present
           ? data.senderPubkey.value
           : this.senderPubkey,
+      senderKey: data.senderKey.present ? data.senderKey.value : this.senderKey,
       recipientPubkey: data.recipientPubkey.present
           ? data.recipientPubkey.value
           : this.recipientPubkey,
@@ -767,6 +802,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
     return (StringBuffer('EmailRow(')
           ..write('id: $id, ')
           ..write('senderPubkey: $senderPubkey, ')
+          ..write('senderKey: $senderKey, ')
           ..write('recipientPubkey: $recipientPubkey, ')
           ..write('isPublic: $isPublic, ')
           ..write('isBridged: $isBridged, ')
@@ -792,6 +828,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
   int get hashCode => Object.hash(
     id,
     senderPubkey,
+    senderKey,
     recipientPubkey,
     isPublic,
     isBridged,
@@ -816,6 +853,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
       (other is EmailRow &&
           other.id == this.id &&
           other.senderPubkey == this.senderPubkey &&
+          other.senderKey == this.senderKey &&
           other.recipientPubkey == this.recipientPubkey &&
           other.isPublic == this.isPublic &&
           other.isBridged == this.isBridged &&
@@ -838,6 +876,7 @@ class EmailRow extends DataClass implements Insertable<EmailRow> {
 class EmailsCompanion extends UpdateCompanion<EmailRow> {
   final Value<String> id;
   final Value<String> senderPubkey;
+  final Value<String> senderKey;
   final Value<String> recipientPubkey;
   final Value<bool> isPublic;
   final Value<bool> isBridged;
@@ -859,6 +898,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
   const EmailsCompanion({
     this.id = const Value.absent(),
     this.senderPubkey = const Value.absent(),
+    this.senderKey = const Value.absent(),
     this.recipientPubkey = const Value.absent(),
     this.isPublic = const Value.absent(),
     this.isBridged = const Value.absent(),
@@ -881,6 +921,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
   EmailsCompanion.insert({
     required String id,
     required String senderPubkey,
+    required String senderKey,
     required String recipientPubkey,
     required bool isPublic,
     required bool isBridged,
@@ -901,6 +942,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        senderPubkey = Value(senderPubkey),
+       senderKey = Value(senderKey),
        recipientPubkey = Value(recipientPubkey),
        isPublic = Value(isPublic),
        isBridged = Value(isBridged),
@@ -913,6 +955,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
   static Insertable<EmailRow> custom({
     Expression<String>? id,
     Expression<String>? senderPubkey,
+    Expression<String>? senderKey,
     Expression<String>? recipientPubkey,
     Expression<bool>? isPublic,
     Expression<bool>? isBridged,
@@ -935,6 +978,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (senderPubkey != null) 'sender_pubkey': senderPubkey,
+      if (senderKey != null) 'sender_key': senderKey,
       if (recipientPubkey != null) 'recipient_pubkey': recipientPubkey,
       if (isPublic != null) 'is_public': isPublic,
       if (isBridged != null) 'is_bridged': isBridged,
@@ -959,6 +1003,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
   EmailsCompanion copyWith({
     Value<String>? id,
     Value<String>? senderPubkey,
+    Value<String>? senderKey,
     Value<String>? recipientPubkey,
     Value<bool>? isPublic,
     Value<bool>? isBridged,
@@ -981,6 +1026,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     return EmailsCompanion(
       id: id ?? this.id,
       senderPubkey: senderPubkey ?? this.senderPubkey,
+      senderKey: senderKey ?? this.senderKey,
       recipientPubkey: recipientPubkey ?? this.recipientPubkey,
       isPublic: isPublic ?? this.isPublic,
       isBridged: isBridged ?? this.isBridged,
@@ -1010,6 +1056,9 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     }
     if (senderPubkey.present) {
       map['sender_pubkey'] = Variable<String>(senderPubkey.value);
+    }
+    if (senderKey.present) {
+      map['sender_key'] = Variable<String>(senderKey.value);
     }
     if (recipientPubkey.present) {
       map['recipient_pubkey'] = Variable<String>(recipientPubkey.value);
@@ -1073,6 +1122,7 @@ class EmailsCompanion extends UpdateCompanion<EmailRow> {
     return (StringBuffer('EmailsCompanion(')
           ..write('id: $id, ')
           ..write('senderPubkey: $senderPubkey, ')
+          ..write('senderKey: $senderKey, ')
           ..write('recipientPubkey: $recipientPubkey, ')
           ..write('isPublic: $isPublic, ')
           ..write('isBridged: $isBridged, ')
@@ -3709,9 +3759,953 @@ class SettingsCompanion extends UpdateCompanion<SettingsRow> {
   }
 }
 
+class SenderListDecryptions extends Table
+    with TableInfo<SenderListDecryptions, SenderListDecryptionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  SenderListDecryptions(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _eventIdMeta = const VerificationMeta(
+    'eventId',
+  );
+  late final GeneratedColumn<String> eventId = GeneratedColumn<String>(
+    'event_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL PRIMARY KEY',
+  );
+  static const VerificationMeta _recipientPubkeyMeta = const VerificationMeta(
+    'recipientPubkey',
+  );
+  late final GeneratedColumn<String> recipientPubkey = GeneratedColumn<String>(
+    'recipient_pubkey',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _plaintextMeta = const VerificationMeta(
+    'plaintext',
+  );
+  late final GeneratedColumn<String> plaintext = GeneratedColumn<String>(
+    'plaintext',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: '',
+  );
+  static const VerificationMeta _failureMeta = const VerificationMeta(
+    'failure',
+  );
+  late final GeneratedColumn<String> failure = GeneratedColumn<String>(
+    'failure',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: '',
+  );
+  static const VerificationMeta _attemptsMeta = const VerificationMeta(
+    'attempts',
+  );
+  late final GeneratedColumn<int> attempts = GeneratedColumn<int>(
+    'attempts',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 0',
+    defaultValue: const CustomExpression('0'),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    eventId,
+    recipientPubkey,
+    plaintext,
+    failure,
+    attempts,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sender_list_decryptions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SenderListDecryptionRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('event_id')) {
+      context.handle(
+        _eventIdMeta,
+        eventId.isAcceptableOrUnknown(data['event_id']!, _eventIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_eventIdMeta);
+    }
+    if (data.containsKey('recipient_pubkey')) {
+      context.handle(
+        _recipientPubkeyMeta,
+        recipientPubkey.isAcceptableOrUnknown(
+          data['recipient_pubkey']!,
+          _recipientPubkeyMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_recipientPubkeyMeta);
+    }
+    if (data.containsKey('plaintext')) {
+      context.handle(
+        _plaintextMeta,
+        plaintext.isAcceptableOrUnknown(data['plaintext']!, _plaintextMeta),
+      );
+    }
+    if (data.containsKey('failure')) {
+      context.handle(
+        _failureMeta,
+        failure.isAcceptableOrUnknown(data['failure']!, _failureMeta),
+      );
+    }
+    if (data.containsKey('attempts')) {
+      context.handle(
+        _attemptsMeta,
+        attempts.isAcceptableOrUnknown(data['attempts']!, _attemptsMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {eventId};
+  @override
+  SenderListDecryptionRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SenderListDecryptionRow(
+      eventId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}event_id'],
+      )!,
+      recipientPubkey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recipient_pubkey'],
+      )!,
+      plaintext: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}plaintext'],
+      ),
+      failure: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}failure'],
+      ),
+      attempts: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}attempts'],
+      )!,
+    );
+  }
+
+  @override
+  SenderListDecryptions createAlias(String alias) {
+    return SenderListDecryptions(attachedDatabase, alias);
+  }
+
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class SenderListDecryptionRow extends DataClass
+    implements Insertable<SenderListDecryptionRow> {
+  final String eventId;
+  final String recipientPubkey;
+
+  /// Null until decrypted.
+  final String? plaintext;
+  final String? failure;
+  final int attempts;
+  const SenderListDecryptionRow({
+    required this.eventId,
+    required this.recipientPubkey,
+    this.plaintext,
+    this.failure,
+    required this.attempts,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['event_id'] = Variable<String>(eventId);
+    map['recipient_pubkey'] = Variable<String>(recipientPubkey);
+    if (!nullToAbsent || plaintext != null) {
+      map['plaintext'] = Variable<String>(plaintext);
+    }
+    if (!nullToAbsent || failure != null) {
+      map['failure'] = Variable<String>(failure);
+    }
+    map['attempts'] = Variable<int>(attempts);
+    return map;
+  }
+
+  SenderListDecryptionsCompanion toCompanion(bool nullToAbsent) {
+    return SenderListDecryptionsCompanion(
+      eventId: Value(eventId),
+      recipientPubkey: Value(recipientPubkey),
+      plaintext: plaintext == null && nullToAbsent
+          ? const Value.absent()
+          : Value(plaintext),
+      failure: failure == null && nullToAbsent
+          ? const Value.absent()
+          : Value(failure),
+      attempts: Value(attempts),
+    );
+  }
+
+  factory SenderListDecryptionRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SenderListDecryptionRow(
+      eventId: serializer.fromJson<String>(json['event_id']),
+      recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
+      plaintext: serializer.fromJson<String?>(json['plaintext']),
+      failure: serializer.fromJson<String?>(json['failure']),
+      attempts: serializer.fromJson<int>(json['attempts']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'event_id': serializer.toJson<String>(eventId),
+      'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
+      'plaintext': serializer.toJson<String?>(plaintext),
+      'failure': serializer.toJson<String?>(failure),
+      'attempts': serializer.toJson<int>(attempts),
+    };
+  }
+
+  SenderListDecryptionRow copyWith({
+    String? eventId,
+    String? recipientPubkey,
+    Value<String?> plaintext = const Value.absent(),
+    Value<String?> failure = const Value.absent(),
+    int? attempts,
+  }) => SenderListDecryptionRow(
+    eventId: eventId ?? this.eventId,
+    recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+    plaintext: plaintext.present ? plaintext.value : this.plaintext,
+    failure: failure.present ? failure.value : this.failure,
+    attempts: attempts ?? this.attempts,
+  );
+  SenderListDecryptionRow copyWithCompanion(
+    SenderListDecryptionsCompanion data,
+  ) {
+    return SenderListDecryptionRow(
+      eventId: data.eventId.present ? data.eventId.value : this.eventId,
+      recipientPubkey: data.recipientPubkey.present
+          ? data.recipientPubkey.value
+          : this.recipientPubkey,
+      plaintext: data.plaintext.present ? data.plaintext.value : this.plaintext,
+      failure: data.failure.present ? data.failure.value : this.failure,
+      attempts: data.attempts.present ? data.attempts.value : this.attempts,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SenderListDecryptionRow(')
+          ..write('eventId: $eventId, ')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('plaintext: $plaintext, ')
+          ..write('failure: $failure, ')
+          ..write('attempts: $attempts')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(eventId, recipientPubkey, plaintext, failure, attempts);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SenderListDecryptionRow &&
+          other.eventId == this.eventId &&
+          other.recipientPubkey == this.recipientPubkey &&
+          other.plaintext == this.plaintext &&
+          other.failure == this.failure &&
+          other.attempts == this.attempts);
+}
+
+class SenderListDecryptionsCompanion
+    extends UpdateCompanion<SenderListDecryptionRow> {
+  final Value<String> eventId;
+  final Value<String> recipientPubkey;
+  final Value<String?> plaintext;
+  final Value<String?> failure;
+  final Value<int> attempts;
+  final Value<int> rowid;
+  const SenderListDecryptionsCompanion({
+    this.eventId = const Value.absent(),
+    this.recipientPubkey = const Value.absent(),
+    this.plaintext = const Value.absent(),
+    this.failure = const Value.absent(),
+    this.attempts = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SenderListDecryptionsCompanion.insert({
+    required String eventId,
+    required String recipientPubkey,
+    this.plaintext = const Value.absent(),
+    this.failure = const Value.absent(),
+    this.attempts = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : eventId = Value(eventId),
+       recipientPubkey = Value(recipientPubkey);
+  static Insertable<SenderListDecryptionRow> custom({
+    Expression<String>? eventId,
+    Expression<String>? recipientPubkey,
+    Expression<String>? plaintext,
+    Expression<String>? failure,
+    Expression<int>? attempts,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (eventId != null) 'event_id': eventId,
+      if (recipientPubkey != null) 'recipient_pubkey': recipientPubkey,
+      if (plaintext != null) 'plaintext': plaintext,
+      if (failure != null) 'failure': failure,
+      if (attempts != null) 'attempts': attempts,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SenderListDecryptionsCompanion copyWith({
+    Value<String>? eventId,
+    Value<String>? recipientPubkey,
+    Value<String?>? plaintext,
+    Value<String?>? failure,
+    Value<int>? attempts,
+    Value<int>? rowid,
+  }) {
+    return SenderListDecryptionsCompanion(
+      eventId: eventId ?? this.eventId,
+      recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+      plaintext: plaintext ?? this.plaintext,
+      failure: failure ?? this.failure,
+      attempts: attempts ?? this.attempts,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (eventId.present) {
+      map['event_id'] = Variable<String>(eventId.value);
+    }
+    if (recipientPubkey.present) {
+      map['recipient_pubkey'] = Variable<String>(recipientPubkey.value);
+    }
+    if (plaintext.present) {
+      map['plaintext'] = Variable<String>(plaintext.value);
+    }
+    if (failure.present) {
+      map['failure'] = Variable<String>(failure.value);
+    }
+    if (attempts.present) {
+      map['attempts'] = Variable<int>(attempts.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SenderListDecryptionsCompanion(')
+          ..write('eventId: $eventId, ')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('plaintext: $plaintext, ')
+          ..write('failure: $failure, ')
+          ..write('attempts: $attempts, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class SenderOps extends Table with TableInfo<SenderOps, SenderOpRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  SenderOps(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _eventIdMeta = const VerificationMeta(
+    'eventId',
+  );
+  late final GeneratedColumn<String> eventId = GeneratedColumn<String>(
+    'event_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _recipientPubkeyMeta = const VerificationMeta(
+    'recipientPubkey',
+  );
+  late final GeneratedColumn<String> recipientPubkey = GeneratedColumn<String>(
+    'recipient_pubkey',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _senderKeyMeta = const VerificationMeta(
+    'senderKey',
+  );
+  late final GeneratedColumn<String> senderKey = GeneratedColumn<String>(
+    'sender_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _isAddMeta = const VerificationMeta('isAdd');
+  late final GeneratedColumn<bool> isAdd = GeneratedColumn<bool>(
+    'is_add',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _verdictMeta = const VerificationMeta(
+    'verdict',
+  );
+  late final GeneratedColumn<String> verdict = GeneratedColumn<String>(
+    'verdict',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: '',
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    eventId,
+    recipientPubkey,
+    senderKey,
+    isAdd,
+    verdict,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sender_ops';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SenderOpRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('event_id')) {
+      context.handle(
+        _eventIdMeta,
+        eventId.isAcceptableOrUnknown(data['event_id']!, _eventIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_eventIdMeta);
+    }
+    if (data.containsKey('recipient_pubkey')) {
+      context.handle(
+        _recipientPubkeyMeta,
+        recipientPubkey.isAcceptableOrUnknown(
+          data['recipient_pubkey']!,
+          _recipientPubkeyMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_recipientPubkeyMeta);
+    }
+    if (data.containsKey('sender_key')) {
+      context.handle(
+        _senderKeyMeta,
+        senderKey.isAcceptableOrUnknown(data['sender_key']!, _senderKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_senderKeyMeta);
+    }
+    if (data.containsKey('is_add')) {
+      context.handle(
+        _isAddMeta,
+        isAdd.isAcceptableOrUnknown(data['is_add']!, _isAddMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_isAddMeta);
+    }
+    if (data.containsKey('verdict')) {
+      context.handle(
+        _verdictMeta,
+        verdict.isAcceptableOrUnknown(data['verdict']!, _verdictMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {eventId, senderKey};
+  @override
+  SenderOpRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SenderOpRow(
+      eventId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}event_id'],
+      )!,
+      recipientPubkey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recipient_pubkey'],
+      )!,
+      senderKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sender_key'],
+      )!,
+      isAdd: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_add'],
+      )!,
+      verdict: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}verdict'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  SenderOps createAlias(String alias) {
+    return SenderOps(attachedDatabase, alias);
+  }
+
+  @override
+  List<String> get customConstraints => const [
+    'PRIMARY KEY(event_id, sender_key)',
+  ];
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class SenderOpRow extends DataClass implements Insertable<SenderOpRow> {
+  final String eventId;
+  final String recipientPubkey;
+  final String senderKey;
+  final bool isAdd;
+  final String? verdict;
+  final int createdAt;
+  const SenderOpRow({
+    required this.eventId,
+    required this.recipientPubkey,
+    required this.senderKey,
+    required this.isAdd,
+    this.verdict,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['event_id'] = Variable<String>(eventId);
+    map['recipient_pubkey'] = Variable<String>(recipientPubkey);
+    map['sender_key'] = Variable<String>(senderKey);
+    map['is_add'] = Variable<bool>(isAdd);
+    if (!nullToAbsent || verdict != null) {
+      map['verdict'] = Variable<String>(verdict);
+    }
+    map['created_at'] = Variable<int>(createdAt);
+    return map;
+  }
+
+  SenderOpsCompanion toCompanion(bool nullToAbsent) {
+    return SenderOpsCompanion(
+      eventId: Value(eventId),
+      recipientPubkey: Value(recipientPubkey),
+      senderKey: Value(senderKey),
+      isAdd: Value(isAdd),
+      verdict: verdict == null && nullToAbsent
+          ? const Value.absent()
+          : Value(verdict),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory SenderOpRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SenderOpRow(
+      eventId: serializer.fromJson<String>(json['event_id']),
+      recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
+      senderKey: serializer.fromJson<String>(json['sender_key']),
+      isAdd: serializer.fromJson<bool>(json['is_add']),
+      verdict: serializer.fromJson<String?>(json['verdict']),
+      createdAt: serializer.fromJson<int>(json['created_at']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'event_id': serializer.toJson<String>(eventId),
+      'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
+      'sender_key': serializer.toJson<String>(senderKey),
+      'is_add': serializer.toJson<bool>(isAdd),
+      'verdict': serializer.toJson<String?>(verdict),
+      'created_at': serializer.toJson<int>(createdAt),
+    };
+  }
+
+  SenderOpRow copyWith({
+    String? eventId,
+    String? recipientPubkey,
+    String? senderKey,
+    bool? isAdd,
+    Value<String?> verdict = const Value.absent(),
+    int? createdAt,
+  }) => SenderOpRow(
+    eventId: eventId ?? this.eventId,
+    recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+    senderKey: senderKey ?? this.senderKey,
+    isAdd: isAdd ?? this.isAdd,
+    verdict: verdict.present ? verdict.value : this.verdict,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  SenderOpRow copyWithCompanion(SenderOpsCompanion data) {
+    return SenderOpRow(
+      eventId: data.eventId.present ? data.eventId.value : this.eventId,
+      recipientPubkey: data.recipientPubkey.present
+          ? data.recipientPubkey.value
+          : this.recipientPubkey,
+      senderKey: data.senderKey.present ? data.senderKey.value : this.senderKey,
+      isAdd: data.isAdd.present ? data.isAdd.value : this.isAdd,
+      verdict: data.verdict.present ? data.verdict.value : this.verdict,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SenderOpRow(')
+          ..write('eventId: $eventId, ')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('senderKey: $senderKey, ')
+          ..write('isAdd: $isAdd, ')
+          ..write('verdict: $verdict, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    eventId,
+    recipientPubkey,
+    senderKey,
+    isAdd,
+    verdict,
+    createdAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SenderOpRow &&
+          other.eventId == this.eventId &&
+          other.recipientPubkey == this.recipientPubkey &&
+          other.senderKey == this.senderKey &&
+          other.isAdd == this.isAdd &&
+          other.verdict == this.verdict &&
+          other.createdAt == this.createdAt);
+}
+
+class SenderOpsCompanion extends UpdateCompanion<SenderOpRow> {
+  final Value<String> eventId;
+  final Value<String> recipientPubkey;
+  final Value<String> senderKey;
+  final Value<bool> isAdd;
+  final Value<String?> verdict;
+  final Value<int> createdAt;
+  final Value<int> rowid;
+  const SenderOpsCompanion({
+    this.eventId = const Value.absent(),
+    this.recipientPubkey = const Value.absent(),
+    this.senderKey = const Value.absent(),
+    this.isAdd = const Value.absent(),
+    this.verdict = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SenderOpsCompanion.insert({
+    required String eventId,
+    required String recipientPubkey,
+    required String senderKey,
+    required bool isAdd,
+    this.verdict = const Value.absent(),
+    required int createdAt,
+    this.rowid = const Value.absent(),
+  }) : eventId = Value(eventId),
+       recipientPubkey = Value(recipientPubkey),
+       senderKey = Value(senderKey),
+       isAdd = Value(isAdd),
+       createdAt = Value(createdAt);
+  static Insertable<SenderOpRow> custom({
+    Expression<String>? eventId,
+    Expression<String>? recipientPubkey,
+    Expression<String>? senderKey,
+    Expression<bool>? isAdd,
+    Expression<String>? verdict,
+    Expression<int>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (eventId != null) 'event_id': eventId,
+      if (recipientPubkey != null) 'recipient_pubkey': recipientPubkey,
+      if (senderKey != null) 'sender_key': senderKey,
+      if (isAdd != null) 'is_add': isAdd,
+      if (verdict != null) 'verdict': verdict,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SenderOpsCompanion copyWith({
+    Value<String>? eventId,
+    Value<String>? recipientPubkey,
+    Value<String>? senderKey,
+    Value<bool>? isAdd,
+    Value<String?>? verdict,
+    Value<int>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return SenderOpsCompanion(
+      eventId: eventId ?? this.eventId,
+      recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+      senderKey: senderKey ?? this.senderKey,
+      isAdd: isAdd ?? this.isAdd,
+      verdict: verdict ?? this.verdict,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (eventId.present) {
+      map['event_id'] = Variable<String>(eventId.value);
+    }
+    if (recipientPubkey.present) {
+      map['recipient_pubkey'] = Variable<String>(recipientPubkey.value);
+    }
+    if (senderKey.present) {
+      map['sender_key'] = Variable<String>(senderKey.value);
+    }
+    if (isAdd.present) {
+      map['is_add'] = Variable<bool>(isAdd.value);
+    }
+    if (verdict.present) {
+      map['verdict'] = Variable<String>(verdict.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SenderOpsCompanion(')
+          ..write('eventId: $eventId, ')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('senderKey: $senderKey, ')
+          ..write('isAdd: $isAdd, ')
+          ..write('verdict: $verdict, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class SenderVerdictRow extends DataClass {
+  final String recipientPubkey;
+  final String senderKey;
+  final String? verdict;
+  const SenderVerdictRow({
+    required this.recipientPubkey,
+    required this.senderKey,
+    this.verdict,
+  });
+  factory SenderVerdictRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SenderVerdictRow(
+      recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
+      senderKey: serializer.fromJson<String>(json['sender_key']),
+      verdict: serializer.fromJson<String?>(json['verdict']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
+      'sender_key': serializer.toJson<String>(senderKey),
+      'verdict': serializer.toJson<String?>(verdict),
+    };
+  }
+
+  SenderVerdictRow copyWith({
+    String? recipientPubkey,
+    String? senderKey,
+    Value<String?> verdict = const Value.absent(),
+  }) => SenderVerdictRow(
+    recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+    senderKey: senderKey ?? this.senderKey,
+    verdict: verdict.present ? verdict.value : this.verdict,
+  );
+  @override
+  String toString() {
+    return (StringBuffer('SenderVerdictRow(')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('senderKey: $senderKey, ')
+          ..write('verdict: $verdict')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(recipientPubkey, senderKey, verdict);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SenderVerdictRow &&
+          other.recipientPubkey == this.recipientPubkey &&
+          other.senderKey == this.senderKey &&
+          other.verdict == this.verdict);
+}
+
+class SenderVerdicts extends ViewInfo<SenderVerdicts, SenderVerdictRow>
+    implements HasResultSet {
+  final String? _alias;
+  @override
+  final _$NostrMailDatabase attachedDatabase;
+  SenderVerdicts(this.attachedDatabase, [this._alias]);
+  @override
+  List<GeneratedColumn> get $columns => [recipientPubkey, senderKey, verdict];
+  @override
+  String get aliasedName => _alias ?? entityName;
+  @override
+  String get entityName => 'sender_verdicts';
+  @override
+  Map<SqlDialect, String> get createViewStatements => {
+    SqlDialect.sqlite:
+        'CREATE VIEW sender_verdicts AS SELECT a.recipient_pubkey, a.sender_key, a.verdict FROM sender_ops AS a WHERE a.is_add AND a.verdict IN (\'allow\', \'block\') AND NOT EXISTS (SELECT 1 FROM sender_ops AS b WHERE b.recipient_pubkey = a.recipient_pubkey AND b.sender_key = a.sender_key AND(b.created_at > a.created_at OR(b.is_add AND b.created_at = a.created_at AND b.event_id < a.event_id)))',
+  };
+  @override
+  SenderVerdicts get asDslTable => this;
+  @override
+  SenderVerdictRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SenderVerdictRow(
+      recipientPubkey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recipient_pubkey'],
+      )!,
+      senderKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sender_key'],
+      )!,
+      verdict: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}verdict'],
+      ),
+    );
+  }
+
+  late final GeneratedColumn<String> recipientPubkey = GeneratedColumn<String>(
+    'recipient_pubkey',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+  );
+  late final GeneratedColumn<String> senderKey = GeneratedColumn<String>(
+    'sender_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+  );
+  late final GeneratedColumn<String> verdict = GeneratedColumn<String>(
+    'verdict',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+  );
+  @override
+  SenderVerdicts createAlias(String alias) {
+    return SenderVerdicts(attachedDatabase, alias);
+  }
+
+  @override
+  Query? get query => null;
+  @override
+  Set<String> get readTables => const {'sender_ops'};
+}
+
 class EmailState extends DataClass {
   final String id;
   final String senderPubkey;
+  final String senderKey;
   final String recipientPubkey;
   final bool isPublic;
   final bool isBridged;
@@ -3735,6 +4729,7 @@ class EmailState extends DataClass {
   const EmailState({
     required this.id,
     required this.senderPubkey,
+    required this.senderKey,
     required this.recipientPubkey,
     required this.isPublic,
     required this.isBridged,
@@ -3764,6 +4759,7 @@ class EmailState extends DataClass {
     return EmailState(
       id: serializer.fromJson<String>(json['id']),
       senderPubkey: serializer.fromJson<String>(json['sender_pubkey']),
+      senderKey: serializer.fromJson<String>(json['sender_key']),
       recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
       isPublic: serializer.fromJson<bool>(json['is_public']),
       isBridged: serializer.fromJson<bool>(json['is_bridged']),
@@ -3792,6 +4788,7 @@ class EmailState extends DataClass {
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
       'sender_pubkey': serializer.toJson<String>(senderPubkey),
+      'sender_key': serializer.toJson<String>(senderKey),
       'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
       'is_public': serializer.toJson<bool>(isPublic),
       'is_bridged': serializer.toJson<bool>(isBridged),
@@ -3818,6 +4815,7 @@ class EmailState extends DataClass {
   EmailState copyWith({
     String? id,
     String? senderPubkey,
+    String? senderKey,
     String? recipientPubkey,
     bool? isPublic,
     bool? isBridged,
@@ -3841,6 +4839,7 @@ class EmailState extends DataClass {
   }) => EmailState(
     id: id ?? this.id,
     senderPubkey: senderPubkey ?? this.senderPubkey,
+    senderKey: senderKey ?? this.senderKey,
     recipientPubkey: recipientPubkey ?? this.recipientPubkey,
     isPublic: isPublic ?? this.isPublic,
     isBridged: isBridged ?? this.isBridged,
@@ -3871,6 +4870,7 @@ class EmailState extends DataClass {
     return (StringBuffer('EmailState(')
           ..write('id: $id, ')
           ..write('senderPubkey: $senderPubkey, ')
+          ..write('senderKey: $senderKey, ')
           ..write('recipientPubkey: $recipientPubkey, ')
           ..write('isPublic: $isPublic, ')
           ..write('isBridged: $isBridged, ')
@@ -3899,6 +4899,7 @@ class EmailState extends DataClass {
   int get hashCode => Object.hashAll([
     id,
     senderPubkey,
+    senderKey,
     recipientPubkey,
     isPublic,
     isBridged,
@@ -3926,6 +4927,7 @@ class EmailState extends DataClass {
       (other is EmailState &&
           other.id == this.id &&
           other.senderPubkey == this.senderPubkey &&
+          other.senderKey == this.senderKey &&
           other.recipientPubkey == this.recipientPubkey &&
           other.isPublic == this.isPublic &&
           other.isBridged == this.isBridged &&
@@ -3958,6 +4960,7 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
   List<GeneratedColumn> get $columns => [
     id,
     senderPubkey,
+    senderKey,
     recipientPubkey,
     isPublic,
     isBridged,
@@ -3986,7 +4989,7 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
   @override
   Map<SqlDialect, String> get createViewStatements => {
     SqlDialect.sqlite:
-        'CREATE VIEW email_states AS SELECT e.*, COALESCE((SELECT substr(l.label, 8) FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label LIKE \'folder:%\' ORDER BY l.timestamp DESC LIMIT 1), (SELECT m.entry_id FROM matches AS m WHERE m.email_id = e.id AND m.is_folder ORDER BY m.rank LIMIT 1), CASE WHEN e.sender_pubkey = e.recipient_pubkey THEN \'sent\' ELSE \'inbox\' END) AS folder, EXISTS (SELECT 1 FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label = \'state:read\') AS is_read, EXISTS (SELECT 1 FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label = \'flag:starred\') AS is_starred FROM emails AS e',
+        'CREATE VIEW email_states AS SELECT e.*, COALESCE((SELECT substr(l.label, 8) FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label LIKE \'folder:%\' ORDER BY l.timestamp DESC LIMIT 1), CASE WHEN e.sender_pubkey <> e.recipient_pubkey THEN CASE (SELECT s.verdict FROM sender_verdicts AS s WHERE s.recipient_pubkey = e.recipient_pubkey AND s.sender_key = e.sender_key) WHEN \'allow\' THEN NULL WHEN \'block\' THEN \'spam\' ELSE \'requests\' END END, (SELECT m.entry_id FROM matches AS m WHERE m.email_id = e.id AND m.is_folder ORDER BY m.rank LIMIT 1), CASE WHEN e.sender_pubkey = e.recipient_pubkey THEN \'sent\' ELSE \'inbox\' END) AS folder, EXISTS (SELECT 1 FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label = \'state:read\') AS is_read, EXISTS (SELECT 1 FROM labels AS l WHERE l.email_id = e.id AND l.recipient_pubkey = e.recipient_pubkey AND l.label = \'flag:starred\') AS is_starred FROM emails AS e',
   };
   @override
   EmailStates get asDslTable => this;
@@ -4001,6 +5004,10 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
       senderPubkey: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}sender_pubkey'],
+      )!,
+      senderKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sender_key'],
       )!,
       recipientPubkey: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -4093,6 +5100,12 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
   );
   late final GeneratedColumn<String> senderPubkey = GeneratedColumn<String>(
     'sender_pubkey',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+  );
+  late final GeneratedColumn<String> senderKey = GeneratedColumn<String>(
+    'sender_key',
     aliasedName,
     false,
     type: DriftSqlType.string,
@@ -4237,7 +5250,12 @@ class EmailStates extends ViewInfo<EmailStates, EmailState>
   @override
   Query? get query => null;
   @override
-  Set<String> get readTables => const {'emails', 'labels', 'matches'};
+  Set<String> get readTables => const {
+    'emails',
+    'labels',
+    'matches',
+    'sender_ops',
+  };
 }
 
 class EmailSearch extends Table
@@ -4530,6 +5548,10 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
     'emails_recipient_date',
     'CREATE INDEX emails_recipient_date ON emails (recipient_pubkey, date)',
   );
+  late final Index emailsRecipientSenderKey = Index(
+    'emails_recipient_sender_key',
+    'CREATE INDEX emails_recipient_sender_key ON emails (recipient_pubkey, sender_key)',
+  );
   late final Attachments attachments = Attachments(this);
   late final Labels labels = Labels(this);
   late final Index labelsRecipientLabel = Index(
@@ -4561,6 +5583,14 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
   );
   late final Tombstones tombstones = Tombstones(this);
   late final Settings settings = Settings(this);
+  late final SenderListDecryptions senderListDecryptions =
+      SenderListDecryptions(this);
+  late final SenderOps senderOps = SenderOps(this);
+  late final Index senderOpsSender = Index(
+    'sender_ops_sender',
+    'CREATE INDEX sender_ops_sender ON sender_ops (recipient_pubkey, sender_key, created_at)',
+  );
+  late final SenderVerdicts senderVerdicts = SenderVerdicts(this);
   late final EmailStates emailStates = EmailStates(this);
   late final EmailSearch emailSearch = EmailSearch(this);
   late final Trigger emailsAi = Trigger(
@@ -4582,6 +5612,7 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     emails,
     emailsRecipientDate,
+    emailsRecipientSenderKey,
     attachments,
     labels,
     labelsRecipientLabel,
@@ -4595,6 +5626,10 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
     unsealedRumorId,
     tombstones,
     settings,
+    senderListDecryptions,
+    senderOps,
+    senderOpsSender,
+    senderVerdicts,
     emailStates,
     emailSearch,
     emailsAi,
@@ -4645,6 +5680,7 @@ typedef $EmailsCreateCompanionBuilder =
     EmailsCompanion Function({
       required String id,
       required String senderPubkey,
+      required String senderKey,
       required String recipientPubkey,
       required bool isPublic,
       required bool isBridged,
@@ -4668,6 +5704,7 @@ typedef $EmailsUpdateCompanionBuilder =
     EmailsCompanion Function({
       Value<String> id,
       Value<String> senderPubkey,
+      Value<String> senderKey,
       Value<String> recipientPubkey,
       Value<bool> isPublic,
       Value<bool> isBridged,
@@ -4746,6 +5783,11 @@ class $EmailsFilterComposer extends Composer<_$NostrMailDatabase, Emails> {
 
   ColumnFilters<String> get senderPubkey => $composableBuilder(
     column: $table.senderPubkey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get senderKey => $composableBuilder(
+    column: $table.senderKey,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4903,6 +5945,11 @@ class $EmailsOrderingComposer extends Composer<_$NostrMailDatabase, Emails> {
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get senderKey => $composableBuilder(
+    column: $table.senderKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get recipientPubkey => $composableBuilder(
     column: $table.recipientPubkey,
     builder: (column) => ColumnOrderings(column),
@@ -5004,6 +6051,9 @@ class $EmailsAnnotationComposer extends Composer<_$NostrMailDatabase, Emails> {
     column: $table.senderPubkey,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get senderKey =>
+      $composableBuilder(column: $table.senderKey, builder: (column) => column);
 
   GeneratedColumn<String> get recipientPubkey => $composableBuilder(
     column: $table.recipientPubkey,
@@ -5155,6 +6205,7 @@ class $EmailsTableManager
               ({
                 Value<String> id = const Value.absent(),
                 Value<String> senderPubkey = const Value.absent(),
+                Value<String> senderKey = const Value.absent(),
                 Value<String> recipientPubkey = const Value.absent(),
                 Value<bool> isPublic = const Value.absent(),
                 Value<bool> isBridged = const Value.absent(),
@@ -5176,6 +6227,7 @@ class $EmailsTableManager
               }) => EmailsCompanion(
                 id: id,
                 senderPubkey: senderPubkey,
+                senderKey: senderKey,
                 recipientPubkey: recipientPubkey,
                 isPublic: isPublic,
                 isBridged: isBridged,
@@ -5199,6 +6251,7 @@ class $EmailsTableManager
               ({
                 required String id,
                 required String senderPubkey,
+                required String senderKey,
                 required String recipientPubkey,
                 required bool isPublic,
                 required bool isBridged,
@@ -5220,6 +6273,7 @@ class $EmailsTableManager
               }) => EmailsCompanion.insert(
                 id: id,
                 senderPubkey: senderPubkey,
+                senderKey: senderKey,
                 recipientPubkey: recipientPubkey,
                 isPublic: isPublic,
                 isBridged: isBridged,
@@ -6983,6 +8037,459 @@ typedef $SettingsProcessedTableManager =
       SettingsRow,
       PrefetchHooks Function()
     >;
+typedef $SenderListDecryptionsCreateCompanionBuilder =
+    SenderListDecryptionsCompanion Function({
+      required String eventId,
+      required String recipientPubkey,
+      Value<String?> plaintext,
+      Value<String?> failure,
+      Value<int> attempts,
+      Value<int> rowid,
+    });
+typedef $SenderListDecryptionsUpdateCompanionBuilder =
+    SenderListDecryptionsCompanion Function({
+      Value<String> eventId,
+      Value<String> recipientPubkey,
+      Value<String?> plaintext,
+      Value<String?> failure,
+      Value<int> attempts,
+      Value<int> rowid,
+    });
+
+class $SenderListDecryptionsFilterComposer
+    extends Composer<_$NostrMailDatabase, SenderListDecryptions> {
+  $SenderListDecryptionsFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get eventId => $composableBuilder(
+    column: $table.eventId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get plaintext => $composableBuilder(
+    column: $table.plaintext,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get failure => $composableBuilder(
+    column: $table.failure,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get attempts => $composableBuilder(
+    column: $table.attempts,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $SenderListDecryptionsOrderingComposer
+    extends Composer<_$NostrMailDatabase, SenderListDecryptions> {
+  $SenderListDecryptionsOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get eventId => $composableBuilder(
+    column: $table.eventId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get plaintext => $composableBuilder(
+    column: $table.plaintext,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get failure => $composableBuilder(
+    column: $table.failure,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get attempts => $composableBuilder(
+    column: $table.attempts,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $SenderListDecryptionsAnnotationComposer
+    extends Composer<_$NostrMailDatabase, SenderListDecryptions> {
+  $SenderListDecryptionsAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get eventId =>
+      $composableBuilder(column: $table.eventId, builder: (column) => column);
+
+  GeneratedColumn<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get plaintext =>
+      $composableBuilder(column: $table.plaintext, builder: (column) => column);
+
+  GeneratedColumn<String> get failure =>
+      $composableBuilder(column: $table.failure, builder: (column) => column);
+
+  GeneratedColumn<int> get attempts =>
+      $composableBuilder(column: $table.attempts, builder: (column) => column);
+}
+
+class $SenderListDecryptionsTableManager
+    extends
+        RootTableManager<
+          _$NostrMailDatabase,
+          SenderListDecryptions,
+          SenderListDecryptionRow,
+          $SenderListDecryptionsFilterComposer,
+          $SenderListDecryptionsOrderingComposer,
+          $SenderListDecryptionsAnnotationComposer,
+          $SenderListDecryptionsCreateCompanionBuilder,
+          $SenderListDecryptionsUpdateCompanionBuilder,
+          (
+            SenderListDecryptionRow,
+            BaseReferences<
+              _$NostrMailDatabase,
+              SenderListDecryptions,
+              SenderListDecryptionRow
+            >,
+          ),
+          SenderListDecryptionRow,
+          PrefetchHooks Function()
+        > {
+  $SenderListDecryptionsTableManager(
+    _$NostrMailDatabase db,
+    SenderListDecryptions table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $SenderListDecryptionsFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $SenderListDecryptionsOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $SenderListDecryptionsAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> eventId = const Value.absent(),
+                Value<String> recipientPubkey = const Value.absent(),
+                Value<String?> plaintext = const Value.absent(),
+                Value<String?> failure = const Value.absent(),
+                Value<int> attempts = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SenderListDecryptionsCompanion(
+                eventId: eventId,
+                recipientPubkey: recipientPubkey,
+                plaintext: plaintext,
+                failure: failure,
+                attempts: attempts,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String eventId,
+                required String recipientPubkey,
+                Value<String?> plaintext = const Value.absent(),
+                Value<String?> failure = const Value.absent(),
+                Value<int> attempts = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SenderListDecryptionsCompanion.insert(
+                eventId: eventId,
+                recipientPubkey: recipientPubkey,
+                plaintext: plaintext,
+                failure: failure,
+                attempts: attempts,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<SenderListDecryptions, SenderListDecryptionRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$NostrMailDatabase,
+                    SenderListDecryptions,
+                    SenderListDecryptionRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $SenderListDecryptionsProcessedTableManager =
+    ProcessedTableManager<
+      _$NostrMailDatabase,
+      SenderListDecryptions,
+      SenderListDecryptionRow,
+      $SenderListDecryptionsFilterComposer,
+      $SenderListDecryptionsOrderingComposer,
+      $SenderListDecryptionsAnnotationComposer,
+      $SenderListDecryptionsCreateCompanionBuilder,
+      $SenderListDecryptionsUpdateCompanionBuilder,
+      (
+        SenderListDecryptionRow,
+        BaseReferences<
+          _$NostrMailDatabase,
+          SenderListDecryptions,
+          SenderListDecryptionRow
+        >,
+      ),
+      SenderListDecryptionRow,
+      PrefetchHooks Function()
+    >;
+typedef $SenderOpsCreateCompanionBuilder =
+    SenderOpsCompanion Function({
+      required String eventId,
+      required String recipientPubkey,
+      required String senderKey,
+      required bool isAdd,
+      Value<String?> verdict,
+      required int createdAt,
+      Value<int> rowid,
+    });
+typedef $SenderOpsUpdateCompanionBuilder =
+    SenderOpsCompanion Function({
+      Value<String> eventId,
+      Value<String> recipientPubkey,
+      Value<String> senderKey,
+      Value<bool> isAdd,
+      Value<String?> verdict,
+      Value<int> createdAt,
+      Value<int> rowid,
+    });
+
+class $SenderOpsFilterComposer
+    extends Composer<_$NostrMailDatabase, SenderOps> {
+  $SenderOpsFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get eventId => $composableBuilder(
+    column: $table.eventId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get senderKey => $composableBuilder(
+    column: $table.senderKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isAdd => $composableBuilder(
+    column: $table.isAdd,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get verdict => $composableBuilder(
+    column: $table.verdict,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $SenderOpsOrderingComposer
+    extends Composer<_$NostrMailDatabase, SenderOps> {
+  $SenderOpsOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get eventId => $composableBuilder(
+    column: $table.eventId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get senderKey => $composableBuilder(
+    column: $table.senderKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isAdd => $composableBuilder(
+    column: $table.isAdd,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get verdict => $composableBuilder(
+    column: $table.verdict,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $SenderOpsAnnotationComposer
+    extends Composer<_$NostrMailDatabase, SenderOps> {
+  $SenderOpsAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get eventId =>
+      $composableBuilder(column: $table.eventId, builder: (column) => column);
+
+  GeneratedColumn<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get senderKey =>
+      $composableBuilder(column: $table.senderKey, builder: (column) => column);
+
+  GeneratedColumn<bool> get isAdd =>
+      $composableBuilder(column: $table.isAdd, builder: (column) => column);
+
+  GeneratedColumn<String> get verdict =>
+      $composableBuilder(column: $table.verdict, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $SenderOpsTableManager
+    extends
+        RootTableManager<
+          _$NostrMailDatabase,
+          SenderOps,
+          SenderOpRow,
+          $SenderOpsFilterComposer,
+          $SenderOpsOrderingComposer,
+          $SenderOpsAnnotationComposer,
+          $SenderOpsCreateCompanionBuilder,
+          $SenderOpsUpdateCompanionBuilder,
+          (
+            SenderOpRow,
+            BaseReferences<_$NostrMailDatabase, SenderOps, SenderOpRow>,
+          ),
+          SenderOpRow,
+          PrefetchHooks Function()
+        > {
+  $SenderOpsTableManager(_$NostrMailDatabase db, SenderOps table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $SenderOpsFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $SenderOpsOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $SenderOpsAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> eventId = const Value.absent(),
+                Value<String> recipientPubkey = const Value.absent(),
+                Value<String> senderKey = const Value.absent(),
+                Value<bool> isAdd = const Value.absent(),
+                Value<String?> verdict = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SenderOpsCompanion(
+                eventId: eventId,
+                recipientPubkey: recipientPubkey,
+                senderKey: senderKey,
+                isAdd: isAdd,
+                verdict: verdict,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String eventId,
+                required String recipientPubkey,
+                required String senderKey,
+                required bool isAdd,
+                Value<String?> verdict = const Value.absent(),
+                required int createdAt,
+                Value<int> rowid = const Value.absent(),
+              }) => SenderOpsCompanion.insert(
+                eventId: eventId,
+                recipientPubkey: recipientPubkey,
+                senderKey: senderKey,
+                isAdd: isAdd,
+                verdict: verdict,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<SenderOps, SenderOpRow>(table),
+                  BaseReferences<_$NostrMailDatabase, SenderOps, SenderOpRow>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $SenderOpsProcessedTableManager =
+    ProcessedTableManager<
+      _$NostrMailDatabase,
+      SenderOps,
+      SenderOpRow,
+      $SenderOpsFilterComposer,
+      $SenderOpsOrderingComposer,
+      $SenderOpsAnnotationComposer,
+      $SenderOpsCreateCompanionBuilder,
+      $SenderOpsUpdateCompanionBuilder,
+      (
+        SenderOpRow,
+        BaseReferences<_$NostrMailDatabase, SenderOps, SenderOpRow>,
+      ),
+      SenderOpRow,
+      PrefetchHooks Function()
+    >;
 typedef $EmailSearchCreateCompanionBuilder =
     EmailSearchCompanion Function({
       required String fromAddress,
@@ -7173,6 +8680,10 @@ class $NostrMailDatabaseManager {
       $TombstonesTableManager(_db, _db.tombstones);
   $SettingsTableManager get settings =>
       $SettingsTableManager(_db, _db.settings);
+  $SenderListDecryptionsTableManager get senderListDecryptions =>
+      $SenderListDecryptionsTableManager(_db, _db.senderListDecryptions);
+  $SenderOpsTableManager get senderOps =>
+      $SenderOpsTableManager(_db, _db.senderOps);
   $EmailSearchTableManager get emailSearch =>
       $EmailSearchTableManager(_db, _db.emailSearch);
 }

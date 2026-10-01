@@ -83,6 +83,40 @@ void main() {
       expect(restored.isBridged, original.isBridged);
     });
 
+    group('senderKey', () {
+      Email email(String mime, {required bool isBridged}) => Email(
+        id: 'id',
+        senderPubkey: 'pk',
+        recipientPubkey: 'rpk',
+        lightMimeText: mime,
+        attachmentRefs: const [],
+        createdAt: DateTime.now(),
+        isBridged: isBridged,
+      );
+
+      test('is the pubkey of a native sender', () {
+        final native = email(
+          'From: npub1x@nostr\r\nSubject: s\r\n\r\nbody',
+          isBridged: false,
+        );
+        expect(native.senderKey, 'pk');
+      });
+
+      test('adds the lowercased From address behind a bridge', () {
+        final bridged = email(
+          'Sender: list@relay.example\r\nFrom: Ä <Ä@Example.DE>\r\n'
+          'Subject: s\r\n\r\nbody',
+          isBridged: true,
+        );
+        expect(bridged.senderKey, 'pk:ä@example.de');
+      });
+
+      test('keeps the separator when a bridged email has no From', () {
+        final bridged = email('Subject: s\r\n\r\nbody', isBridged: true);
+        expect(bridged.senderKey, 'pk:');
+      });
+    });
+
     test('equality is based on id', () {
       final email1 = Email(
         id: 'same-id',

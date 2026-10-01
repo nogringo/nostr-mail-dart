@@ -16,6 +16,7 @@ import 'dart:typed_data';
 import 'client/email_sender.dart';
 import 'client/event_bus.dart';
 import 'client/label_manager.dart';
+import 'client/sender_manager.dart';
 import 'client/settings_manager.dart';
 import 'client/mail_sync.dart';
 import 'client/watch_manager.dart';
@@ -35,12 +36,14 @@ import 'models/paginated_result.dart';
 import 'models/private_settings.dart';
 import 'models/recipient.dart';
 import 'models/scheduled_email.dart';
+import 'models/sender_verdict.dart';
 
 import 'storage/database.dart';
 import 'storage/email_repository.dart';
 import 'storage/gift_wrap_repository.dart';
 import 'storage/label_repository.dart';
 import 'storage/legacy_sembast_cleanup.dart';
+import 'storage/sender_repository.dart';
 import 'storage/settings_repository.dart';
 import 'storage/tombstone_repository.dart';
 import 'storage/models/email_query.dart';
@@ -60,9 +63,11 @@ class NostrMailClient {
   final GiftWrapRepository _giftWrapRepo;
   final SettingsRepository _settingsRepo;
   final TombstoneRepository _tombstoneRepo;
+  final SenderRepository _senderRepo;
   final EventBus _bus;
   final EmailSender _sender;
   final LabelManager _labels;
+  final SenderManager _senders;
   final SettingsManager _settings;
   final MailSync _sync;
   final WatchManager _watch;
@@ -168,6 +173,7 @@ class NostrMailClient {
     final giftWrapRepo = GiftWrapRepository(database);
     final settingsRepo = SettingsRepository(database);
     final tombstoneRepo = TombstoneRepository(database);
+    final senderRepo = SenderRepository(database);
     final bus = EventBus();
 
     final relayResolver = RelayResolver(ndk, defaultDmRelays: defaultDmRelays);
@@ -220,6 +226,7 @@ class NostrMailClient {
       labelRepo,
       giftWrapRepo,
       tombstoneRepo,
+      senderRepo,
       bus,
       relayResolver,
       defaultBlossomServers: defaultBlossomServers,
@@ -278,6 +285,7 @@ class NostrMailClient {
       giftWrapRepo: giftWrapRepo,
       settingsRepo: settingsRepo,
       tombstoneRepo: tombstoneRepo,
+      senderRepo: senderRepo,
       bus: bus,
       blossomCache: blossomCache,
       defaultBlossomServers: defaultBlossomServers,
@@ -293,6 +301,7 @@ class NostrMailClient {
         bus,
         queue,
       ),
+      senders: SenderManager(ndk, senderRepo, relayResolver, bus, queue),
       settings: settingsManager,
       sync: mailSync,
       watch: WatchManager(ndk, mailSync, bus, relayResolver),
@@ -312,10 +321,12 @@ class NostrMailClient {
     required this._giftWrapRepo,
     required this._settingsRepo,
     required this._tombstoneRepo,
+    required this._senderRepo,
     required this._bus,
     required this._blossomCache,
     required this._sender,
     required this._labels,
+    required this._senders,
     required this._settings,
     required this._sync,
     required this._watch,
@@ -357,17 +368,18 @@ class NostrMailClient {
   /// [Email.mime] is read, its parsed part tree: fine for one open email,
   /// far too much for a screenful of rows.
   ///
-  /// [folder] is `'inbox'`, `'sent'`, `'trash'`, `'archive'`, `'spam'`, the
-  /// id of a user folder, or null to span every folder. [tag] is the id of a
-  /// user tag, whose listing leaves out trash and spam. Pass [limit] and
+  /// [folder] is `'inbox'`, `'sent'`, `'trash'`, `'archive'`, `'spam'`,
+  /// `'requests'`, the id of a user folder, or null to span every folder.
+  /// [tag] is the id of a user tag, whose listing leaves out trash, spam and
+  /// requests. Pass [limit] and
   /// [offset] to page: without
   /// [limit] the whole mailbox is returned. [search] matches the same indexed
   /// text as [search].
   ///
-  /// To list what one sender sent, pass the row's [EmailSummary.senderPubkey],
-  /// plus its [EmailSummary.from] as [fromAddress] when the row is bridged:
-  /// the pubkey of a bridged email is the bridge's, shared by every sender
-  /// behind it. [fromAddress] alone would let anyone claim that address.
+  /// To list what one sender sent, pass the row's [EmailSummary.senderKey] as
+  /// [senderKey]: it tells apart the senders behind one bridge, whose emails
+  /// all carry the bridge's pubkey. [fromAddress] alone would let anyone claim
+  /// that address.
   ///
   /// The result carries the matching `total` and a `hasMore`, so an endless
   /// list knows when to stop asking. Load the full message with [getEmail]
@@ -379,6 +391,7 @@ class NostrMailClient {
     bool? isStarred,
     bool? hasAttachments,
     String? senderPubkey,
+    String? senderKey,
     String? fromAddress,
     String? search,
     int? limit,
@@ -393,6 +406,7 @@ class NostrMailClient {
         isStarred: isStarred,
         hasAttachments: hasAttachments,
         senderPubkey: senderPubkey,
+        senderKey: senderKey,
         fromAddress: fromAddress,
         search: search,
         limit: limit,
@@ -631,26 +645,26 @@ class NostrMailClient {
   ///
   /// Emits the current value immediately, then re-emits whenever the count
   /// may have changed (new email received, mark as read/unread, folder
-  /// change, deletion). Ideal for driving a folder badge with
-  /// `StreamBuilder`.
-  Stream<int> watchUnreadCount({String? folder, String? tag}) {
+  /// change, deletion, verdict on a sender). Ideal for driving a folder badge
+  /// with `StreamBuilder`.
+  Stream<int> watchUnreadCount({String? folder, String? tag}) =>
+      _watchCount(() => getUnreadCount(folder: folder, tag: tag));
+
+  /// How many senders have mail in requests, waiting for a verdict.
+  Future<int> getPendingSenderCount() => _emailRepo.countSenderKeys(
+    EmailQuery(recipientPubkey: _requirePubkey(), folder: 'requests'),
+  );
+
+  /// Reactive stream of [getPendingSenderCount], emitted like
+  /// [watchUnreadCount].
+  Stream<int> watchPendingSenderCount() => _watchCount(getPendingSenderCount);
+
+  Stream<int> _watchCount(Future<int> Function() read) {
     return Rx.defer(() {
       return Rx.merge<Object?>([
-            Stream.value(null),
-            _watch.events
-                .where(
-                  (e) =>
-                      e is EmailReceived ||
-                      e is LabelAdded ||
-                      e is LabelRemoved ||
-                      e is EmailDeleted,
-                )
-                .debounceTime(const Duration(milliseconds: 50)),
-          ])
-          .switchMap(
-            (_) => Stream.fromFuture(getUnreadCount(folder: folder, tag: tag)),
-          )
-          .distinct();
+        Stream.value(null),
+        _watch.events.debounceTime(const Duration(milliseconds: 50)),
+      ]).switchMap((_) => Stream.fromFuture(read())).distinct();
     }, reusable: true);
   }
 
@@ -925,6 +939,7 @@ class NostrMailClient {
 
   /// Move an email to `'inbox'`, `'sent'`, `'archive'`, `'trash'`, `'spam'`
   /// or a user folder id. Folder labels are exclusive: the previous one goes.
+  /// Requests takes no label: it holds what the senders' verdicts leave there.
   Future<void> moveToFolder(String emailId, String folder) =>
       _labels.moveToFolder(emailId, folder);
 
@@ -958,6 +973,34 @@ class NostrMailClient {
   Future<List<String>> getStarredEmailIds() => _labels.getStarredEmailIds();
   Future<List<String>> getReadEmailIds() => _labels.getReadEmailIds();
 
+  // ── Senders ─────────────────────────────────────────────────────────────
+  //
+  // Verdicts on senders, keyed by [EmailSummary.senderKey] and kept in the
+  // account's senders list. Received mail with no folder label goes to the
+  // inbox when its sender is allowed, to spam when it is blocked, and to
+  // requests when it has no verdict.
+
+  /// Accepts [senderKey] from requests, or unblocks it from spam. Applied at
+  /// once, and published to the account's write relays.
+  Future<void> allowSender(String senderKey) =>
+      setSenderVerdicts({senderKey: SenderVerdict.allow});
+
+  /// Refuses [senderKey] from requests, or blocks it. Applied at once, and
+  /// published to the account's write relays.
+  Future<void> blockSender(String senderKey) =>
+      setSenderVerdicts({senderKey: SenderVerdict.block});
+
+  /// Applies a verdict to each sender of [verdicts] at once, allowing some and
+  /// blocking others, as when sorting requests. Published as one event, split
+  /// only past several hundred senders, so a remote signer is solicited once
+  /// for the lot rather than once per sender.
+  Future<void> setSenderVerdicts(Map<String, SenderVerdict> verdicts) =>
+      _senders.setVerdicts(verdicts);
+
+  /// The verdict on [senderKey], null when it has none.
+  Future<SenderVerdict?> getSenderVerdict(String senderKey) =>
+      _senders.verdictOf(senderKey);
+
   // ── Watch ───────────────────────────────────────────────────────────────
 
   Stream<MailEvent> watch() => _watch.watch();
@@ -972,6 +1015,9 @@ class NostrMailClient {
   Stream<MailEvent> get onTrash => _watch.onTrash;
   Stream<MailEvent> get onRead => _watch.onRead;
   Stream<MailEvent> get onStarred => _watch.onStarred;
+
+  /// Verdicts changed here or on another device.
+  Stream<SenderVerdictChanged> get onSender => _watch.onSender;
 
   // ── Sync ────────────────────────────────────────────────────────────────
 
@@ -1284,6 +1330,7 @@ class NostrMailClient {
       _giftWrapRepo.clearAll(recipientPubkey: pubkey),
       _settingsRepo.clear(pubkey: pubkey),
       _tombstoneRepo.clearAll(recipientPubkey: pubkey),
+      _senderRepo.clearAll(recipientPubkey: pubkey),
       _blossomCache.unpinAll(blobPinHolder(pubkey)),
       if (_ownsBroadcastQueue)
         broadcastQueue.clearLocalAccountData(pubkey: pubkey),
@@ -1304,6 +1351,7 @@ class NostrMailClient {
       _giftWrapRepo.clearAll(),
       _settingsRepo.clear(),
       _tombstoneRepo.clearAll(),
+      _senderRepo.clearAll(),
       if (_ownsBroadcastQueue) broadcastQueue.clearAllLocalData(),
       if (_ownsBlossomUploadQueue) blossomUploadQueue.clearAllLocalData(),
     ]);

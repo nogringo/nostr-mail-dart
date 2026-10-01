@@ -15,6 +15,9 @@ class EmailSummary {
   final String id;
   final String senderPubkey;
 
+  /// See `Email.senderKey`.
+  final String senderKey;
+
   /// Sender address as indexed at sync time. For a native nostr sender this
   /// is `<npub>@nostr`, and their real name lives in the profile behind
   /// [senderPubkey]; resolve that first and fall back to these.
@@ -38,7 +41,7 @@ class EmailSummary {
   /// MIME date, falling back to the Nostr event date.
   final DateTime date;
 
-  /// Inbox, sent, trash, archive, spam, or the id of a user folder.
+  /// Inbox, sent, trash, archive, spam, requests, or the id of a user folder.
   final String folder;
 
   final bool isRead;
@@ -62,6 +65,7 @@ class EmailSummary {
   const EmailSummary({
     required this.id,
     required this.senderPubkey,
+    required this.senderKey,
     required this.from,
     required this.subject,
     required this.preview,

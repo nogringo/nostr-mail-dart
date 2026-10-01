@@ -5,9 +5,11 @@ import 'package:nostr_mail/src/storage/email_repository.dart';
 import 'package:nostr_mail/src/storage/label_repository.dart';
 import 'package:nostr_mail/src/storage/models/email_query.dart';
 import 'package:nostr_mail/src/storage/models/email_record.dart';
+import 'package:nostr_mail/src/storage/sender_repository.dart';
 import 'package:nostr_mail/src/storage/settings_repository.dart';
 import 'package:test/test.dart';
 
+import '../../helpers/allow_sender.dart';
 import '../../helpers/test_database.dart';
 
 void main() {
@@ -20,23 +22,27 @@ void main() {
     late EmailRepository emails;
     late LabelRepository labels;
     late SettingsRepository settings;
+    late SenderRepository senders;
 
-    setUp(() {
+    setUp(() async {
       final database = testDatabase();
       emails = EmailRepository(database);
       labels = LabelRepository(database);
       settings = SettingsRepository(database);
+      senders = SenderRepository(database);
+      await allowSender(database, recipientPubkey: rpk, senderKey: 'sender');
     });
 
     Future<void> saveEmail(
       String id, {
+      String sender = 'sender',
       String from = 'someone@example.com',
       String subject = 'Hello',
       bool attachment = false,
     }) => emails.save(
       EmailRecord(
         id: id,
-        senderPubkey: 'sender',
+        senderPubkey: sender,
         recipientPubkey: rpk,
         lightMimeText: '',
         attachmentRefs: [
@@ -161,6 +167,49 @@ void main() {
       await saveSettings();
       expect(await folderOf('a'), 'inbox');
       expect((await emails.getById('b', recipientPubkey: rpk))!.tags, isEmpty);
+    });
+
+    test('a rule only sorts mail from an allowed sender', () async {
+      await saveSettings(
+        folders: [
+          {
+            'id': invoices,
+            'name': 'Invoices',
+            'match': {
+              'subject': ['invoice'],
+            },
+          },
+        ],
+        tags: [
+          {
+            'id': urgent,
+            'name': 'Urgent',
+            'match': {
+              'subject': ['invoice'],
+            },
+          },
+        ],
+      );
+      await senders.saveEntries(
+        eventId: 'block',
+        recipientPubkey: rpk,
+        isAdd: true,
+        createdAt: 0,
+        entries: const [(key: 'blocked', verdict: 'block')],
+      );
+      await saveEmail('allowed', subject: 'Invoice');
+      await saveEmail('stranger', sender: 'stranger', subject: 'Invoice');
+      await saveEmail('blocked', sender: 'blocked', subject: 'Invoice');
+      await saveEmail('own', sender: rpk, subject: 'Invoice');
+
+      expect(await folderOf('allowed'), invoices);
+      expect(await folderOf('stranger'), 'requests');
+      expect(await folderOf('blocked'), 'spam');
+      expect(await folderOf('own'), invoices);
+      expect(
+        await ids(EmailQuery(recipientPubkey: rpk, tag: urgent)),
+        unorderedEquals(['allowed', 'own']),
+      );
     });
 
     test('a tag holds its labelled and matched emails, outside trash and '

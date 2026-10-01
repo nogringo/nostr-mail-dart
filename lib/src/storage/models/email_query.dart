@@ -8,17 +8,20 @@
 class EmailQuery {
   final String recipientPubkey;
 
-  /// A reserved folder (`inbox`, `sent`, `archive`, `trash`, `spam`) or the
-  /// id of a user folder.
+  /// A reserved folder (`inbox`, `sent`, `archive`, `trash`, `spam`,
+  /// `requests`) or the id of a user folder.
   final String? folder;
 
   /// The id of a user tag: the emails it holds by label or by match, outside
-  /// trash and spam.
+  /// trash, spam and requests.
   final String? tag;
   final bool? isRead;
   final bool? isStarred;
   final bool? hasAttachments;
   final String? senderPubkey;
+
+  /// See `Email.senderKey`.
+  final String? senderKey;
 
   /// Matched case-insensitively.
   final String? fromAddress;
@@ -35,6 +38,7 @@ class EmailQuery {
     this.isStarred,
     this.hasAttachments,
     this.senderPubkey,
+    this.senderKey,
     this.fromAddress,
     this.search,
     this.limit,
@@ -49,6 +53,7 @@ class EmailQuery {
     this.isStarred,
     this.hasAttachments,
     this.senderPubkey,
+    this.senderKey,
     this.fromAddress,
     this.search,
     this.limit,
@@ -64,6 +69,7 @@ class EmailQuery {
     this.isStarred,
     this.hasAttachments,
     this.senderPubkey,
+    this.senderKey,
     this.fromAddress,
     this.search,
     this.limit,
@@ -79,6 +85,7 @@ class EmailQuery {
     this.isStarred,
     this.hasAttachments,
     this.senderPubkey,
+    this.senderKey,
     this.fromAddress,
     this.search,
     this.limit,
@@ -94,6 +101,7 @@ class EmailQuery {
     this.isStarred,
     this.hasAttachments,
     this.senderPubkey,
+    this.senderKey,
     this.fromAddress,
     this.search,
     this.limit,
@@ -110,6 +118,7 @@ class EmailQuery {
     bool? isStarred,
     bool? hasAttachments,
     String? senderPubkey,
+    String? senderKey,
     String? fromAddress,
     String? search,
     int? limit,
@@ -124,6 +133,7 @@ class EmailQuery {
       isStarred: isStarred ?? this.isStarred,
       hasAttachments: hasAttachments ?? this.hasAttachments,
       senderPubkey: senderPubkey ?? this.senderPubkey,
+      senderKey: senderKey ?? this.senderKey,
       fromAddress: fromAddress ?? this.fromAddress,
       search: search ?? this.search,
       limit: limit ?? this.limit,

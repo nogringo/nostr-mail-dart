@@ -1,4 +1,5 @@
 import '../models/email.dart';
+import 'sender_verdict.dart';
 
 /// Events emitted by the mail client watch stream
 sealed class MailEvent {
@@ -54,4 +55,20 @@ class EmailDeleted extends MailEvent {
 
   @override
   String toString() => 'EmailDeleted(emailId: $emailId)';
+}
+
+/// The verdict on a sender changed. A null [verdict] means it has none left.
+class SenderVerdictChanged extends MailEvent {
+  final String senderKey;
+  final SenderVerdict? verdict;
+
+  SenderVerdictChanged({
+    required this.senderKey,
+    this.verdict,
+    super.timestamp,
+  });
+
+  @override
+  String toString() =>
+      'SenderVerdictChanged(senderKey: $senderKey, verdict: ${verdict?.name})';
 }

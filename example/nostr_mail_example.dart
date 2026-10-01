@@ -76,6 +76,8 @@ void main() async {
         print('Label added: ${event.label} to ${event.emailId}');
       case LabelRemoved():
         print('Label removed: ${event.label} from ${event.emailId}');
+      case SenderVerdictChanged():
+        print('Sender ${event.senderKey}: ${event.verdict?.name ?? 'none'}');
     }
   });
 
