@@ -15,6 +15,7 @@
 - Large-attachment offload to **Blossom** servers (AES-256-GCM encrypted blobs)
 - Metadata labels (trash, archive, read, starred) via **NIP-32** (kind 1985), gift-wrapped to the account itself ([Nostr Mail Labels](https://github.com/nogringo/protocols/blob/main/nostr-mail-labels.md))
 - Cross-device private settings sync via **NIP-78** (kind 30078, NIP-44 encrypted)
+- Inbox / Requests / Spam routing by sender verdicts, kept in an append-only list (kinds 1990/1991, NIP-44 encrypted) ([Senders And Spam](https://github.com/nogringo/nostr-mail-client/blob/main/docs/senders-and-spam.md))
 - Public email posts (signed kind 1301, optionally with BCC gift wraps)
 - Real-time inbox watching via unified `MailEvent` stream
 
@@ -24,14 +25,15 @@
 |-----|---------|
 | NIP-01 | Base events, signatures |
 | NIP-05 | Identity & bridge resolution (`_smtp@domain`) |
-| NIP-09 | Deletion requests (emails & labels) |
+| NIP-09 | Deletion requests (emails, labels, senders list) |
 | NIP-17 | DM relay lists (kind 10050) |
 | NIP-18 | Generic reposts (kind 16) |
 | NIP-32 | Labels (kind 1985, namespace `mail`), carried in gift wraps |
-| NIP-44 | Encryption for private settings |
+| NIP-44 | Encryption for private settings and the senders list |
 | NIP-59 | Gift wraps (kind 1059) & seals (kind 13), for emails and labels |
 | NIP-65 | Write relay lists (kind 10002) |
 | NIP-78 | App-specific data (kind 30078) |
+| [Append-Only Lists](https://github.com/nogringo/protocols/blob/main/nip-append-only-lists.md) | Senders list (kinds 1990/1991, `d` = `nostr-mail/senders`) |
 | BUD-01/03 | Blossom blob storage |
 
 ---
@@ -81,6 +83,7 @@ lib/
     │   ├── mail_entry.dart      # MailEntry (user folder or tag) + MailMatch condition
     │   ├── mail_event.dart      # Sealed class: EmailReceived, LabelAdded, etc.
     │   ├── private_settings.dart# Cross-device settings (signature, bridges, identities, folders, tags)
+    │   ├── sender_verdict.dart  # SenderVerdict: allow or block
     │   ├── encrypted_blob.dart  # AES-GCM blob metadata
     │   └── unwrapped_gift_wrap.dart # Seal + Rumor pair
     ├── client/
@@ -88,6 +91,7 @@ lib/
     │   ├── mail_sync.dart       # declares the sync requests, fetchRecent(), event processing
     │   ├── watch_manager.dart   # watch() — real-time MailEvent stream
     │   ├── label_manager.dart   # addLabel, removeLabel, broadcast labels
+    │   ├── sender_manager.dart  # allowSender, blockSender: Adds to the senders list
     │   ├── settings_manager.dart# Private settings CRUD + cache
     │   └── relay_resolver.dart  # Shared helper: resolve DM & write relays (NIP-17/65)
     ├── storage/
@@ -100,6 +104,7 @@ lib/
     │   ├── tombstone_repository.dart # NIP-09 deletions already applied
     │   ├── settings_repository.dart  # Local decrypted settings cache
     │   ├── match_repository.dart     # Emails held by a folder/tag match condition
+    │   ├── sender_repository.dart    # Senders list entries and their decryptions
     │   ├── legacy_sembast_cleanup.dart # Drops the stores kept in sembast before 3.0.0
     │   └── models/
     │       ├── email_record.dart     # Stored columns + state derived from labels on read
@@ -115,6 +120,7 @@ lib/
         ├── html_to_text.dart         # htmlToText(), the text/plain a reader sees
         ├── body_preview.dart         # One-line listing snippet, no quotes or signature
         ├── mime_message_cleaner.dart # removeBccHeaders()
+        ├── senders_list.dart         # Senders list entries, read and written
         └── attachment_counter.dart   # Counts attachments via MimeMessage
 
 test/
@@ -128,6 +134,7 @@ test/
 │   ├── mock_blossom_server.dart # Shelf-based Blossom server mock (supports dynamic ports)
 │   └── mock_bridge.dart         # SMTP bridge simulator using NostrMailClient
 └── helpers/
+    ├── allow_sender.dart        # allowSender(), an allow verdict seeded in the store
     ├── test_user.dart           # Helper: create user + NDK + both databases + client
     ├── test_database.dart       # testDatabase(), in-memory drift store
     ├── test_blossom_cache.dart  # In-memory BlossomCache
@@ -140,8 +147,8 @@ test/
 - **`client.dart`** is a thin façade. All business logic lives in the **manager classes** under `lib/src/client/`.
 - **`RelayResolver`** eliminates duplication of `_getDmRelays()` / `_getWriteRelays()` across managers.
 - **`MailSync`** (in `mail_sync.dart`) declares what the caller-provided `SyncEngine` (`sync_engine_shim_for_ndk`) must keep available, then rebuilds the local stores from the NDK cache. It never queries a relay itself.
-- **`filters.dart`** is the single source of truth for all Nostr query filters used by the SDK (7 filter categories). `MailSync` uses them both as sync declarations and as cache reads, and `WatchManager` for its subscriptions, so filters can never diverge.
-- **Relational storage**: the schema lives in `lib/src/storage/schema.drift`. `labels` is the source of truth for an email's state: the `email_states` view derives `folder` (most recent `folder:` label, else the first user folder whose `match` holds, by position, else `sent`/`inbox` from sender == recipient), `is_read` and `is_starred`, so nothing is copied onto the email row and a label landing before its email needs no special handling. It holds one row per label event, not per label, with the gift wrap that carried it: two devices can apply the same label before either sees the other, and removing it names every event. `matches` holds the user folders and tags whose `match` condition holds each email. It is computed in Dart, since SQLite folds the case of ASCII only: `EmailRepository.save` indexes the email it saves, and `SettingsRepository.save` rebuilds the account when the conditions change. Attachment refs are rows of `attachments` (cascade on delete). Search is an FTS5 external-content index over `emails` kept by triggers, so `search()` matches words and prefixes, case and accent insensitive.
+- **`filters.dart`** is the single source of truth for all Nostr query filters used by the SDK (8 filter categories). `MailSync` uses them both as sync declarations and as cache reads, and `WatchManager` for its subscriptions, so filters can never diverge.
+- **Relational storage**: the schema lives in `lib/src/storage/schema.drift`. `labels` is the source of truth for an email's state: the `email_states` view derives `folder` (most recent `folder:` label; else, for received mail, `spam` when its sender is blocked and `requests` when it has no verdict; else the first user folder whose `match` holds, by position; else `sent`/`inbox` from sender == recipient), `is_read` and `is_starred`, so nothing is copied onto the email row and a label landing before its email needs no special handling. It holds one row per label event, not per label, with the gift wrap that carried it: two devices can apply the same label before either sees the other, and removing it names every event. `matches` holds the user folders and tags whose `match` condition holds each email. It is computed in Dart, since SQLite folds the case of ASCII only: `EmailRepository.save` indexes the email it saves, and `SettingsRepository.save` rebuilds the account when the conditions change. `sender_ops` holds one row per entry of each senders list event, and the `sender_verdicts` view resolves the verdict of each sender key from them; `emails.sender_key` is computed in Dart for the same reason as `matches`. Attachment refs are rows of `attachments` (cascade on delete). Search is an FTS5 external-content index over `emails` kept by triggers, so `search()` matches words and prefixes, case and accent insensitive.
 - **`EmailRecord.folder` / `isRead` / `isStarred` / `labels`** are filled on read and ignored by `save()`.
 - **Schema changes**: edit `schema.drift`, bump `NostrMailDatabase.schemaVersion`, regenerate. Any version mismatch drops and recreates every table; the next pass rebuilds them from the NDK cache.
 
@@ -176,7 +183,7 @@ await NostrMailClient.create({
 
 **Lifecycle:**
 - `fetchRecent()` — pull to refresh: goes to the relays now, however fresh the coverage is. The only sync method, and never needed to stay up to date: the engine revisits on its own and the client declares its requests from `create()` and from `ndk.accounts.authStateChanges`
-- `watch()` — broadcast stream of `MailEvent` (emails, labels, deletions). Its subscriptions follow `ndk.accounts.authStateChanges`, so a login, a switch or a logout redraws them for the account that takes over; the stream itself survives, and calling `watch()` again is a no-op. Each one names the account it was drawn for as its NIP-42 identity, see Relay Authentication
+- `watch()` — broadcast stream of `MailEvent` (emails, labels, deletions, sender verdicts). Its subscriptions follow `ndk.accounts.authStateChanges`, so a login, a switch or a logout redraws them for the account that takes over; the stream itself survives, and calling `watch()` again is a no-op. Each one names the account it was drawn for as its NIP-42 identity, see Relay Authentication
 - `stopWatching()` — closes stream & subscriptions
 - `clearAllLocalData()` (alias `clearAll()`): wipes local DBs and caches. The NDK cache belongs to the caller and is left alone, so the next pass rebuilds from it
 - `clearLocalAccountData(pubkey:)`: wipes local data for one account only
@@ -201,7 +208,12 @@ await NostrMailClient.create({
 
 **User folders and tags:**
 - `createFolder` / `updateFolder` / `deleteFolder`, same for tags. Stored as `MailEntry` in the private settings (`folders`, `tags`), id of 16 random hex chars. Deleting one leaves its labels on the emails.
-- `getSummaries(folder: id)` / `getSummaries(tag: id)`. A tag listing leaves out trash and spam.
+- `getSummaries(folder: id)` / `getSummaries(tag: id)`. A tag listing leaves out trash, spam and requests.
+
+**Senders (local-first):**
+- `allowSender(senderKey)` (Accept, Unblock), `blockSender(senderKey)` (Refuse, Block), `getSenderVerdict(senderKey)`, `onSender`.
+- `getPendingSenderCount()` / `watchPendingSenderCount()`: distinct senders in requests.
+- `getSummaries(folder: 'requests')` / `'spam'`, and `senderKey:` to list one sender. `moveToFolder(id, 'requests')` throws: requests takes no label.
 
 **Private Settings (NIP-78):**
 - `getPrivateSettings()`: local-first `NdkDataResponse`, emits the local cache then newer relay copies
@@ -258,6 +270,7 @@ dart test test/integration   # mock relays and Blossom servers
 - **BCC privacy**: `removeBccHeaders()` strips `Bcc:` and `Resent-Bcc:` from MIME before sending to anyone except the sender (when `keepCopy == true`).
 - **Large emails**: Content > 32 KB is uploaded to Blossom as an AES-256-GCM encrypted blob. The event then contains only the SHA-256 hash, key, and nonce.
 - **Private settings**: Stored as NIP-78 replaceable events encrypted to self with NIP-44. Decrypted JSON is cached locally so the app can read settings without waking the bunker.
+- **Senders list**: entries travel only in NIP-44 content encrypted to self; the events carry no entry tag. Each decryption is kept in `sender_list_decryptions`, a raw table, and failures follow the gift wrap rules (`permanent` never retried, `signer` given up after `maxSignerAttempts`).
 - **Public emails**: Must be signed (`signRumor = true`). BCC recipients of public emails receive a **shared signed rumor** gift-wrapped individually, with a `public-ref` tag pointing to the public event.
 
 ---
@@ -281,15 +294,18 @@ dart test test/integration   # mock relays and Blossom servers
 `AuthPolicy.allow()` is the default choice: anonymous first, authenticated once a relay refuses. `AuthPolicy.require()` sends on a connection bound to the account from the start, so it costs a second socket per relay of the set and answers the challenge of any relay that sends one, including relays that would have served the request anonymously; with a NIP-46 signer that is a round trip each. It is reserved for the gift wrap subscription and the sync engine's requests, both on DM relays, where `wss://auth.nostr1.com` serves nothing anonymously. Requests covering write relays use `allow()`: `require()` there would send nothing at all for a pubkey-only login, since a request that cannot be authenticated reaches no relay, and public emails, labels, deletions and metadata do not need an identity.
 
 ### Sync (sync_engine_shim_for_ndk)
-NDK's `fetchedRanges` is broken and is no longer used. The caller passes a `SyncEngine` from `sync_engine_shim_for_ndk`, which tracks its own coverage per relay/filter pair, paginates, backs off per relay, and adds the 2-day NIP-59 margin on kind 1059. `MailSync` declares four `SyncRequest`s covering all 7 filter categories, split by relay set: gift wraps on DM relays, deletions on DM + write relays, public emails on read relays, and labels published in clear by earlier versions / reposts / settings / metadata on write relays. Gift-wrapped labels come with the gift wraps. Each request names the active account as its `authPubkey`, so it goes out on a NIP-42 authenticated connection from the first page: `wss://auth.nostr1.com`, the first default DM relay, serves nothing without it. The pubkey is part of the request identity, so switching account redraws the handles and starts from a blank coverage, and a pubkey-only login syncs nothing at all since it cannot answer a challenge.
+NDK's `fetchedRanges` is broken and is no longer used. The caller passes a `SyncEngine` from `sync_engine_shim_for_ndk`, which tracks its own coverage per relay/filter pair, paginates, backs off per relay, and adds the 2-day NIP-59 margin on kind 1059. `MailSync` declares four `SyncRequest`s covering all 7 filter categories, split by relay set: gift wraps on DM relays, deletions on DM + write relays, public emails on read relays, and labels published in clear by earlier versions / the senders list / reposts / settings / metadata on write relays. Each round replays the senders list first, so the emails it announces are already routed. Gift-wrapped labels come with the gift wraps. Each request names the active account as its `authPubkey`, so it goes out on a NIP-42 authenticated connection from the first page: `wss://auth.nostr1.com`, the first default DM relay, serves nothing without it. The pubkey is part of the request identity, so switching account redraws the handles and starts from a blank coverage, and a pubkey-only login syncs nothing at all since it cannot answer a challenge.
 
 The engine never returns events: it fills the NDK cache. The cache is therefore the source of truth for raw events, and the drift tables are a projection rebuilt from it by `_processFromCache`. A held request revisits its windows every `maxStaleness` on its own, so `MailSync` watches each handle's `SyncRequestStatus.progress` for as long as it holds the handle, and replays the cache on every page that brought events. Mail therefore lands without anyone polling the SDK, and surfaces during a long backfill instead of after it. Replays are serialised through `_replayCache`: asking while a round runs queues a single follow-up, so pages coalesce and no event is processed twice. Every handler is idempotent, so replaying the whole cache costs one lookup per already-known event, and an event whose processing failed is retried on the next pass unless its recorded failure says another attempt cannot help. A schema bump just drops the tables; the next pass rebuilds them without network.
 
 ### Labels
 The protocol is [Nostr Mail Labels](https://github.com/nogringo/protocols/blob/main/nostr-mail-labels.md). A label is a kind 1985 signed by the account, wrapped **without a seal** in a gift wrap addressed to the account itself and published to its DM relays. `MailSync` dispatches a wrap on the kind it yields: a seal holds an email, a kind 1985 is a label, accepted only when authored by the account with a valid signature (`eventVerifier.verify`), since anyone can address a wrap to it. Removal is a kind 5 naming the label's wrap with `["k", "1059"]`. A 1985 published in clear by an earlier version is still applied, and removed by its own id with `["k", "1985"]`. A label this device wraps is recorded open (`saveOpened`), so the sync never asks the signer to decrypt it. User folders and tags are `folder:<id>` / `tag:<id>`, named in the private settings ([Nostr Mail Settings](https://github.com/nogringo/protocols/blob/main/nostr-mail-settings.md)); a label naming an id with no entry is kept.
 
+### Senders
+The protocol is [Senders And Spam](https://github.com/nogringo/nostr-mail-client/blob/main/docs/senders-and-spam.md). A verdict is an Add (kind 1990) to the append-only list `nostr-mail/senders`, holding `["sender", <senderKey>, "allow"|"block"]` in its encrypted content, published to the write relays. The most recent Add of a sender wins unless a Remove is strictly later; two Adds in the same second go to the lowest id, which is why `SenderManager` dates a new one after the last event naming that sender. The SDK never publishes a Remove but applies those of other clients, and a kind 5 naming a list event with `["k", "1990"]` or `["k", "1991"]`. A list event this device signs is recorded open, so the sync never asks the signer to decrypt it.
+
 ### `Email.isBridged`
-An email is bridged when its rumor carries a `mail-from` tag. Its `senderPubkey` is then the bridge's, shared by every legacy sender behind it: telling those senders apart takes `from` as well.
+An email is bridged when its rumor carries a `mail-from` tag. Its `senderPubkey` is then the bridge's, shared by every legacy sender behind it: `senderKey` tells those senders apart, adding the lowercased From address.
 
 ---
 

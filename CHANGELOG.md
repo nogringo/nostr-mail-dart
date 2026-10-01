@@ -1,7 +1,9 @@
 ## 6.0.0
 
 Received mail sorted between Inbox, Requests and Spam by the verdict of its
-sender.
+sender, as
+[Senders And Spam](https://github.com/nogringo/nostr-mail-client/blob/main/docs/senders-and-spam.md)
+defines.
 
 ### Upgrading
 

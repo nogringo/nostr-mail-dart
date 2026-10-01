@@ -7,6 +7,7 @@ A Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59
 - Send emails to Nostr users (via npub, hex pubkey, or NIP-05 identifier)
 - Send emails to legacy email addresses via SMTP bridges
 - Receive and decrypt gift-wrapped email messages
+- Inbox, Requests and Spam, sorted by verdicts on senders shared across devices
 - Local email storage with drift (SQLite), full-text search with FTS5
 - RFC 2822 email format support
 - NIP-05 identity resolution
@@ -172,6 +173,32 @@ Load the whole message, body and MIME included, only when a row is opened:
 ```dart
 final email = await client.getEmail(row.id);
 ```
+
+### Inbox, Requests and Spam
+
+Received mail with no folder label is sorted by the verdict on its sender, as
+[Senders And Spam](https://github.com/nogringo/nostr-mail-client/blob/main/docs/senders-and-spam.md)
+defines: an allowed sender's mail goes to `inbox`, a blocked sender's to
+`spam`, and the mail of a sender with no verdict to `requests`. A verdict
+applies to a `senderKey`, so it moves every email of that sender at once, and
+reaches the account's other devices.
+
+```dart
+final requests = await client.getSummaries(folder: 'requests');
+final row = requests.items.first;
+
+await client.allowSender(row.senderKey); // Accept, or Unblock from spam
+await client.blockSender(row.senderKey); // Refuse, or Block sender
+
+// Senders waiting in requests, for a badge or a banner
+client.watchPendingSenderCount().listen((count) => print('$count pending'));
+
+// Mail moves without any label: reload the lists on a verdict change
+client.onSender.listen((change) => print('${change.senderKey}: ${change.verdict}'));
+```
+
+User folder conditions only sort the mail of allowed senders. Emptying spam
+deletes what `getSummaries(folder: 'spam')` lists, as emptying the trash does.
 
 ### Manage local emails
 
