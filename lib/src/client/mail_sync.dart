@@ -50,6 +50,9 @@ class MailSync {
   /// or the client is disposed.
   final Map<String, SyncHandle> _handles = {};
 
+  /// The account [_handles] were declared for.
+  String? _declaredFor;
+
   final Map<SyncHandle, StreamSubscription<SyncRequestStatus>> _watchers = {};
 
   StreamSubscription<Account?>? _account;
@@ -132,6 +135,19 @@ class MailSync {
       _drop(handle);
     }
     _handles.clear();
+    _declaredFor = null;
+  }
+
+  /// Forgets what was synced for [pubkey], on every relay it was synced from,
+  /// so its next [declare] walks everything back from scratch. A dropped
+  /// projection under a coverage that survived is never rebuilt: covered
+  /// ground brings no page. Its requests are released first, or the engine
+  /// would walk them back at once for an account on its way out.
+  Future<void> forget(String pubkey) async {
+    if (_declaredFor == pubkey) release();
+    for (final filter in _filtersOf(pubkey)) {
+      await _engine.forgetFilter(filter, authPubkey: pubkey);
+    }
   }
 
   /// Follows the active account: what to sync is derived from its pubkey, so a
@@ -165,6 +181,7 @@ class MailSync {
       _relays.getReadRelays(pubkey),
     ).wait;
     final allRelays = {...dmRelays, ...writeRelays}.toList();
+    _declaredFor = pubkey;
 
     return [
       _ensure('emails', [emailFilter(pubkey)], dmRelays, authPubkey: pubkey),
@@ -196,6 +213,18 @@ class MailSync {
       ),
     ];
   }
+
+  /// Every filter [_ensureHandles] declares for [pubkey].
+  List<Filter> _filtersOf(String pubkey) => [
+    emailFilter(pubkey),
+    deletionFilter(pubkey),
+    publicEmailFilter(pubkey),
+    labelFilter(pubkey),
+    sendersFilter(pubkey),
+    repostFilter(pubkey),
+    settingsFilter(pubkey),
+    metadataFilter(pubkey),
+  ];
 
   /// The engine derives the request identity from the filters, the relay set
   /// and [authPubkey], all of which move here: switching account rewrites the

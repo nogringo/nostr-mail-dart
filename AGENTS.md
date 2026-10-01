@@ -1,7 +1,7 @@
 # nostr_mail — Agent Guide
 
 > Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59 gift-wrapped messages.
-> Version: 6.0.0 | Dart SDK: ^3.12.0 | Platforms: Android, iOS, Linux, macOS, Web, Windows
+> Version: 6.0.1 | Dart SDK: ^3.12.0 | Platforms: Android, iOS, Linux, macOS, Web, Windows
 
 ---
 
@@ -185,8 +185,8 @@ await NostrMailClient.create({
 - `fetchRecent()` — pull to refresh: goes to the relays now, however fresh the coverage is. The only sync method, and never needed to stay up to date: the engine revisits on its own and the client declares its requests from `create()` and from `ndk.accounts.authStateChanges`
 - `watch()` — broadcast stream of `MailEvent` (emails, labels, deletions, sender verdicts). Its subscriptions follow `ndk.accounts.authStateChanges`, so a login, a switch or a logout redraws them for the account that takes over; the stream itself survives, and calling `watch()` again is a no-op. Each one names the account it was drawn for as its NIP-42 identity, see Relay Authentication
 - `stopWatching()` — closes stream & subscriptions
-- `clearAllLocalData()` (alias `clearAll()`): wipes local DBs and caches. The NDK cache belongs to the caller and is left alone, so the next pass rebuilds from it
-- `clearLocalAccountData(pubkey:)`: wipes local data for one account only
+- `clearAllLocalData()` (alias `clearAll()`): wipes local DBs and caches and releases the sync requests. The NDK cache and the sync engine belong to the caller and are left alone: clear the engine too (`SyncEngine.clearAllLocalData()`), or the next login trusts a coverage whose mail is gone
+- `clearLocalAccountData(pubkey:)`: wipes local data for one account only, releases its sync requests and forgets its sync coverage, so its next login walks everything back from the relays
 
 **Sending:**
 - `send({List<MailAddress> to, cc, bcc, required subject, required body, ...})`

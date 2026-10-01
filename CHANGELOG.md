@@ -1,3 +1,19 @@
+## 6.0.1
+
+- **Fix**: `clearLocalAccountData` forgets the account's sync coverage. It
+  kept it, so the next login took the account's history for already synced
+  and never fetched it again: the mailbox stayed empty until a `fetchRecent`,
+  and for good when the NDK cache had been cleared too. That login now walks
+  everything back from the relays.
+- Clearing local data releases the sync requests, those of the cleared
+  account for `clearLocalAccountData` and all of them for
+  `clearAllLocalData`, so the engine does not refill the stores of an account
+  on its way out. An account still logged in syncs again on its next login,
+  account switch or `fetchRecent`.
+- `clearAllLocalData` leaves the engine's coverage alone, since the engine
+  belongs to the caller. Clear it with `SyncEngine.clearAllLocalData()`, or
+  the next login finds nothing left to fetch.
+
 ## 6.0.0
 
 Received mail sorted between Inbox, Requests and Spam by the verdict of its

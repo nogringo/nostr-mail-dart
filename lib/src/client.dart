@@ -1320,11 +1320,13 @@ class NostrMailClient {
   /// Do not call this for an account that is concurrently sending: a broadcast
   /// overlapping the clear can re-create its record.
   ///
-  /// The raw events stay in the NDK cache, which belongs to the caller, so a
-  /// later [sync] for this account rebuilds its mail from there. Clear that
-  /// cache too to forget the account entirely.
+  /// The raw events stay in the NDK cache, which belongs to the caller: clear
+  /// it too to forget the account entirely. The account's sync coverage goes
+  /// either way, so its next login walks everything back from the relays and
+  /// rebuilds its mail, whether or not that cache was cleared.
   Future<void> clearLocalAccountData({required String pubkey}) async {
     await Future.wait([
+      _sync.forget(pubkey),
       _emailRepo.clearAll(recipientPubkey: pubkey),
       _labelRepo.clearAll(recipientPubkey: pubkey),
       _giftWrapRepo.clearAll(recipientPubkey: pubkey),
@@ -1344,7 +1346,14 @@ class NostrMailClient {
   /// [clearLocalAccountData]: a caller-provided queue is left alone, since its
   /// pending entries may belong to another SDK sharing it, and the NDK cache
   /// is left untouched.
+  ///
+  /// This client's sync requests are released, so a clear of the engine that
+  /// follows does not walk them straight back. Their coverage stays: the
+  /// engine belongs to the caller, so clear it with
+  /// `SyncEngine.clearAllLocalData()`, or the next login trusts a coverage
+  /// whose mail is gone.
   Future<void> clearAllLocalData() async {
+    _sync.release();
     await Future.wait([
       _emailRepo.clearAll(),
       _labelRepo.clearAll(),

@@ -11,6 +11,7 @@ import 'package:ndk/ndk.dart' hide RelaySet;
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:ndk/shared/nips/nip01/key_pair.dart';
 import 'package:nostr_mail/nostr_mail.dart';
+import 'package:nostr_mail/src/client/filters.dart';
 import 'package:nostr_mail/src/storage/email_repository.dart';
 import 'package:nostr_mail/src/storage/gift_wrap_repository.dart';
 import 'package:nostr_mail/src/storage/label_repository.dart';
@@ -19,6 +20,7 @@ import 'package:nostr_mail/src/storage/models/email_record.dart';
 import 'package:nostr_mail/src/storage/settings_repository.dart';
 import 'package:nostr_mail/src/storage/tombstone_repository.dart';
 import 'package:sembast/sembast_memory.dart';
+import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/allow_sender.dart';
@@ -169,6 +171,7 @@ void main() {
     late Database db;
     late Ndk ndk;
     late NostrMailClient client;
+    late SyncEngine engine;
     late KeyPair aliceAccount;
     late KeyPair bobAccount;
 
@@ -197,11 +200,12 @@ void main() {
         privkey: aliceAccount.privateKey!,
       );
 
+      engine = testSyncEngine(ndk, db);
       client = await NostrMailClient.create(
         ndk: ndk,
         database: database,
         db: db,
-        syncEngine: testSyncEngine(ndk, db),
+        syncEngine: engine,
         blossomCache: await openTestBlossomCache('account_isolation_test'),
         defaultDmRelays: [relay.url],
       );
@@ -437,6 +441,77 @@ void main() {
       expect((await client.broadcastQueue.listAll()).map((b) => b.id), [
         'bob-queued',
       ]);
+    });
+
+    Future<int> coverageOf(String pubkey) async {
+      final filters = [
+        emailFilter(pubkey),
+        deletionFilter(pubkey),
+        publicEmailFilter(pubkey),
+        labelFilter(pubkey),
+        sendersFilter(pubkey),
+        repostFilter(pubkey),
+        settingsFilter(pubkey),
+        metadataFilter(pubkey),
+      ];
+      var states = 0;
+      for (final filter in filters) {
+        states += (await engine.coverageOfFilter(
+          filter,
+          authPubkey: pubkey,
+        )).length;
+      }
+      return states;
+    }
+
+    test(
+      "clearLocalAccountData forgets the active account's coverage",
+      () async {
+        await client.fetchRecent();
+        expect(await coverageOf(aliceAccount.publicKey), isPositive);
+
+        await client.clearLocalAccountData(pubkey: aliceAccount.publicKey);
+
+        expect(await coverageOf(aliceAccount.publicKey), 0);
+        expect(
+          engine.engineStatus.activeRequests,
+          0,
+          reason: 'a held request walks the account back at once',
+        );
+      },
+    );
+
+    test(
+      "clearLocalAccountData leaves another account's coverage alone",
+      () async {
+        addBob();
+        await client.fetchRecent();
+        ndk.accounts.switchAccount(pubkey: bobAccount.publicKey);
+        await client.fetchRecent();
+        final bobCoverage = await coverageOf(bobAccount.publicKey);
+        final heldRequests = engine.engineStatus.activeRequests;
+        expect(await coverageOf(aliceAccount.publicKey), isPositive);
+        expect(bobCoverage, isPositive);
+
+        await client.clearLocalAccountData(pubkey: aliceAccount.publicKey);
+
+        expect(await coverageOf(aliceAccount.publicKey), 0);
+        expect(await coverageOf(bobAccount.publicKey), bobCoverage);
+        expect(engine.engineStatus.activeRequests, heldRequests);
+      },
+    );
+
+    test('clearAllLocalData releases the sync requests', () async {
+      await client.fetchRecent();
+      expect(engine.engineStatus.activeRequests, isPositive);
+
+      await client.clearAllLocalData();
+
+      expect(
+        engine.engineStatus.activeRequests,
+        0,
+        reason: 'a clear of the engine would walk them straight back',
+      );
     });
   });
 }
