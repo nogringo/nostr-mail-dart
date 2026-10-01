@@ -149,11 +149,27 @@ void main() {
   });
 
   test('latestCreatedAt counts Adds and Removes', () async {
-    expect(await repo.latestCreatedAt('alice', recipientPubkey: rpk), isNull);
+    expect(await repo.latestCreatedAt(['alice'], recipientPubkey: rpk), isNull);
     await add('e1', 1, 'allow');
     await remove('e2', 7);
     await add('e3', 3, 'allow', key: 'bob');
-    expect(await repo.latestCreatedAt('alice', recipientPubkey: rpk), 7);
+    await add('e4', 9, 'allow', key: 'carol');
+    expect(await repo.latestCreatedAt(['alice'], recipientPubkey: rpk), 7);
+    expect(await repo.latestCreatedAt(['bob'], recipientPubkey: rpk), 3);
+    expect(
+      await repo.latestCreatedAt(['alice', 'bob'], recipientPubkey: rpk),
+      7,
+    );
+  });
+
+  test('verdictsOf leaves out the senders with no verdict', () async {
+    await add('e1', 1, 'allow');
+    await add('e2', 2, 'block', key: 'bob');
+
+    expect(
+      await repo.verdictsOf(['alice', 'bob', 'carol'], recipientPubkey: rpk),
+      {'alice': SenderVerdict.allow, 'bob': SenderVerdict.block},
+    );
   });
 
   group('decryptions', () {

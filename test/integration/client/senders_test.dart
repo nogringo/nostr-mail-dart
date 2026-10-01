@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
 import 'package:ndk/ndk.dart' hide RelaySet;
@@ -85,6 +86,51 @@ void main() {
     await waitForBroadcasts(phone.client.broadcastQueue);
 
     expect(listEvents(), hasLength(1));
+  });
+
+  test('sorting requests publishes one event', () async {
+    final spam = ['spam1', 'spam2', 'spam3'];
+    final known = [for (var i = 1; i <= 7; i++) 'friend$i'];
+    final changes = <SenderVerdictChanged>[];
+    phone.client.onSender.listen(changes.add);
+
+    await phone.client.setSenderVerdicts({
+      for (final key in spam) key: SenderVerdict.block,
+      for (final key in known) key: SenderVerdict.allow,
+    });
+    await waitForBroadcasts(phone.client.broadcastQueue);
+
+    expect(listEvents(), hasLength(1));
+    expect(changes, hasLength(10));
+
+    await desktop.client.fetchRecent();
+    for (final key in spam) {
+      expect(await desktop.client.getSenderVerdict(key), SenderVerdict.block);
+    }
+    for (final key in known) {
+      expect(await desktop.client.getSenderVerdict(key), SenderVerdict.allow);
+    }
+  });
+
+  test('sorting leaves out the senders already sorted that way', () async {
+    await phone.client.allowSender('bob');
+    await waitForBroadcasts(phone.client.broadcastQueue);
+    final first = listEvents().single;
+
+    await phone.client.setSenderVerdicts({
+      'bob': SenderVerdict.allow,
+      'carol': SenderVerdict.block,
+    });
+    await waitForBroadcasts(phone.client.broadcastQueue);
+
+    final second = listEvents().where((e) => e.id != first.id).single;
+    final plaintext = await phone.ndk.accounts
+        .getLoggedAccount()!
+        .signer
+        .decryptNip44(ciphertext: second.content, senderPubKey: me);
+    expect(jsonDecode(plaintext!), [
+      ['sender', 'carol', 'block'],
+    ]);
   });
 
   test('a deleted verdict is withdrawn', () async {

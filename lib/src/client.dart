@@ -983,12 +983,19 @@ class NostrMailClient {
   /// Accepts [senderKey] from requests, or unblocks it from spam. Applied at
   /// once, and published to the account's write relays.
   Future<void> allowSender(String senderKey) =>
-      _senders.setVerdict(senderKey, SenderVerdict.allow);
+      setSenderVerdicts({senderKey: SenderVerdict.allow});
 
   /// Refuses [senderKey] from requests, or blocks it. Applied at once, and
   /// published to the account's write relays.
   Future<void> blockSender(String senderKey) =>
-      _senders.setVerdict(senderKey, SenderVerdict.block);
+      setSenderVerdicts({senderKey: SenderVerdict.block});
+
+  /// Applies a verdict to each sender of [verdicts] at once, allowing some and
+  /// blocking others, as when sorting requests. Published as one event, split
+  /// only past several hundred senders, so a remote signer is solicited once
+  /// for the lot rather than once per sender.
+  Future<void> setSenderVerdicts(Map<String, SenderVerdict> verdicts) =>
+      _senders.setVerdicts(verdicts);
 
   /// The verdict on [senderKey], null when it has none.
   Future<SenderVerdict?> getSenderVerdict(String senderKey) =>

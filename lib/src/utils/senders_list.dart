@@ -27,6 +27,31 @@ String sendersListContent(Iterable<SenderEntry> entries) => jsonEncode([
   for (final entry in entries) ['sender', entry.key, ?entry.verdict],
 ]);
 
+/// The longest plaintext whose event stays under the 64 KiB restrictive relays
+/// accept: one byte more and NIP-44 pads it to 49,152 bytes, whose base64
+/// alone overflows that.
+const _maxPlaintextBytes = 40960;
+
+/// [entries] split into batches whose [sendersListContent], once encrypted,
+/// each fits in an event of at most 64 KiB, in order.
+List<List<SenderEntry>> sendersListBatches(Iterable<SenderEntry> entries) {
+  final batches = <List<SenderEntry>>[];
+  var batch = <SenderEntry>[];
+  var size = 2;
+  for (final entry in entries) {
+    // Its tuple and the comma before it.
+    final entrySize = utf8.encode(sendersListContent([entry])).length - 1;
+    if (batch.isNotEmpty && size + entrySize > _maxPlaintextBytes) {
+      batches.add(batch);
+      batch = [];
+      size = 2;
+    }
+    batch.add(entry);
+    size += entrySize;
+  }
+  return [...batches, if (batch.isNotEmpty) batch];
+}
+
 List<List<String>> _tuples(String plaintext) {
   if (plaintext.isEmpty) return const [];
   final Object? decoded;

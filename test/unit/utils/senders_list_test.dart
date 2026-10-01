@@ -1,6 +1,8 @@
 import 'dart:convert';
 
-import 'package:ndk/ndk.dart' show Nip01Event;
+import 'package:ndk/ndk.dart'
+    show Bip340EventSigner, Nip01Event, Nip01EventModel;
+import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:nostr_mail/src/utils/senders_list.dart';
 import 'package:test/test.dart';
 
@@ -101,5 +103,56 @@ void main() {
       ['sender', 'pk2'],
     ]);
     expect(sendersListEntries(event(), content), entries);
+  });
+
+  group('sendersListBatches', () {
+    test('keeps a short list in one batch', () {
+      const entries = [
+        (key: 'pk1', verdict: 'allow'),
+        (key: 'pk2', verdict: 'block'),
+      ];
+
+      expect(sendersListBatches(entries), [entries]);
+      expect(sendersListBatches(const []), isEmpty);
+    });
+
+    test(
+      'splits a long list into events of at most 64 KiB, in order',
+      () async {
+        final keyPair = Bip340.generatePrivateKey();
+        final signer = Bip340EventSigner(
+          privateKey: keyPair.privateKey,
+          publicKey: keyPair.publicKey,
+        );
+        final entries = [
+          for (var i = 0; i < 1000; i++)
+            (key: i.toRadixString(16).padLeft(64, '0'), verdict: 'block'),
+        ];
+
+        final batches = sendersListBatches(entries);
+
+        expect(batches, hasLength(3));
+        expect(batches.expand((batch) => batch), entries);
+        for (final batch in batches) {
+          final content = await signer.encryptNip44(
+            plaintext: sendersListContent(batch),
+            recipientPubKey: keyPair.publicKey,
+          );
+          final signed = await signer.sign(
+            Nip01Event(
+              pubKey: keyPair.publicKey,
+              kind: 1990,
+              tags: [
+                ['d', 'nostr-mail/senders'],
+              ],
+              content: content!,
+              createdAt: 1000,
+            ),
+          );
+          final json = Nip01EventModel.fromEntity(signed).toJsonString();
+          expect(utf8.encode(json).length, lessThanOrEqualTo(64 * 1024));
+        }
+      },
+    );
   });
 }

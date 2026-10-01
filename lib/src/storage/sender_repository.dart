@@ -157,9 +157,16 @@ class SenderRepository {
     return verdicts[senderKey];
   }
 
-  /// The `created_at` of the latest event naming [senderKey], Add or Remove.
+  /// The verdicts of [senderKeys], leaving out those that have none.
+  Future<Map<String, SenderVerdict>> verdictsOf(
+    Iterable<String> senderKeys, {
+    required String recipientPubkey,
+  }) => _verdicts(senderKeys.toSet(), recipientPubkey);
+
+  /// The `created_at` of the latest event naming any of [senderKeys], Add or
+  /// Remove.
   Future<int?> latestCreatedAt(
-    String senderKey, {
+    Iterable<String> senderKeys, {
     required String recipientPubkey,
   }) {
     final ops = _db.senderOps;
@@ -167,7 +174,7 @@ class SenderRepository {
     return (_db.selectOnly(ops)
           ..addColumns([latest])
           ..where(
-            ops.senderKey.equals(senderKey) &
+            ops.senderKey.isIn(senderKeys) &
                 ops.recipientPubkey.equals(recipientPubkey),
           ))
         .map((row) => row.read(latest))

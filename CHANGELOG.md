@@ -38,6 +38,9 @@ defines.
   `nostr-mail/senders`), encrypted to the account itself and published to its
   write relays, so every device shares them. Removals and deletions published
   by other clients are applied.
+- **`setSenderVerdicts`** sorts many senders at once, allowing some and
+  blocking others in a single event, so a remote signer is solicited once for
+  the lot instead of once per sender.
 - **`getPendingSenderCount` / `watchPendingSenderCount`**: how many senders
   have mail in requests, for a badge or a banner.
 - **`senderKey`** on `Email` and `EmailSummary`, and as a `getSummaries`

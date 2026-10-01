@@ -190,6 +190,12 @@ final row = requests.items.first;
 await client.allowSender(row.senderKey); // Accept, or Unblock from spam
 await client.blockSender(row.senderKey); // Refuse, or Block sender
 
+// Sort several senders at once: one event, so one signer prompt
+await client.setSenderVerdicts({
+  for (final key in spam) key: SenderVerdict.block,
+  for (final key in known) key: SenderVerdict.allow,
+});
+
 // Senders waiting in requests, for a badge or a banner
 client.watchPendingSenderCount().listen((count) => print('$count pending'));
 

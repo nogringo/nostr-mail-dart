@@ -36,7 +36,9 @@ class SenderManager {
     return _senders.verdictOf(senderKey, recipientPubkey: pubkey);
   }
 
-  Future<void> setVerdict(String senderKey, SenderVerdict verdict) async {
+  /// Records [verdicts] in one Add, or in several when one would exceed the
+  /// 64 KiB restrictive relays accept, past about 480 senders.
+  Future<void> setVerdicts(Map<String, SenderVerdict> verdicts) async {
     final account = _ndk.accounts.getLoggedAccount();
     if (account == null) {
       throw NostrMailException('No account configured in ndk');
@@ -48,12 +50,38 @@ class SenderManager {
     }
     final pubkey = account.pubkey;
     // A remote signer would ask its user twice for nothing.
-    if (await _senders.verdictOf(senderKey, recipientPubkey: pubkey) ==
-        verdict) {
-      return;
-    }
+    final current = await _senders.verdictsOf(
+      verdicts.keys,
+      recipientPubkey: pubkey,
+    );
+    final entries = [
+      for (final MapEntry(:key, value: verdict) in verdicts.entries)
+        if (current[key] != verdict) (key: key, verdict: verdict.name),
+    ];
+    if (entries.isEmpty) return;
 
-    final entries = [(key: senderKey, verdict: verdict.name)];
+    // In the same second as the last event on one of these senders, the
+    // lowest id would win instead of this one.
+    final latest =
+        await _senders.latestCreatedAt(
+          entries.map((entry) => entry.key),
+          recipientPubkey: pubkey,
+        ) ??
+        0;
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final createdAt = now > latest ? now : latest + 1;
+
+    for (final batch in sendersListBatches(entries)) {
+      await _publish(account, batch, createdAt);
+    }
+  }
+
+  Future<void> _publish(
+    Account account,
+    List<SenderEntry> entries,
+    int createdAt,
+  ) async {
+    final pubkey = account.pubkey;
     final plaintext = sendersListContent(entries);
     final content = await account.signer.encryptNip44(
       plaintext: plaintext,
@@ -63,16 +91,11 @@ class SenderManager {
       throw NostrMailException('Failed to encrypt the senders list');
     }
 
-    // In the same second as the last event on this sender, the lowest id would
-    // win instead of this one.
-    final latest =
-        await _senders.latestCreatedAt(senderKey, recipientPubkey: pubkey) ?? 0;
-    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final signed = await account.signer.sign(
       Nip01Event(
         pubKey: pubkey,
         kind: listAddKind,
-        createdAt: now > latest ? now : latest + 1,
+        createdAt: createdAt,
         tags: [
           ['d', sendersListDTag],
         ],

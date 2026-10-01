@@ -91,7 +91,7 @@ lib/
     │   ├── mail_sync.dart       # declares the sync requests, fetchRecent(), event processing
     │   ├── watch_manager.dart   # watch() — real-time MailEvent stream
     │   ├── label_manager.dart   # addLabel, removeLabel, broadcast labels
-    │   ├── sender_manager.dart  # allowSender, blockSender: Adds to the senders list
+    │   ├── sender_manager.dart  # setSenderVerdicts, allowSender, blockSender: Adds to the senders list
     │   ├── settings_manager.dart# Private settings CRUD + cache
     │   └── relay_resolver.dart  # Shared helper: resolve DM & write relays (NIP-17/65)
     ├── storage/
@@ -212,6 +212,7 @@ await NostrMailClient.create({
 
 **Senders (local-first):**
 - `allowSender(senderKey)` (Accept, Unblock), `blockSender(senderKey)` (Refuse, Block), `getSenderVerdict(senderKey)`, `onSender`.
+- `setSenderVerdicts({senderKey: verdict, ...})`: sorts many senders in one Add, split so that no event exceeds 64 KiB. `allowSender` and `blockSender` go through it.
 - `getPendingSenderCount()` / `watchPendingSenderCount()`: distinct senders in requests.
 - `getSummaries(folder: 'requests')` / `'spam'`, and `senderKey:` to list one sender. `moveToFolder(id, 'requests')` throws: requests takes no label.
 
