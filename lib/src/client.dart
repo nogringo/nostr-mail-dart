@@ -211,10 +211,15 @@ class NostrMailClient {
       blossomQueue = blossomUploadQueue;
       ownsBlossomQueue = false;
     } else {
+      // Same discovery relays as the broadcast queue, for the same reason.
       blossomQueue = OfflineBlossomUpload.withNdk(
         ndk,
         cache: blossomCache,
         store: SembastUploadQueueStore(db),
+        serverListDiscoveryRelays: {
+          ...defaultIndexerRelays,
+          ...relayResolver.defaultRelays,
+        },
       );
       blossomQueue.start();
       ownsBlossomQueue = true;

@@ -232,7 +232,7 @@ class EmailSender {
         ? const <List<String>>[]
         : await _uploadBlob(
             rawContent,
-            await _blossomServers({senderPubkey}),
+            _blossomServers({senderPubkey}),
             senderPubkey,
             pinBy: blobPinHolder(senderPubkey),
           );
@@ -339,7 +339,7 @@ class EmailSender {
     var senderBlobTags = const <List<String>>[];
     var recipientBlobTags = const <List<String>>[];
     if (!senderInline) {
-      final servers = await _blossomServers({
+      final servers = _blossomServers({
         ...recipientPubkeys,
         if (keepCopy) senderPubkey,
       });
@@ -515,18 +515,21 @@ class EmailSender {
     return senderRumor;
   }
 
-  Future<List<String>> _blossomServers(Set<String> pubkeys) async {
-    final servers = await _ndk.blossomUserServerList.getUserServerList(
-      pubkeys: pubkeys.toList(),
-    );
-    if (servers == null || servers.isEmpty) return _defaultBlossomServers;
-    return servers.toSet().toList();
+  /// A reader looks for a blob on its own servers, the sender's and the
+  /// defaults, so each participant without a list falls back to the defaults.
+  UrlSet _blossomServers(Set<String> pubkeys) {
+    final defaults = UrlSet.explicit(_defaultBlossomServers);
+    if (pubkeys.isEmpty) return defaults;
+    return UrlSet.union([
+      for (final pubkey in pubkeys)
+        UrlSet.fallback([UrlSet.blossom(pubkey), defaults]),
+    ]);
   }
 
   /// Encrypts [content] into a Blossom blob and returns the tags pointing to it.
   Future<List<List<String>>> _uploadBlob(
     String content,
-    List<String> servers,
+    UrlSet servers,
     String senderPubkey, {
     String? pinBy,
   }) async {
@@ -544,7 +547,7 @@ class EmailSender {
     // whoever happens to be logged in when the retry fires.
     await _blossomUploadQueue.upload(
       sha256: descriptor.sha256,
-      serverSet: UrlSet.explicit(servers),
+      serverSet: servers,
       contentType: 'application/octet-stream',
       pubkey: senderPubkey,
     );
