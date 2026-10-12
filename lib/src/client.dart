@@ -2,9 +2,10 @@ import 'dart:async';
 
 import 'package:blossom_cache/blossom_cache.dart';
 import 'package:blossom_upload_queue_shim_for_ndk/blossom_upload_queue_shim_for_ndk.dart';
+import 'package:blossom_upload_queue_shim_for_ndk/sembast_store.dart';
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
 import 'package:enough_mail_plus/enough_mail.dart' hide MailEvent;
-import 'package:ndk/ndk.dart' hide RelaySet;
+import 'package:ndk/ndk.dart';
 import 'package:nostr_event_scheduler/nostr_event_scheduler.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:sembast/sembast.dart' hide Filter;
@@ -13,6 +14,7 @@ import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'client/draft_manager.dart';
 import 'client/email_sender.dart';
 import 'client/event_bus.dart';
 import 'client/label_manager.dart';
@@ -26,6 +28,7 @@ import 'client/schedule_manager.dart';
 import 'constants.dart';
 import 'exceptions.dart';
 import 'models/attachment_ref.dart';
+import 'models/draft.dart';
 import 'models/email.dart';
 import 'models/email_summary.dart';
 import 'models/gift_wrap_state.dart';
@@ -39,6 +42,7 @@ import 'models/scheduled_email.dart';
 import 'models/sender_verdict.dart';
 
 import 'storage/database.dart';
+import 'storage/draft_repository.dart';
 import 'storage/email_repository.dart';
 import 'storage/gift_wrap_repository.dart';
 import 'storage/label_repository.dart';
@@ -64,6 +68,7 @@ class NostrMailClient {
   final SettingsRepository _settingsRepo;
   final TombstoneRepository _tombstoneRepo;
   final SenderRepository _senderRepo;
+  final DraftRepository _draftRepo;
   final EventBus _bus;
   final EmailSender _sender;
   final LabelManager _labels;
@@ -72,6 +77,7 @@ class NostrMailClient {
   final MailSync _sync;
   final WatchManager _watch;
   final ScheduleManager _schedule;
+  final DraftManager _drafts;
 
   /// Direct access to the offline broadcast queue. Use this to surface
   /// pending broadcasts in the UI (`watchPending()`), inspect history
@@ -174,6 +180,7 @@ class NostrMailClient {
     final settingsRepo = SettingsRepository(database);
     final tombstoneRepo = TombstoneRepository(database);
     final senderRepo = SenderRepository(database);
+    final draftRepo = DraftRepository(database);
     final bus = EventBus();
 
     final relayResolver = RelayResolver(ndk, defaultDmRelays: defaultDmRelays);
@@ -207,7 +214,7 @@ class NostrMailClient {
       blossomQueue = OfflineBlossomUpload.withNdk(
         ndk,
         cache: blossomCache,
-        db: db,
+        store: SembastUploadQueueStore(db),
       );
       blossomQueue.start();
       ownsBlossomQueue = true;
@@ -227,6 +234,7 @@ class NostrMailClient {
       giftWrapRepo,
       tombstoneRepo,
       senderRepo,
+      draftRepo,
       bus,
       relayResolver,
       defaultBlossomServers: defaultBlossomServers,
@@ -286,11 +294,21 @@ class NostrMailClient {
       settingsRepo: settingsRepo,
       tombstoneRepo: tombstoneRepo,
       senderRepo: senderRepo,
+      draftRepo: draftRepo,
       bus: bus,
       blossomCache: blossomCache,
       defaultBlossomServers: defaultBlossomServers,
       sender: emailSender,
       schedule: scheduleManager,
+      drafts: DraftManager(
+        ndk,
+        draftRepo,
+        emailSender,
+        relayResolver,
+        queue,
+        blossomCache,
+        defaultBlossomServers: defaultBlossomServers,
+      ),
       labels: LabelManager(
         ndk,
         labelRepo,
@@ -322,6 +340,7 @@ class NostrMailClient {
     required this._settingsRepo,
     required this._tombstoneRepo,
     required this._senderRepo,
+    required this._draftRepo,
     required this._bus,
     required this._blossomCache,
     required this._sender,
@@ -331,6 +350,7 @@ class NostrMailClient {
     required this._sync,
     required this._watch,
     required this._schedule,
+    required this._drafts,
     required this.broadcastQueue,
     required this._ownsBroadcastQueue,
     required this.blossomUploadQueue,
@@ -876,7 +896,7 @@ class NostrMailClient {
     }
 
     if (signed == null) return;
-    final targets = <RelaySet>[
+    final targets = <UrlSet>[
       if (targetKinds.contains(giftWrapKind))
         _relayResolver.dmRelaySet([pubkey]),
       if (targetKinds.contains(emailKind) || targetKinds.contains(labelKind))
@@ -884,7 +904,7 @@ class NostrMailClient {
     ];
     await broadcastQueue.broadcast(
       signed,
-      relaySet: RelaySet.union(targets),
+      relaySet: UrlSet.union(targets),
       pubkey: pubkey,
     );
   }
@@ -917,7 +937,7 @@ class NostrMailClient {
 
     // The repost's `r` tags name the relays it was sent to, so the broadcast
     // targets that very list rather than describing it again.
-    final target = RelaySet.explicit(writeRelays);
+    final target = UrlSet.explicit(writeRelays);
     await Future.wait([
       broadcastQueue.broadcast(emailEvent, relaySet: target, pubkey: pubkey),
       broadcastQueue.broadcast(signedRepost, relaySet: target, pubkey: pubkey),
@@ -1196,6 +1216,39 @@ class NostrMailClient {
   /// Stop the [startScheduling] subscriptions. Local scheduling still works.
   Future<void> stopScheduling() => _schedule.stopListening();
 
+  // ── Drafts ──────────────────────────────────────────────────────────────
+
+  /// Save [message] as a draft (NIP-37). Pass the [Draft.draftId] of an
+  /// existing draft to save over it; without one, a new draft is created.
+  /// [mailFrom] is the `mail-from` sending the email would carry.
+  ///
+  /// Saved locally at once, then published to the account's private relays
+  /// (kind 10013), or to its NIP-65 write relays when it has none.
+  Future<Draft> saveDraft(
+    MimeMessage message, {
+    String? draftId,
+    String? mailFrom,
+  }) => _drafts.save(message, draftId: draftId, mailFrom: mailFrom);
+
+  /// Delete a draft, typically once its email is sent or scheduled.
+  Future<void> deleteDraft(String draftId) => _drafts.delete(draftId);
+
+  /// The drafts of the logged account, most recently saved first.
+  Future<List<Draft>> getDrafts() => _drafts.list();
+
+  /// Reactive [getDrafts]: re-emits on every save or delete, from this device
+  /// or, once synced, from another.
+  Stream<List<Draft>> watchDrafts() => _drafts.watch();
+
+  /// The complete MIME of a draft, body and attachments included, to re-open
+  /// it in a composer. Returns null if the draft is gone. Throws when its
+  /// Blossom blob is neither cached nor downloadable.
+  Future<MimeMessage?> getDraftMime(String draftId) async {
+    final text = await _drafts.getMimeText(draftId);
+    if (text == null) return null;
+    return MimeMessage.parseFromText(text);
+  }
+
   // ── Private Settings ────────────────────────────────────────────────────
 
   PrivateSettings? cachedPrivateSettings({String? pubkey}) =>
@@ -1333,6 +1386,7 @@ class NostrMailClient {
       _settingsRepo.clear(pubkey: pubkey),
       _tombstoneRepo.clearAll(recipientPubkey: pubkey),
       _senderRepo.clearAll(recipientPubkey: pubkey),
+      _draftRepo.clearAll(recipientPubkey: pubkey),
       _blossomCache.unpinAll(blobPinHolder(pubkey)),
       if (_ownsBroadcastQueue)
         broadcastQueue.clearLocalAccountData(pubkey: pubkey),
@@ -1361,6 +1415,7 @@ class NostrMailClient {
       _settingsRepo.clear(),
       _tombstoneRepo.clearAll(),
       _senderRepo.clearAll(),
+      _draftRepo.clearAll(),
       if (_ownsBroadcastQueue) broadcastQueue.clearAllLocalData(),
       if (_ownsBlossomUploadQueue) blossomUploadQueue.clearAllLocalData(),
     ]);

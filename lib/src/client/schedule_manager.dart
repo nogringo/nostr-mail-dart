@@ -10,9 +10,9 @@ import '../constants.dart';
 import '../exceptions.dart';
 import '../models/recipient.dart';
 import '../models/scheduled_email.dart';
-import '../utils/blob_fetcher.dart';
+import '../utils/attachment_names.dart';
 import '../utils/body_preview.dart';
-import '../utils/decrypt_blob.dart';
+import '../utils/rumor_mime_text.dart';
 import 'email_sender.dart';
 
 /// Schedules emails for future delivery via a Scheduler DVM (kind:5905 requests
@@ -212,29 +212,13 @@ class ScheduleManager {
     return null;
   }
 
-  /// The MIME text a rumor carries: inline in its `content`, or an encrypted
-  /// Blossom blob referenced by its `x`/`decryption-*` tags.
-  Future<String?> _rumorMimeText(Nip01Event rumor) async {
-    final hash = rumor.getFirstTag('x');
-    if (hash == null) return rumor.content.isEmpty ? null : rumor.content;
-    final key = rumor.getFirstTag('decryption-key');
-    final nonce = rumor.getFirstTag('decryption-nonce');
-    if (key == null || nonce == null) return null;
-    final encrypted = await fetchOrLoadEncryptedBlob(
-      blossomHash: hash,
-      involvedPubkeys: [rumor.pubKey],
-      defaultBlossomServers: defaultBlossomServers,
-      cache: _blossomCache,
-      ndk: _ndk,
-      pinFor: _requirePubkey(),
-    );
-    final decrypted = await decryptBlob(
-      encryptedBytes: encrypted,
-      key: key,
-      nonce: nonce,
-    );
-    return utf8.decode(decrypted);
-  }
+  Future<String?> _rumorMimeText(Nip01Event rumor) => rumorMimeText(
+    rumor,
+    ndk: _ndk,
+    cache: _blossomCache,
+    pinFor: _requirePubkey(),
+    defaultBlossomServers: defaultBlossomServers,
+  );
 
   // ── Mapping ────────────────────────────────────────────────────────────────
 
@@ -278,7 +262,7 @@ class ScheduleManager {
       // Only a public email carries a broadcast kind:1301 job; every other job
       // is a gift wrap.
       isPublic: package.jobs.any((j) => j.targetEvent.kind == emailKind),
-      attachmentNames: _attachmentNames(message),
+      attachmentNames: attachmentNames(message),
       status: status,
       statusMessage: statusMessage(package.jobs, status),
       createdAt: DateTime.fromMillisecondsSinceEpoch(package.createdAt * 1000),
@@ -299,30 +283,6 @@ class ScheduleManager {
 
   Nip01Event _decodeRumor(String content) =>
       Nip01EventModel.fromJson(jsonDecode(content) as Map<String, dynamic>);
-
-  static List<String> _attachmentNames(MimeMessage message) {
-    final names = <String>[];
-    void walk(MimePart part) {
-      final children = part.parts;
-      if (children != null && children.isNotEmpty) {
-        for (final child in children) {
-          walk(child);
-        }
-        return;
-      }
-      final disposition = part.getHeaderContentDisposition()?.disposition;
-      final filename = part.decodeFileName();
-      final isAttachment =
-          disposition == ContentDisposition.attachment ||
-          (filename != null && filename.isNotEmpty);
-      if (isAttachment && filename != null && filename.isNotEmpty) {
-        names.add(filename);
-      }
-    }
-
-    walk(message);
-    return names;
-  }
 
   /// Collapse per-job [statuses] into one [ScheduledEmailStatus].
   static ScheduledEmailStatus aggregateStatus(Iterable<JobStatus> statuses) {

@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:blossom_cache/blossom_cache.dart';
+import 'package:enough_mail_plus/enough_mail.dart' show MimeMessage;
 import 'package:ndk/ndk.dart';
 import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 
@@ -10,6 +12,7 @@ import '../models/gift_wrap_state.dart';
 import '../models/mail_event.dart';
 import '../models/sender_verdict.dart';
 import '../models/unwrapped_gift_wrap.dart';
+import '../storage/draft_repository.dart';
 import '../storage/email_repository.dart';
 import '../storage/gift_wrap_repository.dart';
 import '../storage/label_repository.dart';
@@ -22,6 +25,7 @@ import 'cache_window.dart';
 import 'relay_resolver.dart';
 import 'replay_queue.dart';
 import '../utils/event_email_parser.dart';
+import '../utils/rumor_mime_text.dart';
 import 'event_bus.dart';
 import 'filters.dart';
 
@@ -41,6 +45,7 @@ class MailSync {
   final GiftWrapRepository _giftWraps;
   final TombstoneRepository _tombstones;
   final SenderRepository _senders;
+  final DraftRepository _drafts;
   final EventBus _bus;
   final RelayResolver _relays;
   final List<String> _defaultBlossomServers;
@@ -75,6 +80,7 @@ class MailSync {
     this._giftWraps,
     this._tombstones,
     this._senders,
+    this._drafts,
     this._bus,
     this._relays, {
     required this._blossomCache,
@@ -175,10 +181,11 @@ class MailSync {
   Future<List<SyncHandle>> _ensureHandles() async {
     final pubkey = _pubkey!;
 
-    final (dmRelays, writeRelays, readRelays) = await (
+    final (dmRelays, writeRelays, readRelays, draftRelays) = await (
       _relays.getDmRelays(pubkey),
       _relays.getWriteRelays(pubkey),
       _relays.getReadRelays(pubkey),
+      _relays.getDraftRelays(pubkey),
     ).wait;
     final allRelays = {...dmRelays, ...writeRelays}.toList();
     _declaredFor = pubkey;
@@ -211,6 +218,7 @@ class MailSync {
         writeRelays,
         authPubkey: pubkey,
       ),
+      _ensure('drafts', [draftFilter(pubkey)], draftRelays, authPubkey: pubkey),
     ];
   }
 
@@ -224,6 +232,7 @@ class MailSync {
     repostFilter(pubkey),
     settingsFilter(pubkey),
     metadataFilter(pubkey),
+    draftFilter(pubkey),
   ];
 
   /// The engine derives the request identity from the filters, the relay set
@@ -359,6 +368,10 @@ class MailSync {
 
     for (final event in await _fromCache(labelFilter(pubkey), window)) {
       await onLabelAddition(event);
+    }
+
+    for (final event in await _fromCache(draftFilter(pubkey), window)) {
+      await onDraftWrap(event);
     }
   }
 
@@ -674,9 +687,7 @@ class MailSync {
       recipientPubkey: pubkey,
     );
     if (stored?.plaintext case final plaintext?) return plaintext;
-    if (stored?.failure == GiftWrapFailure.permanent.name) return null;
-    if (stored?.failure == GiftWrapFailure.signer.name &&
-        stored!.attempts >= maxSignerAttempts) {
+    if (stored != null && !_worthDecrypting(stored.failure, stored.attempts)) {
       return null;
     }
     if (!account.signer.canSign()) return null;
@@ -706,6 +717,116 @@ class MailSync {
       return null;
     }
   }
+
+  /// A version of one of the account's drafts. The latest wrap of a `d` is
+  /// the current version, and a blank one deletes the draft.
+  Future<void> onDraftWrap(Nip01Event event) async {
+    final account = _ndk.accounts.getLoggedAccount();
+    if (account == null || event.pubKey != account.pubkey) return;
+    if (event.kind != draftWrapKind) return;
+    if (event.getFirstTag('k') != emailKind.toString()) return;
+    final draftId = event.getDtag();
+    if (draftId == null || draftId.isEmpty) return;
+
+    final pubkey = account.pubkey;
+    final current = await _drafts.get(draftId, recipientPubkey: pubkey);
+    if (current != null &&
+        !_supersedes(event, current.createdAt, current.eventId)) {
+      return;
+    }
+
+    if (event.content.isEmpty) {
+      await _drafts.saveVersion(
+        draftId: draftId,
+        recipientPubkey: pubkey,
+        eventId: event.id,
+        createdAt: event.createdAt,
+      );
+      return;
+    }
+
+    final plaintext = await _draftPlaintext(event, account);
+    if (plaintext == null) return;
+
+    final MimeMessage message;
+    try {
+      final rumor = Nip01EventModel.fromJson(
+        jsonDecode(plaintext) as Map<String, dynamic>,
+      );
+      final text = await rumorMimeText(
+        rumor,
+        ndk: _ndk,
+        cache: _blossomCache,
+        pinFor: pubkey,
+        defaultBlossomServers: _defaultBlossomServers,
+      );
+      if (text == null) return;
+      message = MimeMessage.parseFromText(text);
+    } catch (_) {
+      // A blob not uploaded yet: the next round that covers it tries again.
+      return;
+    }
+
+    await _drafts.saveVersion(
+      draftId: draftId,
+      recipientPubkey: pubkey,
+      eventId: event.id,
+      createdAt: event.createdAt,
+      message: message,
+    );
+  }
+
+  /// NIP-01 addressable ordering: highest `created_at`, then lowest id.
+  static bool _supersedes(Nip01Event event, int createdAt, String eventId) =>
+      event.createdAt > createdAt ||
+      (event.createdAt == createdAt && event.id.compareTo(eventId) < 0);
+
+  /// The rumor JSON of a draft wrap, under the same retry rules as
+  /// [_sendersListPlaintext].
+  Future<String?> _draftPlaintext(Nip01Event event, Account account) async {
+    final pubkey = account.pubkey;
+    final stored = await _drafts.getDecryption(
+      event.id,
+      recipientPubkey: pubkey,
+    );
+    if (stored?.plaintext case final plaintext?) return plaintext;
+    if (stored != null && !_worthDecrypting(stored.failure, stored.attempts)) {
+      return null;
+    }
+    if (!account.signer.canSign()) return null;
+
+    try {
+      final plaintext = await account.signer.decryptNip44(
+        ciphertext: event.content,
+        senderPubKey: pubkey,
+      );
+      if (plaintext == null) {
+        throw NostrMailException('Cannot decrypt the draft');
+      }
+      await _drafts.saveDecryption(
+        eventId: event.id,
+        recipientPubkey: pubkey,
+        plaintext: plaintext,
+      );
+      return plaintext;
+    } on SignerRequestCancelledException {
+      rethrow;
+    } catch (error) {
+      await _drafts.recordFailure(
+        eventId: event.id,
+        recipientPubkey: pubkey,
+        failure: _decryptionFailure(error),
+      );
+      return null;
+    }
+  }
+
+  /// Whether a payload whose last decryption ended in [failure], after
+  /// [attempts] tries, is worth another one.
+  static bool _worthDecrypting(String? failure, int attempts) =>
+      failure != GiftWrapFailure.permanent.name &&
+      !(failure == GiftWrapFailure.signer.name &&
+          attempts >= maxSignerAttempts);
 
   void _emitVerdicts(Map<String, SenderVerdict?> changes, int createdAt) {
     final timestamp = DateTime.fromMillisecondsSinceEpoch(createdAt * 1000);

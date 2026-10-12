@@ -41,9 +41,20 @@ Filter settingsFilter(String pubkey) =>
     Filter(kinds: [appSettingsKind], authors: [pubkey])
       ..setTag('d', [privateSettingsDTag]);
 
+/// Filter for the account's email drafts (kind 31234 with `k` 1301).
+Filter draftFilter(String pubkey) =>
+    Filter(kinds: [draftWrapKind], authors: [pubkey])
+      ..setTag('k', [emailKind.toString()]);
+
 /// Filter for metadata and relay lists
-/// (kinds 0, 10002, 10050, 10063).
+/// (kinds 0, 10002, 10013, 10050, 10063).
 Filter metadataFilter(String pubkey) => Filter(
-  kinds: [metadataKind, relayListKind, dmRelayListKind, blossomServerListKind],
+  kinds: [
+    metadataKind,
+    relayListKind,
+    privateRelayListKind,
+    dmRelayListKind,
+    blossomServerListKind,
+  ],
   authors: [pubkey],
 );

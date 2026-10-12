@@ -1,5 +1,7 @@
+import 'dart:convert';
+
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
-import 'package:ndk/ndk.dart' hide RelaySet;
+import 'package:ndk/ndk.dart';
 import 'package:ndk/domain_layer/entities/filter.dart' as ndk;
 
 import '../constants.dart';
@@ -7,7 +9,7 @@ import '../constants.dart';
 /// Resolves DM and write relays for a given pubkey via NDK.
 ///
 /// The `get*` methods query the relays now; the `*RelaySet` ones describe the
-/// same targets as a [RelaySet] the broadcast queue resolves on its own, so an
+/// same targets as a [UrlSet] the broadcast queue resolves on its own, so an
 /// event can be enqueued without waiting on a lookup.
 ///
 /// Falls back to [defaultDmRelays] when the user has no relay lists configured.
@@ -80,19 +82,80 @@ class RelayResolver {
     return relays.isNotEmpty ? relays : _defaultDmRelays;
   }
 
-  /// [getDmRelays] as a [RelaySet]: the NIP-17 DM relays of [pubkeys], or the
+  /// NIP-37 private relays of [pubkey], from its kind 10013. Empty when it
+  /// publishes none, or when no signer here can open it.
+  Future<List<String>> getPrivateRelays(String pubkey) async {
+    final response = _ndk.requests.query(
+      filter: ndk.Filter(
+        kinds: [privateRelayListKind],
+        authors: [pubkey],
+        limit: 1,
+      ),
+    );
+    final events = await response.future;
+    if (events.isEmpty) return const [];
+
+    final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
+    final signer = _ndk.accounts.accounts[pubkey]?.signer;
+    if (event.content.isEmpty || signer == null) return const [];
+
+    final String? plaintext;
+    try {
+      plaintext = await _ndk.decryptedEventPayloads.loadOrDecrypt(
+        event: event,
+        viewerPubKey: pubkey,
+        scheme: DecryptedPayloadScheme.nip44,
+        decrypt: () => signer.decryptNip44(
+          ciphertext: event.content,
+          senderPubKey: pubkey,
+        ),
+      );
+    } catch (_) {
+      return const [];
+    }
+    if (plaintext == null) return const [];
+
+    final Object? tags;
+    try {
+      tags = jsonDecode(plaintext);
+    } on FormatException {
+      return const [];
+    }
+    if (tags is! List) return const [];
+    return [
+      for (final tag in tags)
+        if (tag is List &&
+            tag.length >= 2 &&
+            tag[0] == 'relay' &&
+            tag[1] is String)
+          tag[1] as String,
+    ];
+  }
+
+  /// Where drafts are read: [getPrivateRelays], or [getWriteRelays] when the
+  /// account has none.
+  Future<List<String>> getDraftRelays(String pubkey) async {
+    final private = await getPrivateRelays(pubkey);
+    return private.isNotEmpty ? private : getWriteRelays(pubkey);
+  }
+
+  /// [getDraftRelays] as a [UrlSet].
+  UrlSet draftRelaySet(String pubkey) =>
+      UrlSet.fallback([UrlSet.private(pubkey), writeRelaySet(pubkey)]);
+
+  /// [getDmRelays] as a [UrlSet]: the NIP-17 DM relays of [pubkeys], or the
   /// defaults when none of them publishes a kind 10050.
-  RelaySet dmRelaySet(List<String> pubkeys) => RelaySet.fallback([
-    RelaySet.dm(pubkeys),
-    // TODO: fall back to RelaySet.inbox(pubkeys) here, and in getDmRelays
-    // too, so sends and deletions keep targeting the same relays.
-    RelaySet.explicit(_defaultDmRelays),
+  UrlSet dmRelaySet(List<String> pubkeys) => UrlSet.fallback([
+    UrlSet.union([for (final p in pubkeys) UrlSet.dm(p)]),
+    // TODO: fall back to UrlSet.inbox here, and in getDmRelays too, so sends
+    // and deletions keep targeting the same relays.
+    UrlSet.explicit(_defaultDmRelays),
   ]);
 
-  /// [getWriteRelays] as a [RelaySet]: the NIP-65 write relays of [pubkey], or
+  /// [getWriteRelays] as a [UrlSet]: the NIP-65 write relays of [pubkey], or
   /// the defaults when it publishes no kind 10002.
-  RelaySet writeRelaySet(String pubkey) => RelaySet.fallback([
-    RelaySet.outbox(pubkey),
-    RelaySet.explicit(_defaultDmRelays),
+  UrlSet writeRelaySet(String pubkey) => UrlSet.fallback([
+    UrlSet.outbox(pubkey),
+    UrlSet.explicit(_defaultDmRelays),
   ]);
 }

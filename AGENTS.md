@@ -17,6 +17,7 @@
 - Cross-device private settings sync via **NIP-78** (kind 30078, NIP-44 encrypted)
 - Inbox / Requests / Spam routing by sender verdicts, kept in an append-only list (kinds 1990/1991, NIP-44 encrypted) ([Senders And Spam](https://github.com/nogringo/nostr-mail-client/blob/main/docs/senders-and-spam.md))
 - Public email posts (signed kind 1301, optionally with BCC gift wraps)
+- Email drafts as **NIP-37** draft wraps (kind 31234, `k` 1301) holding the self-copy rumor, on the private relays ([Drafts](https://github.com/nogringo/nostr-mail-client/blob/main/docs/drafts-protocol.md))
 - Real-time inbox watching via unified `MailEvent` stream
 
 ### Key NIPs Implemented
@@ -29,6 +30,7 @@
 | NIP-17 | DM relay lists (kind 10050) |
 | NIP-18 | Generic reposts (kind 16) |
 | NIP-32 | Labels (kind 1985, namespace `mail`), carried in gift wraps |
+| NIP-37 | Draft wraps (kind 31234) and private relays (kind 10013) |
 | NIP-44 | Encryption for private settings and the senders list |
 | NIP-59 | Gift wraps (kind 1059) & seals (kind 13), for emails and labels |
 | NIP-65 | Write relay lists (kind 10002) |
@@ -85,6 +87,7 @@ lib/
     │   ├── private_settings.dart# Cross-device settings (signature, bridges, identities, folders, tags)
     │   ├── sender_verdict.dart  # SenderVerdict: allow or block
     │   ├── encrypted_blob.dart  # AES-GCM blob metadata
+    │   ├── draft.dart           # Draft: a listing entry of a saved draft
     │   └── unwrapped_gift_wrap.dart # Seal + Rumor pair
     ├── client/
     │   ├── email_sender.dart    # Build, encrypt, send emails via GiftWraps
@@ -93,6 +96,7 @@ lib/
     │   ├── label_manager.dart   # addLabel, removeLabel, broadcast labels
     │   ├── sender_manager.dart  # setSenderVerdicts, allowSender, blockSender: Adds to the senders list
     │   ├── settings_manager.dart# Private settings CRUD + cache
+    │   ├── draft_manager.dart   # saveDraft, deleteDraft, list and watch drafts (NIP-37)
     │   └── relay_resolver.dart  # Shared helper: resolve DM & write relays (NIP-17/65)
     ├── storage/
     │   ├── schema.drift              # Tables, indexes, email_states view, FTS5 index + triggers
@@ -105,6 +109,7 @@ lib/
     │   ├── settings_repository.dart  # Local decrypted settings cache
     │   ├── match_repository.dart     # Emails held by a folder/tag match condition
     │   ├── sender_repository.dart    # Senders list entries and their decryptions
+    │   ├── draft_repository.dart     # Current version of each draft and the decryptions of its wraps
     │   ├── legacy_sembast_cleanup.dart # Drops the stores kept in sembast before 3.0.0
     │   └── models/
     │       ├── email_record.dart     # Stored columns + state derived from labels on read
@@ -121,6 +126,8 @@ lib/
         ├── body_preview.dart         # One-line listing snippet, no quotes or signature
         ├── mime_message_cleaner.dart # removeBccHeaders()
         ├── senders_list.dart         # Senders list entries, read and written
+        ├── rumor_mime_text.dart      # MIME text of a kind 1301 rumor, inline or from Blossom
+        ├── attachment_names.dart     # File names of a MimeMessage's attachments
         └── attachment_counter.dart   # Counts attachments via MimeMessage
 
 test/
@@ -216,6 +223,11 @@ await NostrMailClient.create({
 - `getPendingSenderCount()` / `watchPendingSenderCount()`: distinct senders in requests.
 - `getSummaries(folder: 'requests')` / `'spam'`, and `senderKey:` to list one sender. `moveToFolder(id, 'requests')` throws: requests takes no label.
 
+**Drafts (local-first, NIP-37):**
+- `saveDraft(mime, {draftId, mailFrom})`: a new draft without `draftId`, a new version of it with one. The wrap holds the unsigned self-copy rumor `EmailSender.buildSelfRumor` builds; a MIME of 32 KiB or more goes to Blossom, as for a sent email.
+- `deleteDraft(draftId)`: publishes a blank wrap with the same `d`.
+- `getDrafts()` / `watchDrafts()`: most recently saved first. `getDraftMime(draftId)`: the complete MIME, to re-open it in a composer.
+
 **Private Settings (NIP-78):**
 - `getPrivateSettings()`: local-first `NdkDataResponse`, emits the local cache then newer relay copies
 - `fetchPrivateSettings()`: fetch from relays, decrypt, cache
@@ -295,7 +307,7 @@ dart test test/integration   # mock relays and Blossom servers
 `AuthPolicy.allow()` is the default choice: anonymous first, authenticated once a relay refuses. `AuthPolicy.require()` sends on a connection bound to the account from the start, so it costs a second socket per relay of the set and answers the challenge of any relay that sends one, including relays that would have served the request anonymously; with a NIP-46 signer that is a round trip each. It is reserved for the gift wrap subscription and the sync engine's requests, both on DM relays, where `wss://auth.nostr1.com` serves nothing anonymously. Requests covering write relays use `allow()`: `require()` there would send nothing at all for a pubkey-only login, since a request that cannot be authenticated reaches no relay, and public emails, labels, deletions and metadata do not need an identity.
 
 ### Sync (sync_engine_shim_for_ndk)
-NDK's `fetchedRanges` is broken and is no longer used. The caller passes a `SyncEngine` from `sync_engine_shim_for_ndk`, which tracks its own coverage per relay/filter pair, paginates, backs off per relay, and adds the 2-day NIP-59 margin on kind 1059. `MailSync` declares four `SyncRequest`s covering all 7 filter categories, split by relay set: gift wraps on DM relays, deletions on DM + write relays, public emails on read relays, and labels published in clear by earlier versions / the senders list / reposts / settings / metadata on write relays. Each round replays the senders list first, so the emails it announces are already routed. Gift-wrapped labels come with the gift wraps. Each request names the active account as its `authPubkey`, so it goes out on a NIP-42 authenticated connection from the first page: `wss://auth.nostr1.com`, the first default DM relay, serves nothing without it. The pubkey is part of the request identity, so switching account redraws the handles and starts from a blank coverage, and a pubkey-only login syncs nothing at all since it cannot answer a challenge.
+NDK's `fetchedRanges` is broken and is no longer used. The caller passes a `SyncEngine` from `sync_engine_shim_for_ndk`, which tracks its own coverage per relay/filter pair, paginates, backs off per relay, and adds the 2-day NIP-59 margin on kind 1059. `MailSync` declares five `SyncRequest`s, split by relay set: gift wraps on DM relays, deletions on DM + write relays, public emails on read relays, labels published in clear by earlier versions / the senders list / reposts / settings / metadata (kind 10013 included) on write relays, and drafts on the private relays, or the write relays when the account has none. Each round replays the senders list first, so the emails it announces are already routed. Gift-wrapped labels come with the gift wraps. Each request names the active account as its `authPubkey`, so it goes out on a NIP-42 authenticated connection from the first page: `wss://auth.nostr1.com`, the first default DM relay, serves nothing without it. The pubkey is part of the request identity, so switching account redraws the handles and starts from a blank coverage, and a pubkey-only login syncs nothing at all since it cannot answer a challenge.
 
 The engine never returns events: it fills the NDK cache. The cache is therefore the source of truth for raw events, and the drift tables are a projection rebuilt from it by `_processFromCache`. A held request revisits its windows every `maxStaleness` on its own, so `MailSync` watches each handle's `SyncRequestStatus.progress` for as long as it holds the handle, and replays the cache on every page that brought events. Mail therefore lands without anyone polling the SDK, and surfaces during a long backfill instead of after it. Replays are serialised through `_replayCache`: asking while a round runs queues a single follow-up, so pages coalesce and no event is processed twice. Every handler is idempotent, so replaying the whole cache costs one lookup per already-known event, and an event whose processing failed is retried on the next pass unless its recorded failure says another attempt cannot help. A schema bump just drops the tables; the next pass rebuilds them without network.
 
@@ -304,6 +316,9 @@ The protocol is [Nostr Mail Labels](https://github.com/nogringo/protocols/blob/m
 
 ### Senders
 The protocol is [Senders And Spam](https://github.com/nogringo/nostr-mail-client/blob/main/docs/senders-and-spam.md). A verdict is an Add (kind 1990) to the append-only list `nostr-mail/senders`, holding `["sender", <senderKey>, "allow"|"block"]` in its encrypted content, published to the write relays. The most recent Add of a sender wins unless a Remove is strictly later; two Adds in the same second go to the lowest id, which is why `SenderManager` dates a new one after the last event naming that sender. The SDK never publishes a Remove but applies those of other clients, and a kind 5 naming a list event with `["k", "1990"]` or `["k", "1991"]`. A list event this device signs is recorded open, so the sync never asks the signer to decrypt it.
+
+### Drafts
+The protocol is [Drafts](https://github.com/nogringo/nostr-mail-client/blob/main/docs/drafts-protocol.md). A draft is a kind 31234 with only `d` (32 random hex chars) and `["k", "1301"]`, whose NIP-44 content to self is the unsigned self-copy rumor, `sig` left out. The latest wrap of a `d` is the current version (highest `created_at`, then lowest id), which is why `DraftManager` dates a save after the current version; a blank content deletes the draft. `drafts` keeps one row per `d`, deleted ones included, so an older version arriving late never resurrects a draft. A wrap this device signs is recorded open.
 
 ### `Email.isBridged`
 An email is bridged when its rumor carries a `mail-from` tag. Its `senderPubkey` is then the bridge's, shared by every legacy sender behind it: `senderKey` tells those senders apart, adding the lowercased From address.

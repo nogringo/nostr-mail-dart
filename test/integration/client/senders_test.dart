@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
-import 'package:ndk/ndk.dart' hide RelaySet;
+import 'package:ndk/ndk.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
@@ -159,7 +159,7 @@ void main() {
     );
     await phone.client.broadcastQueue.broadcast(
       deletion,
-      relaySet: RelaySet.explicit([relay.url]),
+      relaySet: UrlSet.explicit([relay.url]),
       pubkey: me,
     );
     await waitForBroadcasts(phone.client.broadcastQueue);

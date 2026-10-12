@@ -8,6 +8,7 @@ library;
 export 'src/client.dart' show NostrMailClient;
 export 'src/constants.dart';
 export 'src/models/attachment_ref.dart';
+export 'src/models/draft.dart' show Draft;
 export 'src/models/email.dart' show Email;
 export 'src/models/email_summary.dart' show EmailSummary;
 export 'src/models/paginated_result.dart' show PaginatedResult;

@@ -7,6 +7,7 @@ import 'package:nostr_mail/nostr_mail.dart';
 import 'package:nostr_mail/src/client/event_bus.dart';
 import 'package:nostr_mail/src/client/mail_sync.dart';
 import 'package:nostr_mail/src/client/relay_resolver.dart';
+import 'package:nostr_mail/src/storage/draft_repository.dart';
 import 'package:nostr_mail/src/storage/email_repository.dart';
 import 'package:nostr_mail/src/storage/gift_wrap_repository.dart';
 import 'package:nostr_mail/src/storage/label_repository.dart';
@@ -68,6 +69,7 @@ void main() {
         giftWraps,
         tombstones,
         SenderRepository(database),
+        DraftRepository(database),
         EventBus(),
         RelayResolver(ndk),
         blossomCache: await openTestBlossomCache('deletion_test'),

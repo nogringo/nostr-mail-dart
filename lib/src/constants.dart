@@ -31,6 +31,12 @@ const textRepostKind = 6;
 /// Generic repost kind (NIP-18)
 const genericRepostKind = 16;
 
+/// Draft wrap kind (NIP-37)
+const draftWrapKind = 31234;
+
+/// Private relay list kind (NIP-37)
+const privateRelayListKind = 10013;
+
 /// Append-only list Add kind (Append-Only Lists NIP)
 const listAddKind = 1990;
 

@@ -215,6 +215,41 @@ class EmailSender {
     return (events: delivery.items, selfRumor: selfRumor);
   }
 
+  /// The self-copy rumor sending [message] at [createdAt] (epoch seconds)
+  /// would build, without sending anything: the full MIME, Bcc included,
+  /// inline or in a Blossom blob pinned for the sender.
+  Future<Nip01Event> buildSelfRumor(
+    MimeMessage message, {
+    String? mailFrom,
+    required int createdAt,
+  }) async {
+    _assertPubkey();
+    final senderPubkey = _pubkey!;
+
+    final rawContent = message.renderMessage();
+    final inline = utf8.encode(rawContent).length < maxInlineSize;
+    final blobTags = inline
+        ? const <List<String>>[]
+        : await _uploadBlob(
+            rawContent,
+            await _blossomServers({senderPubkey}),
+            senderPubkey,
+            pinBy: blobPinHolder(senderPubkey),
+          );
+
+    return Nip01Event(
+      pubKey: senderPubkey,
+      kind: emailKind,
+      tags: [
+        ['p', senderPubkey],
+        if (mailFrom != null) ['mail-from', mailFrom],
+        ...blobTags,
+      ],
+      content: inline ? rawContent : '',
+      createdAt: createdAt,
+    );
+  }
+
   Future<Nip01Event> _dispatch(
     MimeMessage message, {
     required List<Recipient> to,
@@ -509,7 +544,7 @@ class EmailSender {
     // whoever happens to be logged in when the retry fires.
     await _blossomUploadQueue.upload(
       sha256: descriptor.sha256,
-      servers: servers,
+      serverSet: UrlSet.explicit(servers),
       contentType: 'application/octet-stream',
       pubkey: senderPubkey,
     );

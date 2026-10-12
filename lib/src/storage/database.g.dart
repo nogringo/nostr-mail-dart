@@ -4575,6 +4575,1121 @@ class SenderOpsCompanion extends UpdateCompanion<SenderOpRow> {
   }
 }
 
+class DraftDecryptions extends Table
+    with TableInfo<DraftDecryptions, DraftDecryptionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  DraftDecryptions(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _eventIdMeta = const VerificationMeta(
+    'eventId',
+  );
+  late final GeneratedColumn<String> eventId = GeneratedColumn<String>(
+    'event_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL PRIMARY KEY',
+  );
+  static const VerificationMeta _recipientPubkeyMeta = const VerificationMeta(
+    'recipientPubkey',
+  );
+  late final GeneratedColumn<String> recipientPubkey = GeneratedColumn<String>(
+    'recipient_pubkey',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _plaintextMeta = const VerificationMeta(
+    'plaintext',
+  );
+  late final GeneratedColumn<String> plaintext = GeneratedColumn<String>(
+    'plaintext',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: '',
+  );
+  static const VerificationMeta _failureMeta = const VerificationMeta(
+    'failure',
+  );
+  late final GeneratedColumn<String> failure = GeneratedColumn<String>(
+    'failure',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: '',
+  );
+  static const VerificationMeta _attemptsMeta = const VerificationMeta(
+    'attempts',
+  );
+  late final GeneratedColumn<int> attempts = GeneratedColumn<int>(
+    'attempts',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 0',
+    defaultValue: const CustomExpression('0'),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    eventId,
+    recipientPubkey,
+    plaintext,
+    failure,
+    attempts,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'draft_decryptions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DraftDecryptionRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('event_id')) {
+      context.handle(
+        _eventIdMeta,
+        eventId.isAcceptableOrUnknown(data['event_id']!, _eventIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_eventIdMeta);
+    }
+    if (data.containsKey('recipient_pubkey')) {
+      context.handle(
+        _recipientPubkeyMeta,
+        recipientPubkey.isAcceptableOrUnknown(
+          data['recipient_pubkey']!,
+          _recipientPubkeyMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_recipientPubkeyMeta);
+    }
+    if (data.containsKey('plaintext')) {
+      context.handle(
+        _plaintextMeta,
+        plaintext.isAcceptableOrUnknown(data['plaintext']!, _plaintextMeta),
+      );
+    }
+    if (data.containsKey('failure')) {
+      context.handle(
+        _failureMeta,
+        failure.isAcceptableOrUnknown(data['failure']!, _failureMeta),
+      );
+    }
+    if (data.containsKey('attempts')) {
+      context.handle(
+        _attemptsMeta,
+        attempts.isAcceptableOrUnknown(data['attempts']!, _attemptsMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {eventId};
+  @override
+  DraftDecryptionRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DraftDecryptionRow(
+      eventId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}event_id'],
+      )!,
+      recipientPubkey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recipient_pubkey'],
+      )!,
+      plaintext: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}plaintext'],
+      ),
+      failure: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}failure'],
+      ),
+      attempts: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}attempts'],
+      )!,
+    );
+  }
+
+  @override
+  DraftDecryptions createAlias(String alias) {
+    return DraftDecryptions(attachedDatabase, alias);
+  }
+
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class DraftDecryptionRow extends DataClass
+    implements Insertable<DraftDecryptionRow> {
+  final String eventId;
+  final String recipientPubkey;
+
+  /// Null until decrypted.
+  final String? plaintext;
+  final String? failure;
+  final int attempts;
+  const DraftDecryptionRow({
+    required this.eventId,
+    required this.recipientPubkey,
+    this.plaintext,
+    this.failure,
+    required this.attempts,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['event_id'] = Variable<String>(eventId);
+    map['recipient_pubkey'] = Variable<String>(recipientPubkey);
+    if (!nullToAbsent || plaintext != null) {
+      map['plaintext'] = Variable<String>(plaintext);
+    }
+    if (!nullToAbsent || failure != null) {
+      map['failure'] = Variable<String>(failure);
+    }
+    map['attempts'] = Variable<int>(attempts);
+    return map;
+  }
+
+  DraftDecryptionsCompanion toCompanion(bool nullToAbsent) {
+    return DraftDecryptionsCompanion(
+      eventId: Value(eventId),
+      recipientPubkey: Value(recipientPubkey),
+      plaintext: plaintext == null && nullToAbsent
+          ? const Value.absent()
+          : Value(plaintext),
+      failure: failure == null && nullToAbsent
+          ? const Value.absent()
+          : Value(failure),
+      attempts: Value(attempts),
+    );
+  }
+
+  factory DraftDecryptionRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DraftDecryptionRow(
+      eventId: serializer.fromJson<String>(json['event_id']),
+      recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
+      plaintext: serializer.fromJson<String?>(json['plaintext']),
+      failure: serializer.fromJson<String?>(json['failure']),
+      attempts: serializer.fromJson<int>(json['attempts']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'event_id': serializer.toJson<String>(eventId),
+      'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
+      'plaintext': serializer.toJson<String?>(plaintext),
+      'failure': serializer.toJson<String?>(failure),
+      'attempts': serializer.toJson<int>(attempts),
+    };
+  }
+
+  DraftDecryptionRow copyWith({
+    String? eventId,
+    String? recipientPubkey,
+    Value<String?> plaintext = const Value.absent(),
+    Value<String?> failure = const Value.absent(),
+    int? attempts,
+  }) => DraftDecryptionRow(
+    eventId: eventId ?? this.eventId,
+    recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+    plaintext: plaintext.present ? plaintext.value : this.plaintext,
+    failure: failure.present ? failure.value : this.failure,
+    attempts: attempts ?? this.attempts,
+  );
+  DraftDecryptionRow copyWithCompanion(DraftDecryptionsCompanion data) {
+    return DraftDecryptionRow(
+      eventId: data.eventId.present ? data.eventId.value : this.eventId,
+      recipientPubkey: data.recipientPubkey.present
+          ? data.recipientPubkey.value
+          : this.recipientPubkey,
+      plaintext: data.plaintext.present ? data.plaintext.value : this.plaintext,
+      failure: data.failure.present ? data.failure.value : this.failure,
+      attempts: data.attempts.present ? data.attempts.value : this.attempts,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DraftDecryptionRow(')
+          ..write('eventId: $eventId, ')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('plaintext: $plaintext, ')
+          ..write('failure: $failure, ')
+          ..write('attempts: $attempts')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(eventId, recipientPubkey, plaintext, failure, attempts);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DraftDecryptionRow &&
+          other.eventId == this.eventId &&
+          other.recipientPubkey == this.recipientPubkey &&
+          other.plaintext == this.plaintext &&
+          other.failure == this.failure &&
+          other.attempts == this.attempts);
+}
+
+class DraftDecryptionsCompanion extends UpdateCompanion<DraftDecryptionRow> {
+  final Value<String> eventId;
+  final Value<String> recipientPubkey;
+  final Value<String?> plaintext;
+  final Value<String?> failure;
+  final Value<int> attempts;
+  final Value<int> rowid;
+  const DraftDecryptionsCompanion({
+    this.eventId = const Value.absent(),
+    this.recipientPubkey = const Value.absent(),
+    this.plaintext = const Value.absent(),
+    this.failure = const Value.absent(),
+    this.attempts = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DraftDecryptionsCompanion.insert({
+    required String eventId,
+    required String recipientPubkey,
+    this.plaintext = const Value.absent(),
+    this.failure = const Value.absent(),
+    this.attempts = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : eventId = Value(eventId),
+       recipientPubkey = Value(recipientPubkey);
+  static Insertable<DraftDecryptionRow> custom({
+    Expression<String>? eventId,
+    Expression<String>? recipientPubkey,
+    Expression<String>? plaintext,
+    Expression<String>? failure,
+    Expression<int>? attempts,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (eventId != null) 'event_id': eventId,
+      if (recipientPubkey != null) 'recipient_pubkey': recipientPubkey,
+      if (plaintext != null) 'plaintext': plaintext,
+      if (failure != null) 'failure': failure,
+      if (attempts != null) 'attempts': attempts,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DraftDecryptionsCompanion copyWith({
+    Value<String>? eventId,
+    Value<String>? recipientPubkey,
+    Value<String?>? plaintext,
+    Value<String?>? failure,
+    Value<int>? attempts,
+    Value<int>? rowid,
+  }) {
+    return DraftDecryptionsCompanion(
+      eventId: eventId ?? this.eventId,
+      recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+      plaintext: plaintext ?? this.plaintext,
+      failure: failure ?? this.failure,
+      attempts: attempts ?? this.attempts,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (eventId.present) {
+      map['event_id'] = Variable<String>(eventId.value);
+    }
+    if (recipientPubkey.present) {
+      map['recipient_pubkey'] = Variable<String>(recipientPubkey.value);
+    }
+    if (plaintext.present) {
+      map['plaintext'] = Variable<String>(plaintext.value);
+    }
+    if (failure.present) {
+      map['failure'] = Variable<String>(failure.value);
+    }
+    if (attempts.present) {
+      map['attempts'] = Variable<int>(attempts.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DraftDecryptionsCompanion(')
+          ..write('eventId: $eventId, ')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('plaintext: $plaintext, ')
+          ..write('failure: $failure, ')
+          ..write('attempts: $attempts, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class Drafts extends Table with TableInfo<Drafts, DraftRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  Drafts(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _recipientPubkeyMeta = const VerificationMeta(
+    'recipientPubkey',
+  );
+  late final GeneratedColumn<String> recipientPubkey = GeneratedColumn<String>(
+    'recipient_pubkey',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _draftIdMeta = const VerificationMeta(
+    'draftId',
+  );
+  late final GeneratedColumn<String> draftId = GeneratedColumn<String>(
+    'draft_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _eventIdMeta = const VerificationMeta(
+    'eventId',
+  );
+  late final GeneratedColumn<String> eventId = GeneratedColumn<String>(
+    'event_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _deletedMeta = const VerificationMeta(
+    'deleted',
+  );
+  late final GeneratedColumn<bool> deleted = GeneratedColumn<bool>(
+    'deleted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _fromAddressMeta = const VerificationMeta(
+    'fromAddress',
+  );
+  late final GeneratedColumn<String> fromAddress = GeneratedColumn<String>(
+    'from_address',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: '',
+  );
+  static const VerificationMeta _toAddressesMeta = const VerificationMeta(
+    'toAddresses',
+  );
+  late final GeneratedColumn<String> toAddresses = GeneratedColumn<String>(
+    'to_addresses',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT \'[]\'',
+    defaultValue: const CustomExpression('\'[]\''),
+  );
+  static const VerificationMeta _ccAddressesMeta = const VerificationMeta(
+    'ccAddresses',
+  );
+  late final GeneratedColumn<String> ccAddresses = GeneratedColumn<String>(
+    'cc_addresses',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT \'[]\'',
+    defaultValue: const CustomExpression('\'[]\''),
+  );
+  static const VerificationMeta _bccAddressesMeta = const VerificationMeta(
+    'bccAddresses',
+  );
+  late final GeneratedColumn<String> bccAddresses = GeneratedColumn<String>(
+    'bcc_addresses',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT \'[]\'',
+    defaultValue: const CustomExpression('\'[]\''),
+  );
+  static const VerificationMeta _subjectMeta = const VerificationMeta(
+    'subject',
+  );
+  late final GeneratedColumn<String> subject = GeneratedColumn<String>(
+    'subject',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT \'\'',
+    defaultValue: const CustomExpression('\'\''),
+  );
+  static const VerificationMeta _previewMeta = const VerificationMeta(
+    'preview',
+  );
+  late final GeneratedColumn<String> preview = GeneratedColumn<String>(
+    'preview',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT \'\'',
+    defaultValue: const CustomExpression('\'\''),
+  );
+  static const VerificationMeta _attachmentNamesMeta = const VerificationMeta(
+    'attachmentNames',
+  );
+  late final GeneratedColumn<String> attachmentNames = GeneratedColumn<String>(
+    'attachment_names',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT \'[]\'',
+    defaultValue: const CustomExpression('\'[]\''),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    recipientPubkey,
+    draftId,
+    eventId,
+    createdAt,
+    deleted,
+    fromAddress,
+    toAddresses,
+    ccAddresses,
+    bccAddresses,
+    subject,
+    preview,
+    attachmentNames,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'drafts';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DraftRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('recipient_pubkey')) {
+      context.handle(
+        _recipientPubkeyMeta,
+        recipientPubkey.isAcceptableOrUnknown(
+          data['recipient_pubkey']!,
+          _recipientPubkeyMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_recipientPubkeyMeta);
+    }
+    if (data.containsKey('draft_id')) {
+      context.handle(
+        _draftIdMeta,
+        draftId.isAcceptableOrUnknown(data['draft_id']!, _draftIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_draftIdMeta);
+    }
+    if (data.containsKey('event_id')) {
+      context.handle(
+        _eventIdMeta,
+        eventId.isAcceptableOrUnknown(data['event_id']!, _eventIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_eventIdMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('deleted')) {
+      context.handle(
+        _deletedMeta,
+        deleted.isAcceptableOrUnknown(data['deleted']!, _deletedMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deletedMeta);
+    }
+    if (data.containsKey('from_address')) {
+      context.handle(
+        _fromAddressMeta,
+        fromAddress.isAcceptableOrUnknown(
+          data['from_address']!,
+          _fromAddressMeta,
+        ),
+      );
+    }
+    if (data.containsKey('to_addresses')) {
+      context.handle(
+        _toAddressesMeta,
+        toAddresses.isAcceptableOrUnknown(
+          data['to_addresses']!,
+          _toAddressesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('cc_addresses')) {
+      context.handle(
+        _ccAddressesMeta,
+        ccAddresses.isAcceptableOrUnknown(
+          data['cc_addresses']!,
+          _ccAddressesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('bcc_addresses')) {
+      context.handle(
+        _bccAddressesMeta,
+        bccAddresses.isAcceptableOrUnknown(
+          data['bcc_addresses']!,
+          _bccAddressesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('subject')) {
+      context.handle(
+        _subjectMeta,
+        subject.isAcceptableOrUnknown(data['subject']!, _subjectMeta),
+      );
+    }
+    if (data.containsKey('preview')) {
+      context.handle(
+        _previewMeta,
+        preview.isAcceptableOrUnknown(data['preview']!, _previewMeta),
+      );
+    }
+    if (data.containsKey('attachment_names')) {
+      context.handle(
+        _attachmentNamesMeta,
+        attachmentNames.isAcceptableOrUnknown(
+          data['attachment_names']!,
+          _attachmentNamesMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {recipientPubkey, draftId};
+  @override
+  DraftRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DraftRow(
+      recipientPubkey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recipient_pubkey'],
+      )!,
+      draftId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}draft_id'],
+      )!,
+      eventId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}event_id'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      deleted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}deleted'],
+      )!,
+      fromAddress: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}from_address'],
+      ),
+      toAddresses: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}to_addresses'],
+      )!,
+      ccAddresses: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cc_addresses'],
+      )!,
+      bccAddresses: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}bcc_addresses'],
+      )!,
+      subject: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}subject'],
+      )!,
+      preview: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}preview'],
+      )!,
+      attachmentNames: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}attachment_names'],
+      )!,
+    );
+  }
+
+  @override
+  Drafts createAlias(String alias) {
+    return Drafts(attachedDatabase, alias);
+  }
+
+  @override
+  List<String> get customConstraints => const [
+    'PRIMARY KEY(recipient_pubkey, draft_id)',
+  ];
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class DraftRow extends DataClass implements Insertable<DraftRow> {
+  final String recipientPubkey;
+  final String draftId;
+  final String eventId;
+  final int createdAt;
+  final bool deleted;
+  final String? fromAddress;
+  final String toAddresses;
+  final String ccAddresses;
+  final String bccAddresses;
+  final String subject;
+  final String preview;
+
+  /// JSON array of file names.
+  final String attachmentNames;
+  const DraftRow({
+    required this.recipientPubkey,
+    required this.draftId,
+    required this.eventId,
+    required this.createdAt,
+    required this.deleted,
+    this.fromAddress,
+    required this.toAddresses,
+    required this.ccAddresses,
+    required this.bccAddresses,
+    required this.subject,
+    required this.preview,
+    required this.attachmentNames,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['recipient_pubkey'] = Variable<String>(recipientPubkey);
+    map['draft_id'] = Variable<String>(draftId);
+    map['event_id'] = Variable<String>(eventId);
+    map['created_at'] = Variable<int>(createdAt);
+    map['deleted'] = Variable<bool>(deleted);
+    if (!nullToAbsent || fromAddress != null) {
+      map['from_address'] = Variable<String>(fromAddress);
+    }
+    map['to_addresses'] = Variable<String>(toAddresses);
+    map['cc_addresses'] = Variable<String>(ccAddresses);
+    map['bcc_addresses'] = Variable<String>(bccAddresses);
+    map['subject'] = Variable<String>(subject);
+    map['preview'] = Variable<String>(preview);
+    map['attachment_names'] = Variable<String>(attachmentNames);
+    return map;
+  }
+
+  DraftsCompanion toCompanion(bool nullToAbsent) {
+    return DraftsCompanion(
+      recipientPubkey: Value(recipientPubkey),
+      draftId: Value(draftId),
+      eventId: Value(eventId),
+      createdAt: Value(createdAt),
+      deleted: Value(deleted),
+      fromAddress: fromAddress == null && nullToAbsent
+          ? const Value.absent()
+          : Value(fromAddress),
+      toAddresses: Value(toAddresses),
+      ccAddresses: Value(ccAddresses),
+      bccAddresses: Value(bccAddresses),
+      subject: Value(subject),
+      preview: Value(preview),
+      attachmentNames: Value(attachmentNames),
+    );
+  }
+
+  factory DraftRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DraftRow(
+      recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
+      draftId: serializer.fromJson<String>(json['draft_id']),
+      eventId: serializer.fromJson<String>(json['event_id']),
+      createdAt: serializer.fromJson<int>(json['created_at']),
+      deleted: serializer.fromJson<bool>(json['deleted']),
+      fromAddress: serializer.fromJson<String?>(json['from_address']),
+      toAddresses: serializer.fromJson<String>(json['to_addresses']),
+      ccAddresses: serializer.fromJson<String>(json['cc_addresses']),
+      bccAddresses: serializer.fromJson<String>(json['bcc_addresses']),
+      subject: serializer.fromJson<String>(json['subject']),
+      preview: serializer.fromJson<String>(json['preview']),
+      attachmentNames: serializer.fromJson<String>(json['attachment_names']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
+      'draft_id': serializer.toJson<String>(draftId),
+      'event_id': serializer.toJson<String>(eventId),
+      'created_at': serializer.toJson<int>(createdAt),
+      'deleted': serializer.toJson<bool>(deleted),
+      'from_address': serializer.toJson<String?>(fromAddress),
+      'to_addresses': serializer.toJson<String>(toAddresses),
+      'cc_addresses': serializer.toJson<String>(ccAddresses),
+      'bcc_addresses': serializer.toJson<String>(bccAddresses),
+      'subject': serializer.toJson<String>(subject),
+      'preview': serializer.toJson<String>(preview),
+      'attachment_names': serializer.toJson<String>(attachmentNames),
+    };
+  }
+
+  DraftRow copyWith({
+    String? recipientPubkey,
+    String? draftId,
+    String? eventId,
+    int? createdAt,
+    bool? deleted,
+    Value<String?> fromAddress = const Value.absent(),
+    String? toAddresses,
+    String? ccAddresses,
+    String? bccAddresses,
+    String? subject,
+    String? preview,
+    String? attachmentNames,
+  }) => DraftRow(
+    recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+    draftId: draftId ?? this.draftId,
+    eventId: eventId ?? this.eventId,
+    createdAt: createdAt ?? this.createdAt,
+    deleted: deleted ?? this.deleted,
+    fromAddress: fromAddress.present ? fromAddress.value : this.fromAddress,
+    toAddresses: toAddresses ?? this.toAddresses,
+    ccAddresses: ccAddresses ?? this.ccAddresses,
+    bccAddresses: bccAddresses ?? this.bccAddresses,
+    subject: subject ?? this.subject,
+    preview: preview ?? this.preview,
+    attachmentNames: attachmentNames ?? this.attachmentNames,
+  );
+  DraftRow copyWithCompanion(DraftsCompanion data) {
+    return DraftRow(
+      recipientPubkey: data.recipientPubkey.present
+          ? data.recipientPubkey.value
+          : this.recipientPubkey,
+      draftId: data.draftId.present ? data.draftId.value : this.draftId,
+      eventId: data.eventId.present ? data.eventId.value : this.eventId,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      deleted: data.deleted.present ? data.deleted.value : this.deleted,
+      fromAddress: data.fromAddress.present
+          ? data.fromAddress.value
+          : this.fromAddress,
+      toAddresses: data.toAddresses.present
+          ? data.toAddresses.value
+          : this.toAddresses,
+      ccAddresses: data.ccAddresses.present
+          ? data.ccAddresses.value
+          : this.ccAddresses,
+      bccAddresses: data.bccAddresses.present
+          ? data.bccAddresses.value
+          : this.bccAddresses,
+      subject: data.subject.present ? data.subject.value : this.subject,
+      preview: data.preview.present ? data.preview.value : this.preview,
+      attachmentNames: data.attachmentNames.present
+          ? data.attachmentNames.value
+          : this.attachmentNames,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DraftRow(')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('draftId: $draftId, ')
+          ..write('eventId: $eventId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('deleted: $deleted, ')
+          ..write('fromAddress: $fromAddress, ')
+          ..write('toAddresses: $toAddresses, ')
+          ..write('ccAddresses: $ccAddresses, ')
+          ..write('bccAddresses: $bccAddresses, ')
+          ..write('subject: $subject, ')
+          ..write('preview: $preview, ')
+          ..write('attachmentNames: $attachmentNames')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    recipientPubkey,
+    draftId,
+    eventId,
+    createdAt,
+    deleted,
+    fromAddress,
+    toAddresses,
+    ccAddresses,
+    bccAddresses,
+    subject,
+    preview,
+    attachmentNames,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DraftRow &&
+          other.recipientPubkey == this.recipientPubkey &&
+          other.draftId == this.draftId &&
+          other.eventId == this.eventId &&
+          other.createdAt == this.createdAt &&
+          other.deleted == this.deleted &&
+          other.fromAddress == this.fromAddress &&
+          other.toAddresses == this.toAddresses &&
+          other.ccAddresses == this.ccAddresses &&
+          other.bccAddresses == this.bccAddresses &&
+          other.subject == this.subject &&
+          other.preview == this.preview &&
+          other.attachmentNames == this.attachmentNames);
+}
+
+class DraftsCompanion extends UpdateCompanion<DraftRow> {
+  final Value<String> recipientPubkey;
+  final Value<String> draftId;
+  final Value<String> eventId;
+  final Value<int> createdAt;
+  final Value<bool> deleted;
+  final Value<String?> fromAddress;
+  final Value<String> toAddresses;
+  final Value<String> ccAddresses;
+  final Value<String> bccAddresses;
+  final Value<String> subject;
+  final Value<String> preview;
+  final Value<String> attachmentNames;
+  final Value<int> rowid;
+  const DraftsCompanion({
+    this.recipientPubkey = const Value.absent(),
+    this.draftId = const Value.absent(),
+    this.eventId = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.deleted = const Value.absent(),
+    this.fromAddress = const Value.absent(),
+    this.toAddresses = const Value.absent(),
+    this.ccAddresses = const Value.absent(),
+    this.bccAddresses = const Value.absent(),
+    this.subject = const Value.absent(),
+    this.preview = const Value.absent(),
+    this.attachmentNames = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DraftsCompanion.insert({
+    required String recipientPubkey,
+    required String draftId,
+    required String eventId,
+    required int createdAt,
+    required bool deleted,
+    this.fromAddress = const Value.absent(),
+    this.toAddresses = const Value.absent(),
+    this.ccAddresses = const Value.absent(),
+    this.bccAddresses = const Value.absent(),
+    this.subject = const Value.absent(),
+    this.preview = const Value.absent(),
+    this.attachmentNames = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : recipientPubkey = Value(recipientPubkey),
+       draftId = Value(draftId),
+       eventId = Value(eventId),
+       createdAt = Value(createdAt),
+       deleted = Value(deleted);
+  static Insertable<DraftRow> custom({
+    Expression<String>? recipientPubkey,
+    Expression<String>? draftId,
+    Expression<String>? eventId,
+    Expression<int>? createdAt,
+    Expression<bool>? deleted,
+    Expression<String>? fromAddress,
+    Expression<String>? toAddresses,
+    Expression<String>? ccAddresses,
+    Expression<String>? bccAddresses,
+    Expression<String>? subject,
+    Expression<String>? preview,
+    Expression<String>? attachmentNames,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (recipientPubkey != null) 'recipient_pubkey': recipientPubkey,
+      if (draftId != null) 'draft_id': draftId,
+      if (eventId != null) 'event_id': eventId,
+      if (createdAt != null) 'created_at': createdAt,
+      if (deleted != null) 'deleted': deleted,
+      if (fromAddress != null) 'from_address': fromAddress,
+      if (toAddresses != null) 'to_addresses': toAddresses,
+      if (ccAddresses != null) 'cc_addresses': ccAddresses,
+      if (bccAddresses != null) 'bcc_addresses': bccAddresses,
+      if (subject != null) 'subject': subject,
+      if (preview != null) 'preview': preview,
+      if (attachmentNames != null) 'attachment_names': attachmentNames,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DraftsCompanion copyWith({
+    Value<String>? recipientPubkey,
+    Value<String>? draftId,
+    Value<String>? eventId,
+    Value<int>? createdAt,
+    Value<bool>? deleted,
+    Value<String?>? fromAddress,
+    Value<String>? toAddresses,
+    Value<String>? ccAddresses,
+    Value<String>? bccAddresses,
+    Value<String>? subject,
+    Value<String>? preview,
+    Value<String>? attachmentNames,
+    Value<int>? rowid,
+  }) {
+    return DraftsCompanion(
+      recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+      draftId: draftId ?? this.draftId,
+      eventId: eventId ?? this.eventId,
+      createdAt: createdAt ?? this.createdAt,
+      deleted: deleted ?? this.deleted,
+      fromAddress: fromAddress ?? this.fromAddress,
+      toAddresses: toAddresses ?? this.toAddresses,
+      ccAddresses: ccAddresses ?? this.ccAddresses,
+      bccAddresses: bccAddresses ?? this.bccAddresses,
+      subject: subject ?? this.subject,
+      preview: preview ?? this.preview,
+      attachmentNames: attachmentNames ?? this.attachmentNames,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (recipientPubkey.present) {
+      map['recipient_pubkey'] = Variable<String>(recipientPubkey.value);
+    }
+    if (draftId.present) {
+      map['draft_id'] = Variable<String>(draftId.value);
+    }
+    if (eventId.present) {
+      map['event_id'] = Variable<String>(eventId.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (deleted.present) {
+      map['deleted'] = Variable<bool>(deleted.value);
+    }
+    if (fromAddress.present) {
+      map['from_address'] = Variable<String>(fromAddress.value);
+    }
+    if (toAddresses.present) {
+      map['to_addresses'] = Variable<String>(toAddresses.value);
+    }
+    if (ccAddresses.present) {
+      map['cc_addresses'] = Variable<String>(ccAddresses.value);
+    }
+    if (bccAddresses.present) {
+      map['bcc_addresses'] = Variable<String>(bccAddresses.value);
+    }
+    if (subject.present) {
+      map['subject'] = Variable<String>(subject.value);
+    }
+    if (preview.present) {
+      map['preview'] = Variable<String>(preview.value);
+    }
+    if (attachmentNames.present) {
+      map['attachment_names'] = Variable<String>(attachmentNames.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DraftsCompanion(')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('draftId: $draftId, ')
+          ..write('eventId: $eventId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('deleted: $deleted, ')
+          ..write('fromAddress: $fromAddress, ')
+          ..write('toAddresses: $toAddresses, ')
+          ..write('ccAddresses: $ccAddresses, ')
+          ..write('bccAddresses: $bccAddresses, ')
+          ..write('subject: $subject, ')
+          ..write('preview: $preview, ')
+          ..write('attachmentNames: $attachmentNames, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class SenderVerdictRow extends DataClass {
   final String recipientPubkey;
   final String senderKey;
@@ -5590,6 +6705,8 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
     'sender_ops_sender',
     'CREATE INDEX sender_ops_sender ON sender_ops (recipient_pubkey, sender_key, created_at)',
   );
+  late final DraftDecryptions draftDecryptions = DraftDecryptions(this);
+  late final Drafts drafts = Drafts(this);
   late final SenderVerdicts senderVerdicts = SenderVerdicts(this);
   late final EmailStates emailStates = EmailStates(this);
   late final EmailSearch emailSearch = EmailSearch(this);
@@ -5629,6 +6746,8 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
     senderListDecryptions,
     senderOps,
     senderOpsSender,
+    draftDecryptions,
+    drafts,
     senderVerdicts,
     emailStates,
     emailSearch,
@@ -8490,6 +9609,570 @@ typedef $SenderOpsProcessedTableManager =
       SenderOpRow,
       PrefetchHooks Function()
     >;
+typedef $DraftDecryptionsCreateCompanionBuilder =
+    DraftDecryptionsCompanion Function({
+      required String eventId,
+      required String recipientPubkey,
+      Value<String?> plaintext,
+      Value<String?> failure,
+      Value<int> attempts,
+      Value<int> rowid,
+    });
+typedef $DraftDecryptionsUpdateCompanionBuilder =
+    DraftDecryptionsCompanion Function({
+      Value<String> eventId,
+      Value<String> recipientPubkey,
+      Value<String?> plaintext,
+      Value<String?> failure,
+      Value<int> attempts,
+      Value<int> rowid,
+    });
+
+class $DraftDecryptionsFilterComposer
+    extends Composer<_$NostrMailDatabase, DraftDecryptions> {
+  $DraftDecryptionsFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get eventId => $composableBuilder(
+    column: $table.eventId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get plaintext => $composableBuilder(
+    column: $table.plaintext,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get failure => $composableBuilder(
+    column: $table.failure,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get attempts => $composableBuilder(
+    column: $table.attempts,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $DraftDecryptionsOrderingComposer
+    extends Composer<_$NostrMailDatabase, DraftDecryptions> {
+  $DraftDecryptionsOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get eventId => $composableBuilder(
+    column: $table.eventId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get plaintext => $composableBuilder(
+    column: $table.plaintext,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get failure => $composableBuilder(
+    column: $table.failure,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get attempts => $composableBuilder(
+    column: $table.attempts,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $DraftDecryptionsAnnotationComposer
+    extends Composer<_$NostrMailDatabase, DraftDecryptions> {
+  $DraftDecryptionsAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get eventId =>
+      $composableBuilder(column: $table.eventId, builder: (column) => column);
+
+  GeneratedColumn<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get plaintext =>
+      $composableBuilder(column: $table.plaintext, builder: (column) => column);
+
+  GeneratedColumn<String> get failure =>
+      $composableBuilder(column: $table.failure, builder: (column) => column);
+
+  GeneratedColumn<int> get attempts =>
+      $composableBuilder(column: $table.attempts, builder: (column) => column);
+}
+
+class $DraftDecryptionsTableManager
+    extends
+        RootTableManager<
+          _$NostrMailDatabase,
+          DraftDecryptions,
+          DraftDecryptionRow,
+          $DraftDecryptionsFilterComposer,
+          $DraftDecryptionsOrderingComposer,
+          $DraftDecryptionsAnnotationComposer,
+          $DraftDecryptionsCreateCompanionBuilder,
+          $DraftDecryptionsUpdateCompanionBuilder,
+          (
+            DraftDecryptionRow,
+            BaseReferences<
+              _$NostrMailDatabase,
+              DraftDecryptions,
+              DraftDecryptionRow
+            >,
+          ),
+          DraftDecryptionRow,
+          PrefetchHooks Function()
+        > {
+  $DraftDecryptionsTableManager(_$NostrMailDatabase db, DraftDecryptions table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $DraftDecryptionsFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $DraftDecryptionsOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $DraftDecryptionsAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> eventId = const Value.absent(),
+                Value<String> recipientPubkey = const Value.absent(),
+                Value<String?> plaintext = const Value.absent(),
+                Value<String?> failure = const Value.absent(),
+                Value<int> attempts = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DraftDecryptionsCompanion(
+                eventId: eventId,
+                recipientPubkey: recipientPubkey,
+                plaintext: plaintext,
+                failure: failure,
+                attempts: attempts,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String eventId,
+                required String recipientPubkey,
+                Value<String?> plaintext = const Value.absent(),
+                Value<String?> failure = const Value.absent(),
+                Value<int> attempts = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DraftDecryptionsCompanion.insert(
+                eventId: eventId,
+                recipientPubkey: recipientPubkey,
+                plaintext: plaintext,
+                failure: failure,
+                attempts: attempts,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<DraftDecryptions, DraftDecryptionRow>(table),
+                  BaseReferences<
+                    _$NostrMailDatabase,
+                    DraftDecryptions,
+                    DraftDecryptionRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $DraftDecryptionsProcessedTableManager =
+    ProcessedTableManager<
+      _$NostrMailDatabase,
+      DraftDecryptions,
+      DraftDecryptionRow,
+      $DraftDecryptionsFilterComposer,
+      $DraftDecryptionsOrderingComposer,
+      $DraftDecryptionsAnnotationComposer,
+      $DraftDecryptionsCreateCompanionBuilder,
+      $DraftDecryptionsUpdateCompanionBuilder,
+      (
+        DraftDecryptionRow,
+        BaseReferences<
+          _$NostrMailDatabase,
+          DraftDecryptions,
+          DraftDecryptionRow
+        >,
+      ),
+      DraftDecryptionRow,
+      PrefetchHooks Function()
+    >;
+typedef $DraftsCreateCompanionBuilder =
+    DraftsCompanion Function({
+      required String recipientPubkey,
+      required String draftId,
+      required String eventId,
+      required int createdAt,
+      required bool deleted,
+      Value<String?> fromAddress,
+      Value<String> toAddresses,
+      Value<String> ccAddresses,
+      Value<String> bccAddresses,
+      Value<String> subject,
+      Value<String> preview,
+      Value<String> attachmentNames,
+      Value<int> rowid,
+    });
+typedef $DraftsUpdateCompanionBuilder =
+    DraftsCompanion Function({
+      Value<String> recipientPubkey,
+      Value<String> draftId,
+      Value<String> eventId,
+      Value<int> createdAt,
+      Value<bool> deleted,
+      Value<String?> fromAddress,
+      Value<String> toAddresses,
+      Value<String> ccAddresses,
+      Value<String> bccAddresses,
+      Value<String> subject,
+      Value<String> preview,
+      Value<String> attachmentNames,
+      Value<int> rowid,
+    });
+
+class $DraftsFilterComposer extends Composer<_$NostrMailDatabase, Drafts> {
+  $DraftsFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get draftId => $composableBuilder(
+    column: $table.draftId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get eventId => $composableBuilder(
+    column: $table.eventId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get deleted => $composableBuilder(
+    column: $table.deleted,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get fromAddress => $composableBuilder(
+    column: $table.fromAddress,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get toAddresses => $composableBuilder(
+    column: $table.toAddresses,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ccAddresses => $composableBuilder(
+    column: $table.ccAddresses,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get bccAddresses => $composableBuilder(
+    column: $table.bccAddresses,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get subject => $composableBuilder(
+    column: $table.subject,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get preview => $composableBuilder(
+    column: $table.preview,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get attachmentNames => $composableBuilder(
+    column: $table.attachmentNames,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $DraftsOrderingComposer extends Composer<_$NostrMailDatabase, Drafts> {
+  $DraftsOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get draftId => $composableBuilder(
+    column: $table.draftId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get eventId => $composableBuilder(
+    column: $table.eventId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get deleted => $composableBuilder(
+    column: $table.deleted,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get fromAddress => $composableBuilder(
+    column: $table.fromAddress,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get toAddresses => $composableBuilder(
+    column: $table.toAddresses,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get ccAddresses => $composableBuilder(
+    column: $table.ccAddresses,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get bccAddresses => $composableBuilder(
+    column: $table.bccAddresses,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get subject => $composableBuilder(
+    column: $table.subject,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get preview => $composableBuilder(
+    column: $table.preview,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get attachmentNames => $composableBuilder(
+    column: $table.attachmentNames,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $DraftsAnnotationComposer extends Composer<_$NostrMailDatabase, Drafts> {
+  $DraftsAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get draftId =>
+      $composableBuilder(column: $table.draftId, builder: (column) => column);
+
+  GeneratedColumn<String> get eventId =>
+      $composableBuilder(column: $table.eventId, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get deleted =>
+      $composableBuilder(column: $table.deleted, builder: (column) => column);
+
+  GeneratedColumn<String> get fromAddress => $composableBuilder(
+    column: $table.fromAddress,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get toAddresses => $composableBuilder(
+    column: $table.toAddresses,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get ccAddresses => $composableBuilder(
+    column: $table.ccAddresses,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get bccAddresses => $composableBuilder(
+    column: $table.bccAddresses,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get subject =>
+      $composableBuilder(column: $table.subject, builder: (column) => column);
+
+  GeneratedColumn<String> get preview =>
+      $composableBuilder(column: $table.preview, builder: (column) => column);
+
+  GeneratedColumn<String> get attachmentNames => $composableBuilder(
+    column: $table.attachmentNames,
+    builder: (column) => column,
+  );
+}
+
+class $DraftsTableManager
+    extends
+        RootTableManager<
+          _$NostrMailDatabase,
+          Drafts,
+          DraftRow,
+          $DraftsFilterComposer,
+          $DraftsOrderingComposer,
+          $DraftsAnnotationComposer,
+          $DraftsCreateCompanionBuilder,
+          $DraftsUpdateCompanionBuilder,
+          (DraftRow, BaseReferences<_$NostrMailDatabase, Drafts, DraftRow>),
+          DraftRow,
+          PrefetchHooks Function()
+        > {
+  $DraftsTableManager(_$NostrMailDatabase db, Drafts table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $DraftsFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $DraftsOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $DraftsAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> recipientPubkey = const Value.absent(),
+                Value<String> draftId = const Value.absent(),
+                Value<String> eventId = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<bool> deleted = const Value.absent(),
+                Value<String?> fromAddress = const Value.absent(),
+                Value<String> toAddresses = const Value.absent(),
+                Value<String> ccAddresses = const Value.absent(),
+                Value<String> bccAddresses = const Value.absent(),
+                Value<String> subject = const Value.absent(),
+                Value<String> preview = const Value.absent(),
+                Value<String> attachmentNames = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DraftsCompanion(
+                recipientPubkey: recipientPubkey,
+                draftId: draftId,
+                eventId: eventId,
+                createdAt: createdAt,
+                deleted: deleted,
+                fromAddress: fromAddress,
+                toAddresses: toAddresses,
+                ccAddresses: ccAddresses,
+                bccAddresses: bccAddresses,
+                subject: subject,
+                preview: preview,
+                attachmentNames: attachmentNames,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String recipientPubkey,
+                required String draftId,
+                required String eventId,
+                required int createdAt,
+                required bool deleted,
+                Value<String?> fromAddress = const Value.absent(),
+                Value<String> toAddresses = const Value.absent(),
+                Value<String> ccAddresses = const Value.absent(),
+                Value<String> bccAddresses = const Value.absent(),
+                Value<String> subject = const Value.absent(),
+                Value<String> preview = const Value.absent(),
+                Value<String> attachmentNames = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DraftsCompanion.insert(
+                recipientPubkey: recipientPubkey,
+                draftId: draftId,
+                eventId: eventId,
+                createdAt: createdAt,
+                deleted: deleted,
+                fromAddress: fromAddress,
+                toAddresses: toAddresses,
+                ccAddresses: ccAddresses,
+                bccAddresses: bccAddresses,
+                subject: subject,
+                preview: preview,
+                attachmentNames: attachmentNames,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<Drafts, DraftRow>(table),
+                  BaseReferences<_$NostrMailDatabase, Drafts, DraftRow>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $DraftsProcessedTableManager =
+    ProcessedTableManager<
+      _$NostrMailDatabase,
+      Drafts,
+      DraftRow,
+      $DraftsFilterComposer,
+      $DraftsOrderingComposer,
+      $DraftsAnnotationComposer,
+      $DraftsCreateCompanionBuilder,
+      $DraftsUpdateCompanionBuilder,
+      (DraftRow, BaseReferences<_$NostrMailDatabase, Drafts, DraftRow>),
+      DraftRow,
+      PrefetchHooks Function()
+    >;
 typedef $EmailSearchCreateCompanionBuilder =
     EmailSearchCompanion Function({
       required String fromAddress,
@@ -8684,6 +10367,9 @@ class $NostrMailDatabaseManager {
       $SenderListDecryptionsTableManager(_db, _db.senderListDecryptions);
   $SenderOpsTableManager get senderOps =>
       $SenderOpsTableManager(_db, _db.senderOps);
+  $DraftDecryptionsTableManager get draftDecryptions =>
+      $DraftDecryptionsTableManager(_db, _db.draftDecryptions);
+  $DraftsTableManager get drafts => $DraftsTableManager(_db, _db.drafts);
   $EmailSearchTableManager get emailSearch =>
       $EmailSearchTableManager(_db, _db.emailSearch);
 }
