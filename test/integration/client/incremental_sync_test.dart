@@ -49,7 +49,8 @@ void main() {
     // counts describe is one walk and not a background tick.
     final engine = SyncEngine(
       ndk,
-      db: db,
+      store: SembastSyncStore(db),
+      discoveryRelays: ndk.config.bootstrapRelays,
       maxStaleness: const Duration(days: 1),
     );
     final bob = await NostrMailClient.create(

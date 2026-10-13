@@ -1,3 +1,17 @@
+## 6.0.2
+
+- **Breaking**: require `sync_engine_shim_for_ndk: ^0.9.0`. The engine
+  passed to `create` takes `store: SembastSyncStore(db)` instead of `db`, and
+  reads back the coverage earlier versions wrote.
+- The sync requests name the account's relay lists rather than the relays they
+  held at login, and the engine reads them again on every pass: a change of
+  the DM, NIP-65 or private relay list is followed without a login, an account
+  switch or a `fetchRecent`. The engine looks the lists up on its
+  `discoveryRelays`, public indexers by default: add `recommendedDmRelays`, or
+  your `defaultDmRelays`, so a list published only there is found.
+- **Fix**: an email reaching the live subscription while a sync replay covered
+  it was stored and announced twice on `onEmail`.
+
 ## 6.0.1
 
 - **Fix**: `clearLocalAccountData` forgets the account's sync coverage. It

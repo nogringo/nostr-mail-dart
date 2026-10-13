@@ -103,7 +103,7 @@ class MailSync {
   /// left to ask for anything: staying up to date needs no call at all.
   Future<void> fetchRecent() async {
     _assertPubkey();
-    final handles = await _ensureHandles();
+    final handles = _ensureHandles();
     await Future.wait(handles.map(_engine.refresh));
     await _replayCache();
   }
@@ -115,7 +115,7 @@ class MailSync {
       release();
       return;
     }
-    await _ensureHandles();
+    _ensureHandles();
 
     if (_rebuildOwed) {
       _rebuildOwed = false;
@@ -178,16 +178,14 @@ class MailSync {
   /// Declares everything this account needs locally, split by the relay set
   /// each filter belongs to. Reposts, settings and metadata are declared only
   /// to warm the NDK cache: nothing processes them here.
-  Future<List<SyncHandle>> _ensureHandles() async {
+  List<SyncHandle> _ensureHandles() {
     final pubkey = _pubkey!;
 
-    final (dmRelays, writeRelays, readRelays, draftRelays) = await (
-      _relays.getDmRelays(pubkey),
-      _relays.getWriteRelays(pubkey),
-      _relays.getReadRelays(pubkey),
-      _relays.getDraftRelays(pubkey),
-    ).wait;
-    final allRelays = {...dmRelays, ...writeRelays}.toList();
+    final dmRelays = _relays.dmRelaySet([pubkey]);
+    final writeRelays = _relays.writeRelaySet(pubkey);
+    final readRelays = _relays.readRelaySet(pubkey);
+    final draftRelays = _relays.draftRelaySet(pubkey);
+    final allRelays = UrlSet.union([dmRelays, writeRelays]);
     _declaredFor = pubkey;
 
     return [
@@ -236,9 +234,9 @@ class MailSync {
   ];
 
   /// The engine derives the request identity from the filters, the relay set
-  /// and [authPubkey], all of which move here: switching account rewrites the
-  /// filters, and [RelayResolver] hands back the fallback list until the kind
-  /// 10050 lands. A hand-written id would pin whichever it saw first.
+  /// and [authPubkey], and switching account rewrites the filters: a
+  /// hand-written id would pin whichever it saw first. The relay set names
+  /// lists rather than urls, and the engine reads them again on every pass.
   ///
   /// [authPubkey] is passed rather than read back from ndk: the account can
   /// change while the relays resolve, and a request must not carry one
@@ -246,7 +244,7 @@ class MailSync {
   SyncHandle _ensure(
     String scope,
     List<Filter> filters,
-    List<String> relays, {
+    UrlSet relays, {
     required String authPubkey,
   }) {
     final handle = _engine.ensure(
@@ -411,7 +409,16 @@ class MailSync {
 
   // ── Event processing ────────────────────────────────────────────────────
 
-  Future<void> onGiftWrap(Nip01Event event) async {
+  /// Wraps being processed. The live subscription and a cache replay can hand
+  /// over the same wrap at once, and each would store and announce the email.
+  final Map<String, Future<void>> _giftWrapsInFlight = {};
+
+  Future<void> onGiftWrap(Nip01Event event) =>
+      _giftWrapsInFlight[event.id] ??= _onGiftWrap(event).whenComplete(() {
+        _giftWrapsInFlight.remove(event.id);
+      });
+
+  Future<void> _onGiftWrap(Nip01Event event) async {
     final owner = event.getFirstTag('p');
     if (owner == null || !_ndk.accounts.hasAccount(owner)) return;
 

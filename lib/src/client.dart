@@ -128,7 +128,9 @@ class NostrMailClient {
   /// own accord, so nothing has to poll this client. It is the caller's:
   /// [create] starts it, which is idempotent, but never stops nor disposes it.
   /// Stop it when the app goes to the background, and share it with the other
-  /// SDKs reading the same relays.
+  /// SDKs reading the same relays. The requests name the account's relay
+  /// lists, which the engine looks up on its `discoveryRelays`: add
+  /// [defaultDmRelays] there, or a list published only on them is never found.
   ///
   /// Pass [broadcastQueue] to share a single queue across SDKs, tune its
   /// parameters, or inject a custom one in tests. When you provide your own

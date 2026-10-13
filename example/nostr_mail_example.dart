@@ -36,7 +36,12 @@ void main() async {
 
   // Keeps the ndk cache in sync with the relays. The client starts it, but
   // never stops nor disposes it: share it with your other ndk-based SDKs.
-  final syncEngine = SyncEngine(ndk, db: db);
+  // It looks the account's relay lists up on its `discoveryRelays`.
+  final syncEngine = SyncEngine(
+    ndk,
+    store: SembastSyncStore(db),
+    discoveryRelays: {...defaultIndexerRelays, ...recommendedDmRelays},
+  );
 
   // The mail store. A real app opens `NativeDatabase(File(...))` on native
   // and `WasmDatabase.open(...)` on web, and closes it after `dispose()`.

@@ -62,7 +62,11 @@ class TestUser {
       dbName: 'blossom_cache_$id',
     );
 
-    syncEngine = SyncEngine(ndk, db: db);
+    syncEngine = SyncEngine(
+      ndk,
+      store: SembastSyncStore(db),
+      discoveryRelays: ndk.config.bootstrapRelays,
+    );
 
     client = await NostrMailClient.create(
       ndk: ndk,

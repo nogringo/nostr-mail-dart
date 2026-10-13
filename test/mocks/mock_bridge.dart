@@ -69,7 +69,11 @@ class MockBridge {
     database = NostrMailDatabase(NativeDatabase.memory());
     db = await databaseFactoryMemory.openDatabase('bridge_$domain');
 
-    syncEngine = SyncEngine(ndk, db: db);
+    syncEngine = SyncEngine(
+      ndk,
+      store: SembastSyncStore(db),
+      discoveryRelays: ndk.config.bootstrapRelays,
+    );
 
     client = await NostrMailClient.create(
       ndk: ndk,

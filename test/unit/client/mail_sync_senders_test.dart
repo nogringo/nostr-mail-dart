@@ -77,7 +77,11 @@ void main() {
       senders = SenderRepository(database);
       tombstones = TombstoneRepository(database);
       bus = EventBus();
-      engine = SyncEngine(ndk, db: db);
+      engine = SyncEngine(
+        ndk,
+        store: SembastSyncStore(db),
+        discoveryRelays: ndk.config.bootstrapRelays,
+      );
       sync = MailSync(
         ndk,
         engine,

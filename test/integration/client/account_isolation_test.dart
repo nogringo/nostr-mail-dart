@@ -6,7 +6,6 @@
 // account's recipientPubkey. Each test simulates Alice reading the store
 // and asserts that none of Bob's data is reachable.
 
-import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
 import 'package:ndk/ndk.dart';
 import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:ndk/shared/nips/nip01/key_pair.dart';

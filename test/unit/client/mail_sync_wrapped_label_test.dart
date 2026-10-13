@@ -57,7 +57,11 @@ void main() {
       final database = testDatabase();
       labels = LabelRepository(database);
       giftWraps = GiftWrapRepository(database);
-      engine = SyncEngine(ndk, db: db);
+      engine = SyncEngine(
+        ndk,
+        store: SembastSyncStore(db),
+        discoveryRelays: ndk.config.bootstrapRelays,
+      );
       sync = MailSync(
         ndk,
         engine,

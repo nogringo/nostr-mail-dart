@@ -61,8 +61,14 @@ final blossomCache = await IdbBlossomCache.open(factory: idbFactorySembastIo);
 
 // Keeps the ndk cache in sync with the relays. Yours to own: the client
 // starts it but never stops nor disposes it, so you can share it with your
-// other ndk-based SDKs.
-final syncEngine = SyncEngine(ndk, db: db);
+// other ndk-based SDKs. It looks the account's relay lists up on its
+// `discoveryRelays`: add the DM relays, or a list published only there is
+// never found.
+final syncEngine = SyncEngine(
+  ndk,
+  store: SembastSyncStore(db),
+  discoveryRelays: {...defaultIndexerRelays, ...recommendedDmRelays},
+);
 
 // Create the client
 final client = await NostrMailClient.create(

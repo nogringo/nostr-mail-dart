@@ -61,7 +61,11 @@ void main() {
       database = testDatabase();
       giftWraps = GiftWrapRepository(database);
       tombstones = TombstoneRepository(database);
-      engine = SyncEngine(ndk, db: db);
+      engine = SyncEngine(
+        ndk,
+        store: SembastSyncStore(db),
+        discoveryRelays: ndk.config.bootstrapRelays,
+      );
       sync = MailSync(
         ndk,
         engine,

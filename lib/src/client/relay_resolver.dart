@@ -158,4 +158,10 @@ class RelayResolver {
     UrlSet.outbox(pubkey),
     UrlSet.explicit(_defaultDmRelays),
   ]);
+
+  /// [getReadRelays] as a [UrlSet].
+  UrlSet readRelaySet(String pubkey) => UrlSet.fallback([
+    UrlSet.inbox(pubkey),
+    UrlSet.explicit(_defaultDmRelays),
+  ]);
 }

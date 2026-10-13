@@ -32,7 +32,11 @@ void main() {
         privkey: dvmKey.privateKey!,
       );
       final dvmDb = await databaseFactoryMemory.openDatabase('dvm-roundtrip');
-      final dvmSyncEngine = SyncEngine(dvmNdk, db: dvmDb)..start();
+      final dvmSyncEngine = SyncEngine(
+        dvmNdk,
+        store: SembastSyncStore(dvmDb),
+        discoveryRelays: dvmNdk.config.bootstrapRelays,
+      )..start();
       final dvm = SchedulerDvm(
         SchedulerDvmConfig(
           ndk: dvmNdk,

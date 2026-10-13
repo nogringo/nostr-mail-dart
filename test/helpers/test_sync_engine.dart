@@ -6,7 +6,11 @@ import 'package:test/test.dart';
 /// A sync engine for [NostrMailClient.create], disposed with the current test
 /// so a relay backoff timer never outlives it.
 SyncEngine testSyncEngine(Ndk ndk, Database db) {
-  final engine = SyncEngine(ndk, db: db);
+  final engine = SyncEngine(
+    ndk,
+    store: SembastSyncStore(db),
+    discoveryRelays: ndk.config.bootstrapRelays,
+  );
   addTearDown(engine.dispose);
   return engine;
 }
