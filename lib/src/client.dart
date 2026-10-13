@@ -1251,17 +1251,24 @@ class NostrMailClient {
   Future<void> deleteDraft(String draftId) => _drafts.delete(draftId);
 
   /// The drafts of the logged account, most recently saved first.
-  Future<List<Draft>> getDrafts() => _drafts.list();
+  ///
+  /// [pubkey] reads another account known to this device without switching
+  /// to it: only its drafts synced while it was the active account, since
+  /// the sync follows the active account alone.
+  Future<List<Draft>> getDrafts({String? pubkey}) =>
+      _drafts.list(pubkey: pubkey);
 
   /// Reactive [getDrafts]: re-emits on every save or delete, from this device
   /// or, once synced, from another.
-  Stream<List<Draft>> watchDrafts() => _drafts.watch();
+  Stream<List<Draft>> watchDrafts({String? pubkey}) =>
+      _drafts.watch(pubkey: pubkey);
 
   /// The complete MIME of a draft, body and attachments included, to re-open
   /// it in a composer. Returns null if the draft is gone. Throws when its
-  /// Blossom blob is neither cached nor downloadable.
-  Future<MimeMessage?> getDraftMime(String draftId) async {
-    final text = await _drafts.getMimeText(draftId);
+  /// Blossom blob is neither cached nor downloadable. [pubkey] as for
+  /// [getDrafts].
+  Future<MimeMessage?> getDraftMime(String draftId, {String? pubkey}) async {
+    final text = await _drafts.getMimeText(draftId, pubkey: pubkey);
     if (text == null) return null;
     return MimeMessage.parseFromText(text);
   }

@@ -103,16 +103,19 @@ class DraftManager {
     await _broadcast(wrap);
   }
 
-  /// The drafts of the logged account, most recently saved first.
-  Future<List<Draft>> list() => _repo.list(recipientPubkey: _requirePubkey());
+  /// The drafts of [pubkey], the logged account by default, most recently
+  /// saved first.
+  Future<List<Draft>> list({String? pubkey}) =>
+      _repo.list(recipientPubkey: pubkey ?? _requirePubkey());
 
   /// Reactive [list].
-  Stream<List<Draft>> watch() => _repo.watch(recipientPubkey: _requirePubkey());
+  Stream<List<Draft>> watch({String? pubkey}) =>
+      _repo.watch(recipientPubkey: pubkey ?? _requirePubkey());
 
   /// The full MIME text of [draftId], or null when it is unknown or deleted.
   /// Throws when its Blossom blob is neither cached nor downloadable.
-  Future<String?> getMimeText(String draftId) async {
-    final pubkey = _requirePubkey();
+  Future<String?> getMimeText(String draftId, {String? pubkey}) async {
+    pubkey ??= _requirePubkey();
     final row = await _repo.get(draftId, recipientPubkey: pubkey);
     if (row == null || row.deleted) return null;
     final decryption = await _repo.getDecryption(

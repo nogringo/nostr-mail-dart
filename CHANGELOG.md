@@ -17,6 +17,9 @@
   are no longer read.
 - **Fix**: an email reaching the live subscription while a sync replay covered
   it was stored and announced twice on `onEmail`.
+- `getDrafts`, `watchDrafts` and `getDraftMime` take an optional `pubkey` to
+  read the drafts of another account known to this device without switching
+  to it. Only the drafts synced while that account was active are there.
 
 ## 6.0.1
 

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:blossom_upload_queue_shim_for_ndk/blossom_upload_queue_shim_for_ndk.dart';
 import 'package:enough_mail_plus/enough_mail.dart';
 import 'package:ndk/ndk.dart';
+import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
@@ -111,6 +112,24 @@ void main() {
     final mime = (await desktop.client.getDraftMime(draft.draftId))!;
     expect(mime.decodeSubject(), 'Plans');
     expect(mime.bcc!.single.email, 'carol@example.com');
+  });
+
+  test('the drafts of another account are read without switching', () async {
+    final draft = await phone.client.saveDraft(message('Plans'));
+    await waitForBroadcasts(phone.client.broadcastQueue);
+
+    final other = Bip340.generatePrivateKey();
+    phone.ndk.accounts.loginPrivateKey(
+      pubkey: other.publicKey,
+      privkey: other.privateKey!,
+    );
+
+    expect(await phone.client.getDrafts(), isEmpty);
+    expect(await phone.client.getDrafts(pubkey: me), [draft]);
+    expect(await phone.client.watchDrafts(pubkey: me).first, [draft]);
+    final mime = (await phone.client.getDraftMime(draft.draftId, pubkey: me))!;
+    expect(mime.decodeSubject(), 'Plans');
+    expect(await phone.client.getDraftMime(draft.draftId), isNull);
   });
 
   test('the rumor is the unsigned self-copy', () async {

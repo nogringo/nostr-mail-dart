@@ -227,7 +227,7 @@ await NostrMailClient.create({
 **Drafts (local-first, NIP-37):**
 - `saveDraft(mime, {draftId, mailFrom})`: a new draft without `draftId`, a new version of it with one. The wrap holds the unsigned self-copy rumor `EmailSender.buildSelfRumor` builds; a MIME of 32 KiB or more goes to Blossom, as for a sent email.
 - `deleteDraft(draftId)`: publishes a blank wrap with the same `d`.
-- `getDrafts()` / `watchDrafts()`: most recently saved first. `getDraftMime(draftId)`: the complete MIME, to re-open it in a composer.
+- `getDrafts()` / `watchDrafts()`: most recently saved first. `getDraftMime(draftId)`: the complete MIME, to re-open it in a composer. All three take `pubkey:` to read another account's drafts synced on this device, without switching to it.
 
 **Private Settings (NIP-78):**
 - `getPrivateSettings()`: local-first `NdkDataResponse`, emits the local cache then newer relay copies
