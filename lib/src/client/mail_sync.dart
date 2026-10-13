@@ -184,7 +184,7 @@ class MailSync {
     final dmRelays = _relays.dmRelaySet([pubkey]);
     final writeRelays = _relays.writeRelaySet(pubkey);
     final readRelays = _relays.readRelaySet(pubkey);
-    final draftRelays = _relays.draftRelaySet(pubkey);
+    final draftRelays = _relays.draftReadRelaySet(pubkey);
     final allRelays = UrlSet.union([dmRelays, writeRelays]);
     _declaredFor = pubkey;
 

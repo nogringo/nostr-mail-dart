@@ -194,7 +194,8 @@ void main() {
     expect(part.decodeContentBinary(), attachment);
   });
 
-  test('drafts go to the private relays when the account has some', () async {
+  /// A private relay listed in the account's kind 10013.
+  Future<MockRelay> listPrivateRelay() async {
     final private = MockRelay(name: 'drafts_private');
     await private.startServer();
     addTearDown(() async => await private.stopServer());
@@ -213,7 +214,14 @@ void main() {
         ))!,
       ),
     );
-    await phone.ndk.broadcast.broadcast(nostrEvent: list).broadcastDoneFuture;
+    await phone.ndk.broadcast
+        .broadcast(nostrEvent: list, specificRelays: [relay.url])
+        .broadcastDoneFuture;
+    return private;
+  }
+
+  test('drafts go to the private relays when the account has some', () async {
+    final private = await listPrivateRelay();
 
     final draft = await phone.client.saveDraft(message('Plans'));
     await waitForBroadcasts(phone.client.broadcastQueue);
@@ -223,5 +231,37 @@ void main() {
 
     await desktop.client.fetchRecent();
     expect((await desktop.client.getDrafts()).single.draftId, draft.draftId);
+  });
+
+  test('drafts left on the write relays are still read', () async {
+    final kept = await phone.client.saveDraft(message('Kept'));
+    final gone = await phone.client.saveDraft(message('Gone'));
+    await waitForBroadcasts(phone.client.broadcastQueue);
+
+    final private = await listPrivateRelay();
+    await phone.client.deleteDraft(gone.draftId);
+    final fresh = await phone.client.saveDraft(message('Fresh'));
+    await waitForBroadcasts(phone.client.broadcastQueue);
+
+    expect(wrapsOn(relay).keys, unorderedEquals([kept.draftId, gone.draftId]));
+    expect(
+      wrapsOn(private).keys,
+      unorderedEquals([gone.draftId, fresh.draftId]),
+    );
+
+    // Logged in once the list exists: a device that checked it before
+    // trusts the absence for an hour.
+    final laptop = await TestUser(
+      'drafts_laptop_${DateTime.now().microsecondsSinceEpoch}',
+      defaultDmRelays: [relay.url],
+      keyPair: phone.keyPair,
+    ).create();
+    addTearDown(() async => await laptop.destroy());
+
+    await laptop.client.fetchRecent();
+    expect((await laptop.client.getDrafts()).map((d) => d.subject), [
+      'Fresh',
+      'Kept',
+    ]);
   });
 }

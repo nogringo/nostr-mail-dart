@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:broadcast_queue_shim_for_ndk/broadcast_queue_shim_for_ndk.dart';
 import 'package:ndk/ndk.dart';
 import 'package:ndk/domain_layer/entities/filter.dart' as ndk;
@@ -12,18 +10,25 @@ import '../constants.dart';
 /// same targets as a [UrlSet] the broadcast queue resolves on its own, so an
 /// event can be enqueued without waiting on a lookup.
 ///
-/// Falls back to [defaultDmRelays] when the user has no relay lists configured.
+/// Falls back to [defaultDmRelays] when the user has no DM relay list, and to
+/// [defaultNip65Relays] when it has no NIP-65.
 class RelayResolver {
   final Ndk _ndk;
   final List<String> _defaultDmRelays;
+  final List<String> _defaultNip65Relays;
 
-  RelayResolver(this._ndk, {List<String>? defaultDmRelays})
-    : _defaultDmRelays = defaultDmRelays ?? recommendedDmRelays;
+  RelayResolver(
+    this._ndk, {
+    List<String>? defaultDmRelays,
+    List<String>? defaultNip65Relays,
+  }) : _defaultDmRelays = defaultDmRelays ?? recommendedDmRelays,
+       _defaultNip65Relays = defaultNip65Relays ?? recommendedNip65Relays;
 
   /// The relays a lookup falls back to when the account publishes no list.
   /// They are also where the broadcast queue looks relay lists up, next to
   /// the public indexers.
-  List<String> get defaultRelays => _defaultDmRelays;
+  List<String> get defaultRelays =>
+      {..._defaultNip65Relays, ..._defaultDmRelays}.toList();
 
   /// Get user's DM relays from NIP-17 kind 10050 event.
   ///
@@ -66,7 +71,7 @@ class RelayResolver {
       filter: ndk.Filter(kinds: [relayListKind], authors: [pubkey], limit: 1),
     );
     final events = await response.future;
-    if (events.isEmpty) return _defaultDmRelays;
+    if (events.isEmpty) return _defaultNip65Relays;
 
     final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
     final relays = event.tags
@@ -79,69 +84,19 @@ class RelayResolver {
         .map((t) => t[1])
         .toList();
 
-    return relays.isNotEmpty ? relays : _defaultDmRelays;
+    return relays.isNotEmpty ? relays : _defaultNip65Relays;
   }
 
-  /// NIP-37 private relays of [pubkey], from its kind 10013. Empty when it
-  /// publishes none, or when no signer here can open it.
-  Future<List<String>> getPrivateRelays(String pubkey) async {
-    final response = _ndk.requests.query(
-      filter: ndk.Filter(
-        kinds: [privateRelayListKind],
-        authors: [pubkey],
-        limit: 1,
-      ),
-    );
-    final events = await response.future;
-    if (events.isEmpty) return const [];
-
-    final event = events.reduce((a, b) => a.createdAt > b.createdAt ? a : b);
-    final signer = _ndk.accounts.accounts[pubkey]?.signer;
-    if (event.content.isEmpty || signer == null) return const [];
-
-    final String? plaintext;
-    try {
-      plaintext = await _ndk.decryptedEventPayloads.loadOrDecrypt(
-        event: event,
-        viewerPubKey: pubkey,
-        scheme: DecryptedPayloadScheme.nip44,
-        decrypt: () => signer.decryptNip44(
-          ciphertext: event.content,
-          senderPubKey: pubkey,
-        ),
-      );
-    } catch (_) {
-      return const [];
-    }
-    if (plaintext == null) return const [];
-
-    final Object? tags;
-    try {
-      tags = jsonDecode(plaintext);
-    } on FormatException {
-      return const [];
-    }
-    if (tags is! List) return const [];
-    return [
-      for (final tag in tags)
-        if (tag is List &&
-            tag.length >= 2 &&
-            tag[0] == 'relay' &&
-            tag[1] is String)
-          tag[1] as String,
-    ];
-  }
-
-  /// Where drafts are read: [getPrivateRelays], or [getWriteRelays] when the
-  /// account has none.
-  Future<List<String>> getDraftRelays(String pubkey) async {
-    final private = await getPrivateRelays(pubkey);
-    return private.isNotEmpty ? private : getWriteRelays(pubkey);
-  }
-
-  /// [getDraftRelays] as a [UrlSet].
-  UrlSet draftRelaySet(String pubkey) =>
+  /// Where drafts are saved: the NIP-37 private relays, or the write relays
+  /// when the account has none.
+  UrlSet draftWriteRelaySet(String pubkey) =>
       UrlSet.fallback([UrlSet.private(pubkey), writeRelaySet(pubkey)]);
+
+  /// Where drafts are read: both, since drafts saved before the account
+  /// listed private relays, or by a client ignoring them, are on the write
+  /// relays.
+  UrlSet draftReadRelaySet(String pubkey) =>
+      UrlSet.union([UrlSet.private(pubkey), writeRelaySet(pubkey)]);
 
   /// [getDmRelays] as a [UrlSet]: the NIP-17 DM relays of [pubkeys], or the
   /// defaults when none of them publishes a kind 10050.
@@ -156,12 +111,12 @@ class RelayResolver {
   /// the defaults when it publishes no kind 10002.
   UrlSet writeRelaySet(String pubkey) => UrlSet.fallback([
     UrlSet.outbox(pubkey),
-    UrlSet.explicit(_defaultDmRelays),
+    UrlSet.explicit(_defaultNip65Relays),
   ]);
 
   /// [getReadRelays] as a [UrlSet].
   UrlSet readRelaySet(String pubkey) => UrlSet.fallback([
     UrlSet.inbox(pubkey),
-    UrlSet.explicit(_defaultDmRelays),
+    UrlSet.explicit(_defaultNip65Relays),
   ]);
 }

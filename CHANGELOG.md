@@ -7,8 +7,14 @@
   held at login, and the engine reads them again on every pass: a change of
   the DM, NIP-65 or private relay list is followed without a login, an account
   switch or a `fetchRecent`. The engine looks the lists up on its
-  `discoveryRelays`, public indexers by default: add `recommendedDmRelays`, or
-  your `defaultDmRelays`, so a list published only there is found.
+  `discoveryRelays`, public indexers by default: add `recommendedDmRelays` and
+  `recommendedNip65Relays`, or your `defaultDmRelays` and `defaultNip65Relays`,
+  so a list published only there is found.
+- **Breaking**: an account that publishes no NIP-65 (kind 10002) reads and
+  writes on `recommendedNip65Relays`, or the new `defaultNip65Relays` of `create`,
+  instead of the default DM relays. Labels published in clear, the senders
+  list, settings and drafts such an account wrote on the default DM relays
+  are no longer read.
 - **Fix**: an email reaching the live subscription while a sync replay covered
   it was stored and announced twice on `onEmail`.
 

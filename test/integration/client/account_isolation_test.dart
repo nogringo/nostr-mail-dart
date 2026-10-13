@@ -207,6 +207,7 @@ void main() {
         syncEngine: engine,
         blossomCache: await openTestBlossomCache('account_isolation_test'),
         defaultDmRelays: [relay.url],
+        defaultNip65Relays: [relay.url],
       );
     });
 

@@ -81,20 +81,21 @@ const maxSignerAttempts = 3;
 const maxProcessingConcurrency = 8;
 
 /// Default DM relays used when user has no relay list configured
-const recommendedDmRelays = [
-  'wss://auth.nostr1.com',
+const recommendedDmRelays = ['wss://relay.nmail.li', 'wss://auth.nostr1.com'];
+
+/// Default NIP-65 relays used when user has no relay list configured
+const recommendedNip65Relays = [
   'wss://relay.nmail.li',
-  'wss://nostr-01.uid.ovh',
-  'wss://nostr-02.uid.ovh',
+  'wss://relay.ditto.pub',
+  'wss://nos.lol',
+  'wss://relay.primal.net',
 ];
 
 /// Default Blossom servers used when user has no server list configured
 const recommendedBlossomServers = [
-  'https://blossom.yakihonne.com',
   'https://blossom.nmail.li',
-  'https://blossom-01.uid.ovh',
-  'https://blossom-02.uid.ovh',
-  'https://blossom.primal.net',
+  'https://blossom.yakihonne.com',
+  'https://blossom.ditto.pub',
 ];
 
 /// NIP-78 application-specific data event kind

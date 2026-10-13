@@ -44,6 +44,7 @@ void main() {
         syncEngine: testSyncEngine(ndk, db),
         blossomCache: await openTestBlossomCache('user_folders_test'),
         defaultDmRelays: [relay.url],
+        defaultNip65Relays: [relay.url],
       );
     });
 

@@ -13,6 +13,9 @@ import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 class TestUser {
   String id;
   List<String>? defaultDmRelays;
+
+  /// [defaultDmRelays] when null.
+  List<String>? defaultNip65Relays;
   List<String>? defaultBlossomServers;
   Map<String, String>? nip05Overrides;
   String? schedulerDvm;
@@ -32,6 +35,7 @@ class TestUser {
   TestUser(
     this.id, {
     this.defaultDmRelays,
+    this.defaultNip65Relays,
     this.defaultBlossomServers,
     this.nip05Overrides,
     this.schedulerDvm,
@@ -45,7 +49,7 @@ class TestUser {
       NdkConfig(
         eventVerifier: Bip340EventVerifier(),
         cache: MemCacheManager(),
-        bootstrapRelays: defaultDmRelays ?? [],
+        bootstrapRelays: {...?defaultDmRelays, ...?defaultNip65Relays}.toList(),
       ),
     );
 
@@ -75,6 +79,7 @@ class TestUser {
       blossomCache: blossomCache,
       syncEngine: syncEngine,
       defaultDmRelays: defaultDmRelays,
+      defaultNip65Relays: defaultNip65Relays ?? defaultDmRelays,
       defaultBlossomServers: defaultBlossomServers,
       nip05Overrides: nip05Overrides,
       schedulerDvm: schedulerDvm,

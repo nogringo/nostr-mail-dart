@@ -42,6 +42,7 @@ void main() {
       syncEngine: testSyncEngine(ndk, db),
       blossomCache: await openTestBlossomCache('technical_details_test'),
       defaultDmRelays: [relay.url],
+      defaultNip65Relays: [relay.url],
     );
 
     await client.send(

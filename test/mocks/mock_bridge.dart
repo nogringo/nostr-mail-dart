@@ -82,6 +82,7 @@ class MockBridge {
       syncEngine: syncEngine,
       blossomCache: await openTestBlossomCache('bridge_$domain'),
       defaultDmRelays: defaultDmRelays,
+      defaultNip65Relays: defaultDmRelays,
       defaultBlossomServers: defaultBlossomServers,
       nip05Overrides: nip05Overrides,
     );

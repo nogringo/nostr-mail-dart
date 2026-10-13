@@ -192,7 +192,7 @@ class DraftManager {
 
   Future<void> _broadcast(Nip01Event wrap) => _broadcastQueue.broadcast(
     wrap,
-    relaySet: _relays.draftRelaySet(wrap.pubKey),
+    relaySet: _relays.draftWriteRelaySet(wrap.pubKey),
     pubkey: wrap.pubKey,
   );
 }

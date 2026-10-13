@@ -130,7 +130,12 @@ class NostrMailClient {
   /// Stop it when the app goes to the background, and share it with the other
   /// SDKs reading the same relays. The requests name the account's relay
   /// lists, which the engine looks up on its `discoveryRelays`: add
-  /// [defaultDmRelays] there, or a list published only on them is never found.
+  /// [defaultDmRelays] and [defaultNip65Relays] there, or a list published
+  /// only on them is never found.
+  ///
+  /// [defaultDmRelays] stand in for the DM relays (kind 10050) of an account
+  /// that publishes none, [defaultNip65Relays] for its NIP-65 relays (kind
+  /// 10002).
   ///
   /// Pass [broadcastQueue] to share a single queue across SDKs, tune its
   /// parameters, or inject a custom one in tests. When you provide your own
@@ -143,7 +148,7 @@ class NostrMailClient {
   /// URLs, so the queue looks them up itself instead of holding the call.
   /// When [broadcastQueue] is null, the client instantiates and starts an
   /// internal `OfflineBroadcast.withNdk(ndk, db: db)` that looks the lists up
-  /// on the public indexers plus [defaultDmRelays], and
+  /// on the public indexers plus the default relays, and
   /// `NostrMailClient.dispose()` disposes it.
   ///
   /// [blossomCache] is the local blob store that holds the encrypted bytes
@@ -166,6 +171,7 @@ class NostrMailClient {
     required BlossomCache blossomCache,
     required SyncEngine syncEngine,
     List<String>? defaultDmRelays,
+    List<String>? defaultNip65Relays,
     List<String>? defaultBlossomServers,
     Map<String, String>? nip05Overrides,
     OfflineBroadcast? broadcastQueue,
@@ -185,7 +191,11 @@ class NostrMailClient {
     final draftRepo = DraftRepository(database);
     final bus = EventBus();
 
-    final relayResolver = RelayResolver(ndk, defaultDmRelays: defaultDmRelays);
+    final relayResolver = RelayResolver(
+      ndk,
+      defaultDmRelays: defaultDmRelays,
+      defaultNip65Relays: defaultNip65Relays,
+    );
     final OfflineBroadcast queue;
     final bool ownsQueue;
     if (broadcastQueue != null) {

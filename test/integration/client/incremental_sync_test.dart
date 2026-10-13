@@ -60,6 +60,7 @@ void main() {
       blossomCache: await openTestBlossomCache('page_bob'),
       syncEngine: engine,
       defaultDmRelays: [relay.url],
+      defaultNip65Relays: [relay.url],
     );
     addTearDown(() async {
       await bob.dispose();
