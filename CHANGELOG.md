@@ -1,4 +1,4 @@
-## 6.0.2
+## 7.0.0
 
 - **Breaking**: require `sync_engine_shim_for_ndk: ^0.9.0`. The engine
   passed to `create` takes `store: SembastSyncStore(db)` instead of `db`, and
@@ -20,6 +20,10 @@
 - `getDrafts`, `watchDrafts` and `getDraftMime` take an optional `pubkey` to
   read the drafts of another account known to this device without switching
   to it. Only the drafts synced while that account was active are there.
+- An email or a draft whose MIME goes to Blossom carries the size of the
+  encrypted blob in a `size` tag, as
+  [Large MIME Support](https://github.com/nogringo/protocols/blob/main/nostr-mail-large-mime-support.md)
+  now defines.
 
 ## 6.0.1
 

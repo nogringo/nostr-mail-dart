@@ -1,3 +1,4 @@
+import 'package:http/http.dart' as http;
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
@@ -67,6 +68,12 @@ void main() {
     expect(email.mime.to?.first.email, isNotEmpty);
     expect(email.senderPubkey, sender.keyPair.publicKey);
     expect(email.recipientPubkey, recipient.keyPair.publicKey);
+
+    final rumor = (await recipient.client.getRumor(email.id))!;
+    final blob = await http.get(
+      Uri.parse('$blossomUrl/${rumor.getFirstTag('x')}'),
+    );
+    expect(rumor.getFirstTag('size'), '${blob.bodyBytes.length}');
   }, timeout: const Timeout(Duration(seconds: 300)));
 
   test('a large email keeps Bcc out of the blob recipients can open', () async {

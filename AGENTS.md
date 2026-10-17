@@ -1,7 +1,7 @@
 # nostr_mail — Agent Guide
 
 > Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59 gift-wrapped messages.
-> Version: 6.0.2 | Dart SDK: ^3.12.0 | Platforms: Android, iOS, Linux, macOS, Web, Windows
+> Version: 7.0.0 | Dart SDK: ^3.12.0 | Platforms: Android, iOS, Linux, macOS, Web, Windows
 
 ---
 

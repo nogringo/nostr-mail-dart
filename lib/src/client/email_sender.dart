@@ -556,6 +556,7 @@ class EmailSender {
       ['encryption-algorithm', 'aes-gcm'],
       ['decryption-key', encryptedBlob.key],
       ['decryption-nonce', encryptedBlob.nonce],
+      ['size', '${encryptedBlob.bytes.length}'],
     ];
   }
 
