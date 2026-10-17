@@ -50,7 +50,14 @@ void main() {
   group('PrivateSettings signatures', () {
     test('round-trip, with the fields this version does not know', () {
       final images = {
-        'abc': {'encryption_algorithm': 'aes-gcm', 'size': 8231},
+        'abc': {
+          'encryption_algorithm': 'aes-gcm',
+          'decryption_key': 'a2V5',
+          'decryption_nonce': 'bm9uY2U=',
+          'mime_type': 'image/png',
+          'size': 8231,
+          'thumbhash': 'xyz',
+        },
       };
       final json = {
         ...withSignatures,

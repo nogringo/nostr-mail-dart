@@ -35,6 +35,10 @@ class PrivateSettings {
   /// [identityKey] gives it.
   final Map<String, SignatureChoice>? identitySignatures;
 
+  /// Images the [signatures] show, keyed by the SHA-256 of their encrypted
+  /// blob: an `<img>` whose `src` is a key shows that image.
+  final Map<String, SignatureImage>? signatureImages;
+
   /// List of preferred bridge domains
   final List<String>? bridges;
 
@@ -71,6 +75,7 @@ class PrivateSettings {
     this.signatures,
     this.defaultSignature,
     this.identitySignatures,
+    this.signatureImages,
     this.bridges,
     this.identities,
     this.folders,
@@ -84,6 +89,7 @@ class PrivateSettings {
     this.signatures,
     this.defaultSignature,
     this.identitySignatures,
+    this.signatureImages,
     this.bridges,
     this.identities,
     required this._identityStrings,
@@ -115,6 +121,12 @@ class PrivateSettings {
               SignatureChoice.fromJson(value as Map<String, dynamic>),
             ),
           ),
+      signatureImages: (map['signature_images'] as Map<String, dynamic>?)?.map(
+        (key, value) => MapEntry(
+          key,
+          SignatureImage.fromJson(value as Map<String, dynamic>),
+        ),
+      ),
       bridges: (map['bridges'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList(),
@@ -131,6 +143,7 @@ class PrivateSettings {
     'signatures',
     'default_signature',
     'identity_signatures',
+    'signature_images',
     'bridges',
     'identities',
     'folders',
@@ -210,6 +223,11 @@ class PrivateSettings {
         (key, value) => MapEntry(key, value.toJson()),
       );
     }
+    if (signatureImages != null) {
+      map['signature_images'] = signatureImages!.map(
+        (key, value) => MapEntry(key, value.toJson()),
+      );
+    }
     if (bridges != null) map['bridges'] = bridges;
     if (identities != null) {
       map['identities'] = _identityStrings ?? identities!.map(_format).toList();
@@ -230,6 +248,7 @@ class PrivateSettings {
     List<Signature>? signatures,
     SignatureChoice? defaultSignature,
     Map<String, SignatureChoice>? identitySignatures,
+    Map<String, SignatureImage>? signatureImages,
     List<String>? bridges,
     List<MailAddress>? identities,
     List<MailEntry>? folders,
@@ -238,6 +257,7 @@ class PrivateSettings {
     bool clearSignatures = false,
     bool clearDefaultSignature = false,
     bool clearIdentitySignatures = false,
+    bool clearSignatureImages = false,
     bool clearBridges = false,
     bool clearIdentities = false,
     bool clearFolders = false,
@@ -253,6 +273,9 @@ class PrivateSettings {
       identitySignatures: clearIdentitySignatures
           ? null
           : (identitySignatures ?? this.identitySignatures),
+      signatureImages: clearSignatureImages
+          ? null
+          : (signatureImages ?? this.signatureImages),
       bridges: clearBridges ? null : (bridges ?? this.bridges),
       identities: clearIdentities ? null : (identities ?? this.identities),
       identityStrings: clearIdentities
@@ -273,6 +296,7 @@ class PrivateSettings {
     signatures: signatures,
     defaultSignature: defaultSignature,
     identitySignatures: identitySignatures,
+    signatureImages: signatureImages,
     bridges: bridges,
     identities: identities,
     identityStrings: _identityStrings,

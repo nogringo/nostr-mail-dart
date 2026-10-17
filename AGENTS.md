@@ -85,7 +85,8 @@ lib/
     │   ├── mail_entry.dart      # MailEntry (user folder or tag) + MailMatch condition
     │   ├── mail_event.dart      # Sealed class: EmailReceived, LabelAdded, etc.
     │   ├── private_settings.dart# Cross-device settings (signatures, bridges, identities, folders, tags)
-    │   ├── signature.dart       # Signature + SignatureChoice (new email / reply)
+    │   ├── signature.dart       # Signature, SignatureChoice (new email / reply), SignatureImage
+    │   ├── inline_signature.dart# A signature ready to send: cid: HTML + inline image parts
     │   ├── sender_verdict.dart  # SenderVerdict: allow or block
     │   ├── encrypted_blob.dart  # AES-GCM blob metadata
     │   ├── draft.dart           # Draft: a listing entry of a saved draft
@@ -97,6 +98,7 @@ lib/
     │   ├── label_manager.dart   # addLabel, removeLabel, broadcast labels
     │   ├── sender_manager.dart  # setSenderVerdicts, allowSender, blockSender: Adds to the senders list
     │   ├── settings_manager.dart# Private settings CRUD + cache
+    │   ├── signature_image_manager.dart # Signature images: encrypted Blossom blobs, cid: inlining
     │   ├── draft_manager.dart   # saveDraft, deleteDraft, list and watch drafts (NIP-37)
     │   └── relay_resolver.dart  # Shared helper: resolve DM & write relays (NIP-17/65)
     ├── storage/
@@ -139,7 +141,7 @@ test/
 │   └── send_receive/            # Delivery: Blossom, bridges, Cc/Bcc, public emails
 ├── mocks/
 │   ├── mock_relay.dart          # Full WebSocket Nostr relay mock
-│   ├── mock_blossom_server.dart # Shelf-based Blossom server mock (supports dynamic ports)
+│   ├── mock_blossom_server.dart # Shelf-based Blossom server mock (fixed port, 3000 by default)
 │   └── mock_bridge.dart         # SMTP bridge simulator using NostrMailClient
 └── helpers/
     ├── allow_sender.dart        # allowSender(), an allow verdict seeded in the store
@@ -222,6 +224,7 @@ await NostrMailClient.create({
 **Signatures:**
 - `createSignature` / `updateSignature` / `deleteSignature`, entries of `PrivateSettings.signatures` (`id`, `name`, `html`). `setDefaultSignature` / `setIdentitySignature` take a `SignatureChoice` (`newEmail`, `reply`: an id, `''` for none, null to fall back to the default). `renameIdentity` moves the identity's choice along.
 - `PrivateSettings.signatureFor(from, reply:)` resolves the signature of an email. `send()` inserts nothing: the composer does. While `signatures` is null, the plain text `signature` applies instead.
+- `addSignatureImage(bytes, mimeType:)` encrypts an image (AES-256-GCM), queues it for the account's Blossom servers and records it in `signature_images`; the key it returns goes in an `<img src>`. `getSignatureImage(key)` reads it back, checking the SHA-256 before decrypting. `removeSignatureImage(key)` drops the key and deletes the blob, best effort. `inlineSignature(signature)` gives the HTML with `cid:` URLs and the inline parts to add next to the body.
 - `identity_signatures` is keyed by the exact string of an identity, so `PrivateSettings` writes `identities` back as it read them and formats only the ones added.
 
 **Senders (local-first):**
@@ -258,7 +261,7 @@ await NostrMailClient.create({
    addTearDown(() async => relay.stopServer());
    ```
 5. **TestUser helper** encapsulates key generation, NDK init, both databases (`user.database` for repositories, `user.db` for sembast), and `NostrMailClient` instantiation.
-6. **MockBlossomServer dynamic ports** — use `MockBlossomServer()` without a port argument to let the OS assign a free port (`server.port` is available after `start()`).
+6. **MockBlossomServer ports**: the port is fixed (3000 when none is given), never picked by the OS. Give each test file its own (`MockBlossomServer(port: 3461)`), one no other file uses, as for `MockRelay`'s `explicitPort`.
 
 ### Running Tests Reliably
 
@@ -345,7 +348,7 @@ An email is bridged when its rumor carries a `mail-from` tag. Its `senderPubkey`
 | `TODO.md` | Roadmap: local-first sync queue, label cleanup, performance caching. |
 | `CHANGELOG.md` | Detailed per-version breaking changes and new features. |
 | `test/mocks/mock_relay.dart` | Very capable Nostr relay mock; reusable for any NDK-based test. |
-| `test/mocks/mock_blossom_server.dart` | Shelf-based Blossom mock with dynamic port support. |
+| `test/mocks/mock_blossom_server.dart` | Shelf-based Blossom mock on a fixed port. |
 
 ---
 

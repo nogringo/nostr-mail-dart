@@ -100,3 +100,79 @@ class SignatureChoice {
   @override
   String toString() => 'SignatureChoice(new: $newEmail, reply: $reply)';
 }
+
+/// How to read an image of the signatures: an AES-GCM encrypted blob on the
+/// account's Blossom servers, keyed in the settings by its SHA-256.
+class SignatureImage {
+  /// Always `aes-gcm` for now.
+  final String encryptionAlgorithm;
+
+  /// Base64.
+  final String decryptionKey;
+
+  /// Base64.
+  final String decryptionNonce;
+
+  /// Media type of the decrypted image, such as `image/png`.
+  final String mimeType;
+
+  /// Size of the encrypted blob in bytes.
+  final int size;
+
+  /// Pixel size of the decrypted image, as `<width>x<height>`.
+  final String? dim;
+
+  final Map<String, dynamic> _extra;
+
+  const SignatureImage({
+    this.encryptionAlgorithm = 'aes-gcm',
+    required this.decryptionKey,
+    required this.decryptionNonce,
+    required this.mimeType,
+    required this.size,
+    this.dim,
+  }) : _extra = const {};
+
+  const SignatureImage._({
+    required this.encryptionAlgorithm,
+    required this.decryptionKey,
+    required this.decryptionNonce,
+    required this.mimeType,
+    required this.size,
+    this.dim,
+    required this._extra,
+  });
+
+  factory SignatureImage.fromJson(Map<String, dynamic> json) =>
+      SignatureImage._(
+        encryptionAlgorithm: json['encryption_algorithm'] as String,
+        decryptionKey: json['decryption_key'] as String,
+        decryptionNonce: json['decryption_nonce'] as String,
+        mimeType: json['mime_type'] as String,
+        size: (json['size'] as num).toInt(),
+        dim: json['dim'] as String?,
+        extra: Map.of(json)..removeWhere((key, _) => _fields.contains(key)),
+      );
+
+  static const _fields = {
+    'encryption_algorithm',
+    'decryption_key',
+    'decryption_nonce',
+    'mime_type',
+    'size',
+    'dim',
+  };
+
+  Map<String, dynamic> toJson() => {
+    ..._extra,
+    'encryption_algorithm': encryptionAlgorithm,
+    'decryption_key': decryptionKey,
+    'decryption_nonce': decryptionNonce,
+    'mime_type': mimeType,
+    'size': size,
+    'dim': ?dim,
+  };
+
+  @override
+  String toString() => 'SignatureImage(mimeType: $mimeType, size: $size)';
+}

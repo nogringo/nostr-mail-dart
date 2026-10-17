@@ -20,6 +20,7 @@ import 'client/event_bus.dart';
 import 'client/label_manager.dart';
 import 'client/sender_manager.dart';
 import 'client/settings_manager.dart';
+import 'client/signature_image_manager.dart';
 import 'client/mail_sync.dart';
 import 'client/watch_manager.dart';
 import 'client/relay_resolver.dart';
@@ -32,15 +33,16 @@ import 'models/draft.dart';
 import 'models/email.dart';
 import 'models/email_summary.dart';
 import 'models/gift_wrap_state.dart';
+import 'models/inline_signature.dart';
 import 'models/mail_entry.dart';
 import 'models/mail_event.dart';
 import 'models/ndk_data_response.dart';
 import 'models/paginated_result.dart';
 import 'models/private_settings.dart';
-import 'models/signature.dart';
 import 'models/recipient.dart';
 import 'models/scheduled_email.dart';
 import 'models/sender_verdict.dart';
+import 'models/signature.dart';
 
 import 'storage/database.dart';
 import 'storage/draft_repository.dart';
@@ -75,6 +77,7 @@ class NostrMailClient {
   final LabelManager _labels;
   final SenderManager _senders;
   final SettingsManager _settings;
+  final SignatureImageManager _signatureImages;
   final MailSync _sync;
   final WatchManager _watch;
   final ScheduleManager _schedule;
@@ -339,6 +342,13 @@ class NostrMailClient {
       ),
       senders: SenderManager(ndk, senderRepo, relayResolver, bus, queue),
       settings: settingsManager,
+      signatureImages: SignatureImageManager(
+        ndk,
+        settingsManager,
+        blossomQueue,
+        blossomCache,
+        defaultBlossomServers: defaultBlossomServers,
+      ),
       sync: mailSync,
       watch: WatchManager(ndk, mailSync, bus, relayResolver),
       broadcastQueue: queue,
@@ -365,6 +375,7 @@ class NostrMailClient {
     required this._labels,
     required this._senders,
     required this._settings,
+    required this._signatureImages,
     required this._sync,
     required this._watch,
     required this._schedule,
@@ -1355,6 +1366,34 @@ class NostrMailClient {
   /// its signature choice along.
   Future<void> renameIdentity(MailAddress identity, MailAddress to) =>
       _settings.renameIdentity(identity, to);
+
+  /// Encrypts [bytes], an image of type [mimeType], queues it for the
+  /// account's Blossom servers and records it in
+  /// [PrivateSettings.signatureImages]. Returns its key: put it in the `src`
+  /// of an `<img>` of a signature. [dim] is its pixel size, as
+  /// `<width>x<height>`.
+  Future<String> addSignatureImage(
+    Uint8List bytes, {
+    required String mimeType,
+    String? dim,
+  }) => _signatureImages.add(bytes, mimeType: mimeType, dim: dim);
+
+  /// The decrypted image of [key], from the local cache or the Blossom
+  /// servers of [pubkey] (the logged account by default). Null when [key] is
+  /// not in [PrivateSettings.signatureImages]. Throws when no server holds
+  /// it, or when the blob does not match [key].
+  Future<Uint8List?> getSignatureImage(String key, {String? pubkey}) =>
+      _signatureImages.get(key, pubkey: pubkey);
+
+  /// Drops [key] from [PrivateSettings.signatureImages] and deletes its blob
+  /// from the Blossom servers, best effort. Signatures still showing it are
+  /// left as they are.
+  Future<void> removeSignatureImage(String key) => _signatureImages.remove(key);
+
+  /// [signature] ready to send: its images become inline parts, pointed at
+  /// with `cid:` URLs. Throws when an image cannot be read.
+  Future<InlineSignature> inlineSignature(Signature signature) =>
+      _signatureImages.inline(signature);
 
   // ── User folders and tags ───────────────────────────────────────────────
   //

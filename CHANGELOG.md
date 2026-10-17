@@ -42,6 +42,13 @@
   takes; `send()` inserts nothing. While `signatures` is absent, the plain
   text `signature` still applies. `renameIdentity` replaces an identity and
   moves its choice along.
+- Signature images: `addSignatureImage` encrypts an image, queues it for the
+  account's Blossom servers and records it in
+  `PrivateSettings.signatureImages`, returning the key an `<img src>` of a
+  signature names. `getSignatureImage` reads it back, `removeSignatureImage`
+  drops it and deletes its blob. `inlineSignature` turns a signature into
+  `cid:` HTML plus the inline parts to add to the message
+  (`InlineSignature.addImagesTo`).
 - **Fix**: rewriting the private settings rewrote every identity, quoting
   its name and turning a non-ASCII one into an encoded word
   (`=?utf8?Q?...?=`). Identities are written back as they were read.
