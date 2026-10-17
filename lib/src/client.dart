@@ -37,6 +37,7 @@ import 'models/mail_event.dart';
 import 'models/ndk_data_response.dart';
 import 'models/paginated_result.dart';
 import 'models/private_settings.dart';
+import 'models/signature.dart';
 import 'models/recipient.dart';
 import 'models/scheduled_email.dart';
 import 'models/sender_verdict.dart';
@@ -1317,6 +1318,43 @@ class NostrMailClient {
     clearTags: clearTags,
     pubkey: pubkey,
   );
+
+  // ── Signatures ──────────────────────────────────────────────────────────
+  //
+  // Stored in the private settings of the logged account. Pick the one an
+  // email takes with [PrivateSettings.signatureFor]: nothing is inserted on
+  // send.
+
+  /// Throws [NostrMailException] when [name] is empty after trimming, longer
+  /// than 64 characters, or already taken case-insensitively.
+  ///
+  /// Once [PrivateSettings.signatures] exists, the plain text
+  /// [PrivateSettings.signature] no longer applies.
+  Future<Signature> createSignature(String name, {required String html}) =>
+      _settings.createSignature(name, html: html);
+
+  Future<Signature> updateSignature(String id, {String? name, String? html}) =>
+      _settings.updateSignature(id, name: name, html: html);
+
+  /// A choice still naming [id] gives no signature.
+  Future<void> deleteSignature(String id) => _settings.deleteSignature(id);
+
+  /// The choice of every identity without its own, field by field. Null
+  /// removes it.
+  Future<void> setDefaultSignature(SignatureChoice? choice) =>
+      _settings.setDefaultSignature(choice);
+
+  /// The choice of [identity], an entry of [PrivateSettings.identities]. Null
+  /// removes it, falling back to the default choice.
+  Future<void> setIdentitySignature(
+    MailAddress identity,
+    SignatureChoice? choice,
+  ) => _settings.setIdentitySignature(identity, choice);
+
+  /// Replaces [identity] in [PrivateSettings.identities] with [to], and moves
+  /// its signature choice along.
+  Future<void> renameIdentity(MailAddress identity, MailAddress to) =>
+      _settings.renameIdentity(identity, to);
 
   // ── User folders and tags ───────────────────────────────────────────────
   //

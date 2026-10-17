@@ -24,6 +24,7 @@ export 'src/models/recipient.dart'
 export 'src/models/scheduled_email.dart'
     show ScheduledEmail, ScheduledEmailStatus;
 export 'src/models/sender_verdict.dart';
+export 'src/models/signature.dart';
 export 'src/services/email_parser.dart' show EmailParser;
 export 'src/utils/recipient_resolver.dart' show resolveRecipient;
 export 'src/storage/database.dart' show NostrMailDatabase;

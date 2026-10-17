@@ -33,6 +33,18 @@
   orders its array through `sortEntries`, and the first matching folder is
   picked in that order. `createFolder`, `createTag` and the reorders write
   the order and drop every `position` of the array.
+- Signatures, as
+  [Nostr Mail Settings](https://github.com/nogringo/protocols/blob/main/nostr-mail-settings.md)
+  now defines: `PrivateSettings.signatures`, `defaultSignature` and
+  `identitySignatures`, managed with `createSignature`, `updateSignature`,
+  `deleteSignature`, `setDefaultSignature` and `setIdentitySignature`.
+  `PrivateSettings.signatureFor(from, reply:)` gives the signature an email
+  takes; `send()` inserts nothing. While `signatures` is absent, the plain
+  text `signature` still applies. `renameIdentity` replaces an identity and
+  moves its choice along.
+- **Fix**: rewriting the private settings rewrote every identity, quoting
+  its name and turning a non-ASCII one into an encoded word
+  (`=?utf8?Q?...?=`). Identities are written back as they were read.
 
 ## 6.0.1
 

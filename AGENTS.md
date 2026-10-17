@@ -84,7 +84,8 @@ lib/
     │   ├── email.dart           # Email model wrapping MimeMessage
     │   ├── mail_entry.dart      # MailEntry (user folder or tag) + MailMatch condition
     │   ├── mail_event.dart      # Sealed class: EmailReceived, LabelAdded, etc.
-    │   ├── private_settings.dart# Cross-device settings (signature, bridges, identities, folders, tags)
+    │   ├── private_settings.dart# Cross-device settings (signatures, bridges, identities, folders, tags)
+    │   ├── signature.dart       # Signature + SignatureChoice (new email / reply)
     │   ├── sender_verdict.dart  # SenderVerdict: allow or block
     │   ├── encrypted_blob.dart  # AES-GCM blob metadata
     │   ├── draft.dart           # Draft: a listing entry of a saved draft
@@ -217,6 +218,11 @@ await NostrMailClient.create({
 **User folders and tags:**
 - `createFolder` / `updateFolder` / `reorderFolder` / `deleteFolder`, same for tags. Stored as `MailEntry` in the private settings (`folders`, `tags`), id of 16 random hex chars. Deleting one leaves its labels on the emails. The array order is the display order; `sortEntries` also honours the `position` of earlier clients, which `createFolder` and `reorderFolder` drop when they write the order.
 - `getSummaries(folder: id)` / `getSummaries(tag: id)`. A tag listing leaves out trash, spam and requests.
+
+**Signatures:**
+- `createSignature` / `updateSignature` / `deleteSignature`, entries of `PrivateSettings.signatures` (`id`, `name`, `html`). `setDefaultSignature` / `setIdentitySignature` take a `SignatureChoice` (`newEmail`, `reply`: an id, `''` for none, null to fall back to the default). `renameIdentity` moves the identity's choice along.
+- `PrivateSettings.signatureFor(from, reply:)` resolves the signature of an email. `send()` inserts nothing: the composer does. While `signatures` is null, the plain text `signature` applies instead.
+- `identity_signatures` is keyed by the exact string of an identity, so `PrivateSettings` writes `identities` back as it read them and formats only the ones added.
 
 **Senders (local-first):**
 - `allowSender(senderKey)` (Accept, Unblock), `blockSender(senderKey)` (Refuse, Block), `getSenderVerdict(senderKey)`, `onSender`.

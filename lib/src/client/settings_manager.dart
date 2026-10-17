@@ -11,6 +11,7 @@ import '../exceptions.dart';
 import '../models/mail_entry.dart';
 import '../models/ndk_data_response.dart';
 import '../models/private_settings.dart';
+import '../models/signature.dart';
 import '../storage/settings_repository.dart';
 import 'relay_resolver.dart';
 
@@ -342,17 +343,9 @@ class SettingsManager {
   }) async {
     final current = await _current();
     final entries = _entriesOf(current, folders: folders);
-    final taken = {
+    final id = _randomId({
       for (final e in [...?current.folders, ...?current.tags]) e.id,
-    };
-    String id;
-    do {
-      id = [
-        for (var i = 0; i < 8; i++)
-          _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
-      ].join();
-    } while (taken.contains(id));
-
+    });
     final entry = _validated(
       MailEntry(id: id, name: name, color: color, match: match),
       entries,
@@ -434,21 +427,146 @@ class SettingsManager {
   /// [entry] with its name trimmed, once checked against the other [entries]
   /// of its array.
   static MailEntry _validated(MailEntry entry, List<MailEntry> entries) {
-    final name = entry.name.trim();
-    if (name.isEmpty || name.length > 64) {
-      throw NostrMailException('A name takes 1 to 64 characters');
-    }
-    final lower = name.toLowerCase();
-    if (entries.any(
-      (e) => e.id != entry.id && e.name.trim().toLowerCase() == lower,
-    )) {
-      throw NostrMailException('"$name" already exists');
-    }
+    final name = _validName(entry.name, [
+      for (final e in entries)
+        if (e.id != entry.id) e.name,
+    ]);
     final color = entry.color;
     if (color != null && !_colorPattern.hasMatch(color)) {
       throw NostrMailException('A color is #RRGGBB, got "$color"');
     }
     return entry.copyWith(name: name);
+  }
+
+  /// [name] trimmed, once checked against the [others] of its array.
+  static String _validName(String name, Iterable<String> others) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed.length > 64) {
+      throw NostrMailException('A name takes 1 to 64 characters');
+    }
+    final lower = trimmed.toLowerCase();
+    if (others.any((e) => e.trim().toLowerCase() == lower)) {
+      throw NostrMailException('"$trimmed" already exists');
+    }
+    return trimmed;
+  }
+
+  /// 16 lowercase hex characters, not in [taken].
+  static String _randomId(Set<String> taken) {
+    String id;
+    do {
+      id = [
+        for (var i = 0; i < 8; i++)
+          _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+      ].join();
+    } while (taken.contains(id));
+    return id;
+  }
+
+  // ── Signatures ──────────────────────────────────────────────────────────
+
+  Future<Signature> createSignature(String name, {required String html}) async {
+    final current = await _current();
+    final signatures = current.signatures ?? const [];
+    final signature = Signature(
+      id: _randomId({for (final s in signatures) s.id}),
+      name: _validName(name, signatures.map((s) => s.name)),
+      html: html,
+    );
+    await setPrivateSettings(
+      current.copyWith(signatures: [...signatures, signature]),
+    );
+    return signature;
+  }
+
+  Future<Signature> updateSignature(
+    String id, {
+    String? name,
+    String? html,
+  }) async {
+    final current = await _current();
+    final signatures = current.signatures ?? const [];
+    final index = signatures.indexWhere((s) => s.id == id);
+    if (index < 0) throw NostrMailException('No such signature: $id');
+    final signature = signatures[index].copyWith(
+      name: name == null
+          ? null
+          : _validName(name, [
+              for (final s in signatures)
+                if (s.id != id) s.name,
+            ]),
+      html: html,
+    );
+    await setPrivateSettings(
+      current.copyWith(signatures: [...signatures]..[index] = signature),
+    );
+    return signature;
+  }
+
+  Future<void> deleteSignature(String id) async {
+    final current = await _current();
+    final signatures = current.signatures ?? const [];
+    if (!signatures.any((s) => s.id == id)) return;
+    await setPrivateSettings(
+      current.copyWith(
+        signatures: signatures.where((s) => s.id != id).toList(),
+      ),
+    );
+  }
+
+  Future<void> setDefaultSignature(SignatureChoice? choice) async {
+    final current = await _current();
+    await setPrivateSettings(
+      current.copyWith(
+        defaultSignature: choice,
+        clearDefaultSignature: choice == null,
+      ),
+    );
+  }
+
+  Future<void> setIdentitySignature(
+    MailAddress identity,
+    SignatureChoice? choice,
+  ) async {
+    final current = await _current();
+    final key = current.identityKey(identity);
+    if (key == null) throw NostrMailException('No such identity: $identity');
+    final choices = {...?current.identitySignatures};
+    if (choice == null) {
+      choices.remove(key);
+    } else {
+      choices[key] = choice;
+    }
+    await setPrivateSettings(current.copyWith(identitySignatures: choices));
+  }
+
+  Future<void> renameIdentity(MailAddress identity, MailAddress to) async {
+    final current = await _current();
+    final oldKey = current.identityKey(identity);
+    if (oldKey == null) throw NostrMailException('No such identity: $identity');
+    final existing = current.identityKey(to);
+    if (existing == oldKey) return;
+    if (existing != null) throw NostrMailException('"$to" already exists');
+
+    final identities = [...current.identities!];
+    identities[identities.indexWhere((e) => current.identityKey(e) == oldKey)] =
+        to;
+    final renamed = current.copyWith(identities: identities);
+    final choices = current.identitySignatures;
+    final choice = choices?[oldKey];
+    await setPrivateSettings(
+      choice == null
+          ? renamed
+          : renamed.copyWith(
+              identitySignatures: {
+                for (final e in choices!.entries)
+                  if (e.key == oldKey)
+                    renamed.identityKey(to)!: choice
+                  else
+                    e.key: e.value,
+              },
+            ),
+    );
   }
 
   void clearCache({String? pubkey}) {
