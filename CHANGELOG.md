@@ -24,6 +24,15 @@
   encrypted blob in a `size` tag, as
   [Large MIME Support](https://github.com/nogringo/protocols/blob/main/nostr-mail-large-mime-support.md)
   now defines.
+- **Breaking**: user folders and tags are ordered by their array order, as
+  [Nostr Mail Settings](https://github.com/nogringo/protocols/blob/main/nostr-mail-settings.md)
+  now defines. `updateFolder` and `updateTag` lose `position` and
+  `clearPosition`, the `MailEntry` constructor and `copyWith` lose
+  `position`: move an entry with the new `reorderFolder(id, index)` and
+  `reorderTag(id, index)`. A `position` written by an earlier client still
+  orders its array through `sortEntries`, and the first matching folder is
+  picked in that order. `createFolder`, `createTag` and the reorders write
+  the order and drop every `position` of the array.
 
 ## 6.0.1
 

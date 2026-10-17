@@ -285,10 +285,8 @@ class SettingsManager {
     String id, {
     String? name,
     String? color,
-    int? position,
     MailMatch? match,
     bool clearColor = false,
-    bool clearPosition = false,
     bool clearMatch = false,
   }) => _update(
     folders: true,
@@ -296,10 +294,8 @@ class SettingsManager {
     edit: (entry) => entry.copyWith(
       name: name,
       color: color,
-      position: position,
       match: match,
       clearColor: clearColor,
-      clearPosition: clearPosition,
       clearMatch: clearMatch,
     ),
   );
@@ -308,10 +304,8 @@ class SettingsManager {
     String id, {
     String? name,
     String? color,
-    int? position,
     MailMatch? match,
     bool clearColor = false,
-    bool clearPosition = false,
     bool clearMatch = false,
   }) => _update(
     folders: false,
@@ -319,13 +313,17 @@ class SettingsManager {
     edit: (entry) => entry.copyWith(
       name: name,
       color: color,
-      position: position,
       match: match,
       clearColor: clearColor,
-      clearPosition: clearPosition,
       clearMatch: clearMatch,
     ),
   );
+
+  Future<void> reorderFolder(String id, int index) =>
+      _reorder(folders: true, id: id, index: index);
+
+  Future<void> reorderTag(String id, int index) =>
+      _reorder(folders: false, id: id, index: index);
 
   /// Emails labelled with the folder keep the label, under its id.
   Future<void> deleteFolder(String id) => _delete(folders: true, id: id);
@@ -355,20 +353,36 @@ class SettingsManager {
       ].join();
     } while (taken.contains(id));
 
-    final positions = entries.map((e) => e.position).nonNulls;
     final entry = _validated(
-      MailEntry(
-        id: id,
-        name: name,
-        color: color,
-        position: positions.isEmpty ? 0 : positions.reduce(max) + 1,
-        match: match,
-      ),
+      MailEntry(id: id, name: name, color: color, match: match),
       entries,
     );
-    await _save(current, folders: folders, entries: [...entries, entry]);
+    await _save(
+      current,
+      folders: folders,
+      entries: [..._ordered(entries), entry],
+    );
     return entry;
   }
+
+  Future<void> _reorder({
+    required bool folders,
+    required String id,
+    required int index,
+  }) async {
+    final current = await _current();
+    final entries = _ordered(_entriesOf(current, folders: folders));
+    final from = entries.indexWhere((e) => e.id == id);
+    if (from < 0) throw NostrMailException('No such folder or tag: $id');
+    final entry = entries.removeAt(from);
+    entries.insert(index.clamp(0, entries.length), entry);
+    await _save(current, folders: folders, entries: entries);
+  }
+
+  /// [entries] in display order, as the array order alone carries it.
+  static List<MailEntry> _ordered(List<MailEntry> entries) => [
+    for (final e in sortEntries(entries)) e.copyWith(clearPosition: true),
+  ];
 
   Future<MailEntry> _update({
     required bool folders,

@@ -28,13 +28,27 @@ void main() {
       expect(json.containsKey('position'), isFalse);
     });
 
-    test('sorts by position, entries without one last, ties by name', () {
+    test('keeps the array order when no entry has a position', () {
       final sorted = sortEntries(const [
         MailEntry(id: 'a', name: 'Zeta'),
-        MailEntry(id: 'b', name: 'Beta', position: 1),
+        MailEntry(id: 'b', name: 'Beta'),
         MailEntry(id: 'c', name: 'Alpha'),
-        MailEntry(id: 'd', name: 'Delta', position: 0),
-        MailEntry(id: 'e', name: 'Alpha', position: 1),
+      ]);
+
+      expect(sorted.map((e) => e.id), ['a', 'b', 'c']);
+    });
+
+    test('sorts by a legacy position, entries without one last, ties by '
+        'name', () {
+      final sorted = sortEntries([
+        for (final (id, name, position) in [
+          ('a', 'Zeta', null),
+          ('b', 'Beta', 1),
+          ('c', 'Alpha', null),
+          ('d', 'Delta', 0),
+          ('e', 'Alpha', 1),
+        ])
+          MailEntry.fromJson({'id': id, 'name': name, 'position': ?position}),
       ]);
 
       expect(sorted.map((e) => e.id), ['d', 'e', 'b', 'c', 'a']);

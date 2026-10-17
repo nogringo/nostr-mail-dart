@@ -53,21 +53,59 @@ void main() {
       await relay.stopServer();
     });
 
-    test('creates entries with a fresh id, a trimmed name and the next '
-        'position', () async {
+    test('creates entries at the end, with a fresh id and a trimmed '
+        'name', () async {
       final first = await client.createFolder('  Invoices ');
       final second = await client.createFolder('GitHub', color: '#C86432');
       final tag = await client.createTag('Invoices');
 
       expect(first.id, matches(RegExp(r'^[0-9a-f]{16}$')));
       expect(first.name, 'Invoices');
-      expect(first.position, 0);
-      expect(second.position, 1);
       expect({first.id, second.id, tag.id}, hasLength(3));
 
       final settings = client.cachedPrivateSettings()!;
       expect(settings.folders!.map((f) => f.name), ['Invoices', 'GitHub']);
       expect(settings.tags!.single.name, 'Invoices');
+    });
+
+    test('reorders entries as the array order', () async {
+      final a = await client.createFolder('A');
+      final b = await client.createFolder('B');
+      final c = await client.createFolder('C');
+
+      await client.reorderFolder(c.id, 0);
+      expect(client.cachedPrivateSettings()!.folders!.map((f) => f.id), [
+        c.id,
+        a.id,
+        b.id,
+      ]);
+
+      await client.reorderFolder(c.id, 99);
+      expect(client.cachedPrivateSettings()!.folders!.map((f) => f.id), [
+        a.id,
+        b.id,
+        c.id,
+      ]);
+    });
+
+    test('writing the order drops the positions of earlier clients', () async {
+      await client.updatePrivateSettings(
+        folders: [
+          for (final (id, name, position) in [
+            ('aaaaaaaaaaaaaaaa', 'Zeta', 0),
+            ('bbbbbbbbbbbbbbbb', 'Beta', null),
+            ('cccccccccccccccc', 'Alpha', 1),
+          ])
+            MailEntry.fromJson({'id': id, 'name': name, 'position': ?position}),
+        ],
+      );
+
+      final created = await client.createFolder('New');
+
+      final folders = client.cachedPrivateSettings()!.folders!;
+      expect(folders.map((f) => f.name), ['Zeta', 'Alpha', 'Beta', 'New']);
+      expect(folders.map((f) => f.toJson()['position']), everyElement(isNull));
+      expect(folders.last.id, created.id);
     });
 
     test('rejects a taken, empty or too long name and a bad color', () async {

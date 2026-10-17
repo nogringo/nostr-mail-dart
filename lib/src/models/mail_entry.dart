@@ -12,7 +12,8 @@ class MailEntry {
   /// `#RRGGBB`. When absent, derive one from [id].
   final String? color;
 
-  /// Sort key, ascending. An entry without one sorts last, see [sortEntries].
+  /// Sort key of earlier clients, see [sortEntries]. Writing the order
+  /// clears it from every entry.
   final int? position;
   final MailMatch? match;
 
@@ -22,9 +23,9 @@ class MailEntry {
     required this.id,
     required this.name,
     this.color,
-    this.position,
     this.match,
-  }) : _extra = const {};
+  }) : position = null,
+       _extra = const {};
 
   const MailEntry._({
     required this.id,
@@ -61,7 +62,6 @@ class MailEntry {
   MailEntry copyWith({
     String? name,
     String? color,
-    int? position,
     MailMatch? match,
     bool clearColor = false,
     bool clearPosition = false,
@@ -70,7 +70,7 @@ class MailEntry {
     id: id,
     name: name ?? this.name,
     color: clearColor ? null : (color ?? this.color),
-    position: clearPosition ? null : (position ?? this.position),
+    position: clearPosition ? null : position,
     match: clearMatch ? null : (match ?? this.match),
     extra: _extra,
   );
@@ -171,15 +171,19 @@ class MailMatch {
   }
 }
 
-/// [entries] in display order: by [MailEntry.position], entries without one
-/// last, ties broken by name.
-List<MailEntry> sortEntries(Iterable<MailEntry> entries) =>
-    entries.toList()..sort((a, b) {
-      final byPosition = switch ((a.position, b.position)) {
-        (null, null) => 0,
-        (null, _) => 1,
-        (_, null) => -1,
-        (final x?, final y?) => x.compareTo(y),
-      };
-      return byPosition != 0 ? byPosition : a.name.compareTo(b.name);
-    });
+/// The entries of one array in display order: array order, unless an entry
+/// carries a [MailEntry.position] written by an earlier client. Then by
+/// position, entries without one last, ties broken by name.
+List<MailEntry> sortEntries(Iterable<MailEntry> entries) {
+  final list = entries.toList();
+  if (list.every((e) => e.position == null)) return list;
+  return list..sort((a, b) {
+    final byPosition = switch ((a.position, b.position)) {
+      (null, null) => 0,
+      (null, _) => 1,
+      (_, null) => -1,
+      (final x?, final y?) => x.compareTo(y),
+    };
+    return byPosition != 0 ? byPosition : a.name.compareTo(b.name);
+  });
+}

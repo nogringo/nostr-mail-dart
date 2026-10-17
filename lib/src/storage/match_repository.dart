@@ -91,7 +91,7 @@ class _Rules {
   final List<MailEntry> tags;
 
   _Rules(Iterable<MailEntry> folders, Iterable<MailEntry> tags)
-    : folders = sortEntries(folders.where((f) => f.match != null)),
+    : folders = sortEntries(folders).where((f) => f.match != null).toList(),
       tags = tags.where((t) => t.match != null).toList();
 
   factory _Rules.parse(String? settingsJson) {

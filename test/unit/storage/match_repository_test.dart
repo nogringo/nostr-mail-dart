@@ -87,13 +87,40 @@ void main() {
     Future<List<String>> ids(EmailQuery query) async =>
         (await emails.query(query)).items.map((e) => e.id).toList()..sort();
 
-    test('an email falls to the first matching folder, by position', () async {
+    test(
+      'an email falls to the first matching folder, in array order',
+      () async {
+        await saveSettings(
+          folders: [
+            {
+              'id': github,
+              'name': 'GitHub',
+              'match': {
+                'from': ['github.com'],
+              },
+            },
+            {
+              'id': invoices,
+              'name': 'Invoices',
+              'match': {
+                'subject': ['invoice'],
+              },
+            },
+          ],
+        );
+        await saveEmail('both', from: 'billing@github.com', subject: 'Invoice');
+
+        expect(await folderOf('both'), github);
+      },
+    );
+
+    test('a position written by an earlier client orders the folders, even '
+        'on a folder without a match', () async {
       await saveSettings(
         folders: [
           {
             'id': invoices,
             'name': 'Invoices',
-            'position': 1,
             'match': {
               'subject': ['invoice'],
             },
@@ -101,24 +128,53 @@ void main() {
           {
             'id': github,
             'name': 'GitHub',
-            'position': 0,
             'match': {
               'from': ['github.com'],
             },
           },
+          {'id': 'aaaaaaaaaaaaaaaa', 'name': 'Plain', 'position': 0},
         ],
       );
       await saveEmail('both', from: 'billing@github.com', subject: 'Invoice');
-      await saveEmail('invoice', subject: 'Your invoice');
-      await saveEmail('plain');
 
       expect(await folderOf('both'), github);
-      expect(await folderOf('invoice'), invoices);
-      expect(await folderOf('plain'), 'inbox');
-      expect(await ids(EmailQuery(recipientPubkey: rpk, folder: invoices)), [
-        'invoice',
-      ]);
     });
+
+    test(
+      'an email falls to the first matching folder, by legacy position',
+      () async {
+        await saveSettings(
+          folders: [
+            {
+              'id': invoices,
+              'name': 'Invoices',
+              'position': 1,
+              'match': {
+                'subject': ['invoice'],
+              },
+            },
+            {
+              'id': github,
+              'name': 'GitHub',
+              'position': 0,
+              'match': {
+                'from': ['github.com'],
+              },
+            },
+          ],
+        );
+        await saveEmail('both', from: 'billing@github.com', subject: 'Invoice');
+        await saveEmail('invoice', subject: 'Your invoice');
+        await saveEmail('plain');
+
+        expect(await folderOf('both'), github);
+        expect(await folderOf('invoice'), invoices);
+        expect(await folderOf('plain'), 'inbox');
+        expect(await ids(EmailQuery(recipientPubkey: rpk, folder: invoices)), [
+          'invoice',
+        ]);
+      },
+    );
 
     test('a folder label wins over a match', () async {
       await saveSettings(

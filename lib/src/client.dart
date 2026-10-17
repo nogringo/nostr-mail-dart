@@ -1335,21 +1335,22 @@ class NostrMailClient {
     String id, {
     String? name,
     String? color,
-    int? position,
     MailMatch? match,
     bool clearColor = false,
-    bool clearPosition = false,
     bool clearMatch = false,
   }) => _settings.updateFolder(
     id,
     name: name,
     color: color,
-    position: position,
     match: match,
     clearColor: clearColor,
-    clearPosition: clearPosition,
     clearMatch: clearMatch,
   );
+
+  /// Moves the folder to [index] of the display order, clamped to the list.
+  /// Writes the whole order as the array order.
+  Future<void> reorderFolder(String id, int index) =>
+      _settings.reorderFolder(id, index);
 
   /// Removes the folder from the settings only: emails moved into it keep
   /// their label, and list under its id.
@@ -1362,21 +1363,22 @@ class NostrMailClient {
     String id, {
     String? name,
     String? color,
-    int? position,
     MailMatch? match,
     bool clearColor = false,
-    bool clearPosition = false,
     bool clearMatch = false,
   }) => _settings.updateTag(
     id,
     name: name,
     color: color,
-    position: position,
     match: match,
     clearColor: clearColor,
-    clearPosition: clearPosition,
     clearMatch: clearMatch,
   );
+
+  /// Moves the tag to [index] of the display order, clamped to the list.
+  /// Writes the whole order as the array order.
+  Future<void> reorderTag(String id, int index) =>
+      _settings.reorderTag(id, index);
 
   /// Removes the tag from the settings only: emails tagged with it keep
   /// their label, and list under its id.
