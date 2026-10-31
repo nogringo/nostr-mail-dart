@@ -39,6 +39,9 @@
 - A relay list lookup that no relay answered throws `NetworkRequiredException`
   with the `relay-lists` operation, instead of passing for a missing list.
   Looking up another account's lists never authenticates (NIP-42).
+- `getReceivingRelays(pubkey)` names the relays a send reaches a pubkey on,
+  with `isPublic` for the To and Cc of a public email. An empty list is a
+  recipient the send would refuse, so a composer can tell before sending.
 
 ## 7.0.0
 

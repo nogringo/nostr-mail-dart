@@ -30,6 +30,19 @@ void main() {
     return u;
   }
 
+  Future<void> publishList(TestUser user, int kind, List<List<String>> tags) =>
+      user.ndk.broadcast
+          .broadcast(
+            nostrEvent: Nip01Event(
+              pubKey: user.keyPair.publicKey,
+              kind: kind,
+              tags: tags,
+              content: '',
+            ),
+            specificRelays: [directory.url],
+          )
+          .broadcastDoneFuture;
+
   List<Nip01Event> wrapsFor(MockRelay relay, String pubkey) => relay
       .matchingEvents(Filter(kinds: [giftWrapKind]))
       .where((e) => e.getFirstTag('p') == pubkey)
@@ -48,20 +61,10 @@ void main() {
         publishesRelayLists: false,
       );
       final recipientPubkey = recipient.keyPair.publicKey;
-      await recipient.ndk.broadcast
-          .broadcast(
-            nostrEvent: Nip01Event(
-              pubKey: recipientPubkey,
-              kind: relayListKind,
-              tags: [
-                ['r', directory.url, 'write'],
-                ['r', inbox.url, 'read'],
-              ],
-              content: '',
-            ),
-            specificRelays: [directory.url],
-          )
-          .broadcastDoneFuture;
+      await publishList(recipient, relayListKind, [
+        ['r', directory.url, 'write'],
+        ['r', inbox.url, 'read'],
+      ]);
 
       await sender.client.send(
         to: [NostrRecipient.fromPubkey(recipientPubkey)],
@@ -109,4 +112,35 @@ void main() {
       expect(directory.matchingEvents(Filter(kinds: [giftWrapKind])), isEmpty);
     },
   );
+
+  test('getReceivingRelays names the relays a send reaches', () async {
+    final inbox = MockRelay(name: 'receiving-inbox');
+    await inbox.startServer();
+    addTearDown(() async => inbox.stopServer());
+
+    final sender = await user('receiving_sender');
+    final recipient = await user(
+      'receiving_recipient',
+      publishesRelayLists: false,
+    );
+    await publishList(recipient, relayListKind, [
+      ['r', directory.url, 'write'],
+      ['r', inbox.url, 'read'],
+    ]);
+    await publishList(recipient, dmRelayListKind, [
+      ['relay', directory.url],
+    ]);
+    final pubkey = recipient.keyPair.publicKey;
+
+    expect(await sender.client.getReceivingRelays(pubkey), [directory.url]);
+    expect(await sender.client.getReceivingRelays(pubkey, isPublic: true), [
+      inbox.url,
+    ]);
+    expect(
+      await sender.client.getReceivingRelays(
+        Bip340.generatePrivateKey().publicKey,
+      ),
+      isEmpty,
+    );
+  });
 }
