@@ -113,33 +113,30 @@ void main() {
     },
   );
 
-  test('getReceivingRelays names the relays a send reaches', () async {
-    final inbox = MockRelay(name: 'receiving-inbox');
+  test('getReadRelays leaves the DM relay list out', () async {
+    final inbox = MockRelay(name: 'read-inbox');
     await inbox.startServer();
     addTearDown(() async => inbox.stopServer());
 
-    final sender = await user('receiving_sender');
-    final recipient = await user(
-      'receiving_recipient',
-      publishesRelayLists: false,
-    );
-    await publishList(recipient, relayListKind, [
+    final sender = await user('read_sender');
+    final listed = await user('read_listed', publishesRelayLists: false);
+    await publishList(listed, relayListKind, [
       ['r', directory.url, 'write'],
       ['r', inbox.url, 'read'],
     ]);
-    await publishList(recipient, dmRelayListKind, [
+    await publishList(listed, dmRelayListKind, [
       ['relay', directory.url],
     ]);
-    final pubkey = recipient.keyPair.publicKey;
-
-    expect(await sender.client.getReceivingRelays(pubkey), [directory.url]);
-    expect(await sender.client.getReceivingRelays(pubkey, isPublic: true), [
-      inbox.url,
+    final dmOnly = await user('read_dm_only', publishesRelayLists: false);
+    await publishList(dmOnly, dmRelayListKind, [
+      ['relay', directory.url],
     ]);
+
+    final client = sender.client;
+    expect(await client.getReadRelays(listed.keyPair.publicKey), [inbox.url]);
+    expect(await client.getReadRelays(dmOnly.keyPair.publicKey), isEmpty);
     expect(
-      await sender.client.getReceivingRelays(
-        Bip340.generatePrivateKey().publicKey,
-      ),
+      await client.getReadRelays(Bip340.generatePrivateKey().publicKey),
       isEmpty,
     );
   });

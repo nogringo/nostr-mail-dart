@@ -1161,18 +1161,13 @@ class NostrMailClient {
     beforePublish: beforePublish,
   );
 
-  /// The relays a send reaches [pubkey] on: its DM relays (kind 10050), or its
-  /// NIP-65 read relays when it publishes none. Pass [isPublic] for the To and
-  /// Cc of a public email, reached on their NIP-65 read relays alone. Empty
-  /// when a send to [pubkey] would throw [UnreachableRecipientsException].
+  /// The NIP-65 read relays of [pubkey]. A recipient with some can be sent any
+  /// email, public or private, whether or not it lists DM relays. Empty when it
+  /// publishes no NIP-65, or one without read relays.
   ///
   /// Throws [NetworkRequiredException] when no relay answered the lookup.
-  Future<List<String>> getReceivingRelays(
-    String pubkey, {
-    bool isPublic = false,
-  }) => isPublic
-      ? _relayResolver.getReadRelays(pubkey)
-      : _relayResolver.getDmRelays(pubkey);
+  Future<List<String>> getReadRelays(String pubkey) =>
+      _relayResolver.getReadRelays(pubkey);
 
   /// How far the Sent email [emailId] went, recipient by recipient, updated
   /// as the queues retry. Emits null for an email this device did not send.
