@@ -37,7 +37,7 @@ abstract class Delivery {
   bool get saveSelfCopy;
 
   Future<void> deliverEvent(Nip01Event event, List<String> relays);
-  Future<void> deliverGiftWrap(
+  Future<OutgoingEvent> deliverGiftWrap(
     Nip01Event rumor,
     String recipientPubkey, {
     OnGiftWrapBuilt? onBuilt,
@@ -83,7 +83,7 @@ class BroadcastDelivery implements Delivery {
   }
 
   @override
-  Future<void> deliverGiftWrap(
+  Future<OutgoingEvent> deliverGiftWrap(
     Nip01Event rumor,
     String recipientPubkey, {
     OnGiftWrapBuilt? onBuilt,
@@ -96,6 +96,7 @@ class BroadcastDelivery implements Delivery {
       relaySet: UrlSet.explicit(out.relays),
       pubkey: senderPubkey,
     );
+    return out;
   }
 }
 
@@ -119,7 +120,7 @@ class ScheduleDelivery implements Delivery {
   }
 
   @override
-  Future<void> deliverGiftWrap(
+  Future<OutgoingEvent> deliverGiftWrap(
     Nip01Event rumor,
     String recipientPubkey, {
     OnGiftWrapBuilt? onBuilt,
@@ -127,5 +128,6 @@ class ScheduleDelivery implements Delivery {
     final out = await _buildGiftWrap(rumor, recipientPubkey);
     await onBuilt?.call(out);
     items.add(out);
+    return out;
   }
 }

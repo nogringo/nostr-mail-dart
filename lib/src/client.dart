@@ -14,6 +14,7 @@ import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'client/delivery_manager.dart';
 import 'client/draft_manager.dart';
 import 'client/email_sender.dart';
 import 'client/event_bus.dart';
@@ -30,6 +31,7 @@ import 'constants.dart';
 import 'exceptions.dart';
 import 'models/attachment_ref.dart';
 import 'models/draft.dart';
+import 'models/email_delivery.dart';
 import 'models/email.dart';
 import 'models/email_summary.dart';
 import 'models/gift_wrap_state.dart';
@@ -45,6 +47,7 @@ import 'models/sender_verdict.dart';
 import 'models/signature.dart';
 
 import 'storage/database.dart';
+import 'storage/delivery_repository.dart';
 import 'storage/draft_repository.dart';
 import 'storage/email_repository.dart';
 import 'storage/gift_wrap_repository.dart';
@@ -72,8 +75,10 @@ class NostrMailClient {
   final TombstoneRepository _tombstoneRepo;
   final SenderRepository _senderRepo;
   final DraftRepository _draftRepo;
+  final DeliveryRepository _deliveryRepo;
   final EventBus _bus;
   final EmailSender _sender;
+  final DeliveryManager _deliveries;
   final LabelManager _labels;
   final SenderManager _senders;
   final SettingsManager _settings;
@@ -193,6 +198,7 @@ class NostrMailClient {
     final tombstoneRepo = TombstoneRepository(database);
     final senderRepo = SenderRepository(database);
     final draftRepo = DraftRepository(database);
+    final deliveryRepo = DeliveryRepository(database);
     final bus = EventBus();
 
     final relayResolver = RelayResolver(
@@ -288,6 +294,7 @@ class NostrMailClient {
       blossomCache,
       emailRepo,
       giftWrapRepo,
+      deliveryRepo,
       defaultBlossomServers: defaultBlossomServers,
       nip05Overrides: nip05Overrides,
     );
@@ -316,10 +323,18 @@ class NostrMailClient {
       tombstoneRepo: tombstoneRepo,
       senderRepo: senderRepo,
       draftRepo: draftRepo,
+      deliveryRepo: deliveryRepo,
       bus: bus,
       blossomCache: blossomCache,
       defaultBlossomServers: defaultBlossomServers,
       sender: emailSender,
+      deliveries: DeliveryManager(
+        ndk,
+        deliveryRepo,
+        queue,
+        blossomQueue,
+        defaultBlossomServers: defaultBlossomServers,
+      ),
       schedule: scheduleManager,
       drafts: DraftManager(
         ndk,
@@ -369,9 +384,11 @@ class NostrMailClient {
     required this._tombstoneRepo,
     required this._senderRepo,
     required this._draftRepo,
+    required this._deliveryRepo,
     required this._bus,
     required this._blossomCache,
     required this._sender,
+    required this._deliveries,
     required this._labels,
     required this._senders,
     required this._settings,
@@ -1149,6 +1166,20 @@ class NostrMailClient {
     beforePublish: beforePublish,
   );
 
+  /// How far the Sent email [emailId] went, recipient by recipient, updated
+  /// as the queues retry. Emits null for an email this device did not send.
+  ///
+  /// A recipient is delivered once one of its relays holds the event and, for
+  /// an email sent as a Blossom blob, one of the servers it reads holds the
+  /// blob.
+  Stream<EmailDelivery?> watchDelivery(String emailId) =>
+      _deliveries.watch(emailId, senderPubkey: _requirePubkey());
+
+  /// Pushes again every event and blob of the Sent email [emailId] that some
+  /// relay or server still owes, refusals included.
+  Future<void> retryDelivery(String emailId) =>
+      _deliveries.retry(emailId, senderPubkey: _requirePubkey());
+
   // ── Scheduling ──────────────────────────────────────────────────────────
 
   /// Schedule an email to be sent at [at] by a Scheduler DVM. Returns the
@@ -1490,6 +1521,7 @@ class NostrMailClient {
       _tombstoneRepo.clearAll(recipientPubkey: pubkey),
       _senderRepo.clearAll(recipientPubkey: pubkey),
       _draftRepo.clearAll(recipientPubkey: pubkey),
+      _deliveryRepo.clearAll(senderPubkey: pubkey),
       _blossomCache.unpinAll(blobPinHolder(pubkey)),
       if (_ownsBroadcastQueue)
         broadcastQueue.clearLocalAccountData(pubkey: pubkey),
@@ -1519,6 +1551,7 @@ class NostrMailClient {
       _tombstoneRepo.clearAll(),
       _senderRepo.clearAll(),
       _draftRepo.clearAll(),
+      _deliveryRepo.clearAll(),
       if (_ownsBroadcastQueue) broadcastQueue.clearAllLocalData(),
       if (_ownsBlossomUploadQueue) blossomUploadQueue.clearAllLocalData(),
     ]);

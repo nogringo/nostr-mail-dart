@@ -3273,6 +3273,503 @@ class UnsealedCompanion extends UpdateCompanion<UnsealedRow> {
   }
 }
 
+class Deliveries extends Table with TableInfo<Deliveries, DeliveryRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  Deliveries(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _emailIdMeta = const VerificationMeta(
+    'emailId',
+  );
+  late final GeneratedColumn<String> emailId = GeneratedColumn<String>(
+    'email_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _senderPubkeyMeta = const VerificationMeta(
+    'senderPubkey',
+  );
+  late final GeneratedColumn<String> senderPubkey = GeneratedColumn<String>(
+    'sender_pubkey',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _recipientPubkeyMeta = const VerificationMeta(
+    'recipientPubkey',
+  );
+  late final GeneratedColumn<String> recipientPubkey = GeneratedColumn<String>(
+    'recipient_pubkey',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _smtpAddressesMeta = const VerificationMeta(
+    'smtpAddresses',
+  );
+  late final GeneratedColumn<String> smtpAddresses = GeneratedColumn<String>(
+    'smtp_addresses',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT \'[]\'',
+    defaultValue: const CustomExpression('\'[]\''),
+  );
+  static const VerificationMeta _eventIdMeta = const VerificationMeta(
+    'eventId',
+  );
+  late final GeneratedColumn<String> eventId = GeneratedColumn<String>(
+    'event_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _relaysMeta = const VerificationMeta('relays');
+  late final GeneratedColumn<String> relays = GeneratedColumn<String>(
+    'relays',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  static const VerificationMeta _blobSha256Meta = const VerificationMeta(
+    'blobSha256',
+  );
+  late final GeneratedColumn<String> blobSha256 = GeneratedColumn<String>(
+    'blob_sha256',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: '',
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    emailId,
+    senderPubkey,
+    recipientPubkey,
+    smtpAddresses,
+    eventId,
+    relays,
+    blobSha256,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'deliveries';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DeliveryRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('email_id')) {
+      context.handle(
+        _emailIdMeta,
+        emailId.isAcceptableOrUnknown(data['email_id']!, _emailIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_emailIdMeta);
+    }
+    if (data.containsKey('sender_pubkey')) {
+      context.handle(
+        _senderPubkeyMeta,
+        senderPubkey.isAcceptableOrUnknown(
+          data['sender_pubkey']!,
+          _senderPubkeyMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_senderPubkeyMeta);
+    }
+    if (data.containsKey('recipient_pubkey')) {
+      context.handle(
+        _recipientPubkeyMeta,
+        recipientPubkey.isAcceptableOrUnknown(
+          data['recipient_pubkey']!,
+          _recipientPubkeyMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_recipientPubkeyMeta);
+    }
+    if (data.containsKey('smtp_addresses')) {
+      context.handle(
+        _smtpAddressesMeta,
+        smtpAddresses.isAcceptableOrUnknown(
+          data['smtp_addresses']!,
+          _smtpAddressesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('event_id')) {
+      context.handle(
+        _eventIdMeta,
+        eventId.isAcceptableOrUnknown(data['event_id']!, _eventIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_eventIdMeta);
+    }
+    if (data.containsKey('relays')) {
+      context.handle(
+        _relaysMeta,
+        relays.isAcceptableOrUnknown(data['relays']!, _relaysMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_relaysMeta);
+    }
+    if (data.containsKey('blob_sha256')) {
+      context.handle(
+        _blobSha256Meta,
+        blobSha256.isAcceptableOrUnknown(data['blob_sha256']!, _blobSha256Meta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {emailId, recipientPubkey};
+  @override
+  DeliveryRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DeliveryRow(
+      emailId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}email_id'],
+      )!,
+      senderPubkey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sender_pubkey'],
+      )!,
+      recipientPubkey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recipient_pubkey'],
+      )!,
+      smtpAddresses: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}smtp_addresses'],
+      )!,
+      eventId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}event_id'],
+      )!,
+      relays: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}relays'],
+      )!,
+      blobSha256: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}blob_sha256'],
+      ),
+    );
+  }
+
+  @override
+  Deliveries createAlias(String alias) {
+    return Deliveries(attachedDatabase, alias);
+  }
+
+  @override
+  List<String> get customConstraints => const [
+    'PRIMARY KEY(email_id, recipient_pubkey)',
+  ];
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class DeliveryRow extends DataClass implements Insertable<DeliveryRow> {
+  final String emailId;
+  final String senderPubkey;
+
+  /// A Nostr recipient, the sender for its own copy, or a bridge.
+  final String recipientPubkey;
+
+  /// JSON array of the addresses a bridge relays to, empty otherwise.
+  final String smtpAddresses;
+
+  /// The gift wrap, or the public event the recipient reads.
+  final String eventId;
+
+  /// JSON array of the relays the recipient reads event_id from.
+  final String relays;
+  final String? blobSha256;
+  const DeliveryRow({
+    required this.emailId,
+    required this.senderPubkey,
+    required this.recipientPubkey,
+    required this.smtpAddresses,
+    required this.eventId,
+    required this.relays,
+    this.blobSha256,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['email_id'] = Variable<String>(emailId);
+    map['sender_pubkey'] = Variable<String>(senderPubkey);
+    map['recipient_pubkey'] = Variable<String>(recipientPubkey);
+    map['smtp_addresses'] = Variable<String>(smtpAddresses);
+    map['event_id'] = Variable<String>(eventId);
+    map['relays'] = Variable<String>(relays);
+    if (!nullToAbsent || blobSha256 != null) {
+      map['blob_sha256'] = Variable<String>(blobSha256);
+    }
+    return map;
+  }
+
+  DeliveriesCompanion toCompanion(bool nullToAbsent) {
+    return DeliveriesCompanion(
+      emailId: Value(emailId),
+      senderPubkey: Value(senderPubkey),
+      recipientPubkey: Value(recipientPubkey),
+      smtpAddresses: Value(smtpAddresses),
+      eventId: Value(eventId),
+      relays: Value(relays),
+      blobSha256: blobSha256 == null && nullToAbsent
+          ? const Value.absent()
+          : Value(blobSha256),
+    );
+  }
+
+  factory DeliveryRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DeliveryRow(
+      emailId: serializer.fromJson<String>(json['email_id']),
+      senderPubkey: serializer.fromJson<String>(json['sender_pubkey']),
+      recipientPubkey: serializer.fromJson<String>(json['recipient_pubkey']),
+      smtpAddresses: serializer.fromJson<String>(json['smtp_addresses']),
+      eventId: serializer.fromJson<String>(json['event_id']),
+      relays: serializer.fromJson<String>(json['relays']),
+      blobSha256: serializer.fromJson<String?>(json['blob_sha256']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'email_id': serializer.toJson<String>(emailId),
+      'sender_pubkey': serializer.toJson<String>(senderPubkey),
+      'recipient_pubkey': serializer.toJson<String>(recipientPubkey),
+      'smtp_addresses': serializer.toJson<String>(smtpAddresses),
+      'event_id': serializer.toJson<String>(eventId),
+      'relays': serializer.toJson<String>(relays),
+      'blob_sha256': serializer.toJson<String?>(blobSha256),
+    };
+  }
+
+  DeliveryRow copyWith({
+    String? emailId,
+    String? senderPubkey,
+    String? recipientPubkey,
+    String? smtpAddresses,
+    String? eventId,
+    String? relays,
+    Value<String?> blobSha256 = const Value.absent(),
+  }) => DeliveryRow(
+    emailId: emailId ?? this.emailId,
+    senderPubkey: senderPubkey ?? this.senderPubkey,
+    recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+    smtpAddresses: smtpAddresses ?? this.smtpAddresses,
+    eventId: eventId ?? this.eventId,
+    relays: relays ?? this.relays,
+    blobSha256: blobSha256.present ? blobSha256.value : this.blobSha256,
+  );
+  DeliveryRow copyWithCompanion(DeliveriesCompanion data) {
+    return DeliveryRow(
+      emailId: data.emailId.present ? data.emailId.value : this.emailId,
+      senderPubkey: data.senderPubkey.present
+          ? data.senderPubkey.value
+          : this.senderPubkey,
+      recipientPubkey: data.recipientPubkey.present
+          ? data.recipientPubkey.value
+          : this.recipientPubkey,
+      smtpAddresses: data.smtpAddresses.present
+          ? data.smtpAddresses.value
+          : this.smtpAddresses,
+      eventId: data.eventId.present ? data.eventId.value : this.eventId,
+      relays: data.relays.present ? data.relays.value : this.relays,
+      blobSha256: data.blobSha256.present
+          ? data.blobSha256.value
+          : this.blobSha256,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DeliveryRow(')
+          ..write('emailId: $emailId, ')
+          ..write('senderPubkey: $senderPubkey, ')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('smtpAddresses: $smtpAddresses, ')
+          ..write('eventId: $eventId, ')
+          ..write('relays: $relays, ')
+          ..write('blobSha256: $blobSha256')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    emailId,
+    senderPubkey,
+    recipientPubkey,
+    smtpAddresses,
+    eventId,
+    relays,
+    blobSha256,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DeliveryRow &&
+          other.emailId == this.emailId &&
+          other.senderPubkey == this.senderPubkey &&
+          other.recipientPubkey == this.recipientPubkey &&
+          other.smtpAddresses == this.smtpAddresses &&
+          other.eventId == this.eventId &&
+          other.relays == this.relays &&
+          other.blobSha256 == this.blobSha256);
+}
+
+class DeliveriesCompanion extends UpdateCompanion<DeliveryRow> {
+  final Value<String> emailId;
+  final Value<String> senderPubkey;
+  final Value<String> recipientPubkey;
+  final Value<String> smtpAddresses;
+  final Value<String> eventId;
+  final Value<String> relays;
+  final Value<String?> blobSha256;
+  final Value<int> rowid;
+  const DeliveriesCompanion({
+    this.emailId = const Value.absent(),
+    this.senderPubkey = const Value.absent(),
+    this.recipientPubkey = const Value.absent(),
+    this.smtpAddresses = const Value.absent(),
+    this.eventId = const Value.absent(),
+    this.relays = const Value.absent(),
+    this.blobSha256 = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DeliveriesCompanion.insert({
+    required String emailId,
+    required String senderPubkey,
+    required String recipientPubkey,
+    this.smtpAddresses = const Value.absent(),
+    required String eventId,
+    required String relays,
+    this.blobSha256 = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : emailId = Value(emailId),
+       senderPubkey = Value(senderPubkey),
+       recipientPubkey = Value(recipientPubkey),
+       eventId = Value(eventId),
+       relays = Value(relays);
+  static Insertable<DeliveryRow> custom({
+    Expression<String>? emailId,
+    Expression<String>? senderPubkey,
+    Expression<String>? recipientPubkey,
+    Expression<String>? smtpAddresses,
+    Expression<String>? eventId,
+    Expression<String>? relays,
+    Expression<String>? blobSha256,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (emailId != null) 'email_id': emailId,
+      if (senderPubkey != null) 'sender_pubkey': senderPubkey,
+      if (recipientPubkey != null) 'recipient_pubkey': recipientPubkey,
+      if (smtpAddresses != null) 'smtp_addresses': smtpAddresses,
+      if (eventId != null) 'event_id': eventId,
+      if (relays != null) 'relays': relays,
+      if (blobSha256 != null) 'blob_sha256': blobSha256,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DeliveriesCompanion copyWith({
+    Value<String>? emailId,
+    Value<String>? senderPubkey,
+    Value<String>? recipientPubkey,
+    Value<String>? smtpAddresses,
+    Value<String>? eventId,
+    Value<String>? relays,
+    Value<String?>? blobSha256,
+    Value<int>? rowid,
+  }) {
+    return DeliveriesCompanion(
+      emailId: emailId ?? this.emailId,
+      senderPubkey: senderPubkey ?? this.senderPubkey,
+      recipientPubkey: recipientPubkey ?? this.recipientPubkey,
+      smtpAddresses: smtpAddresses ?? this.smtpAddresses,
+      eventId: eventId ?? this.eventId,
+      relays: relays ?? this.relays,
+      blobSha256: blobSha256 ?? this.blobSha256,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (emailId.present) {
+      map['email_id'] = Variable<String>(emailId.value);
+    }
+    if (senderPubkey.present) {
+      map['sender_pubkey'] = Variable<String>(senderPubkey.value);
+    }
+    if (recipientPubkey.present) {
+      map['recipient_pubkey'] = Variable<String>(recipientPubkey.value);
+    }
+    if (smtpAddresses.present) {
+      map['smtp_addresses'] = Variable<String>(smtpAddresses.value);
+    }
+    if (eventId.present) {
+      map['event_id'] = Variable<String>(eventId.value);
+    }
+    if (relays.present) {
+      map['relays'] = Variable<String>(relays.value);
+    }
+    if (blobSha256.present) {
+      map['blob_sha256'] = Variable<String>(blobSha256.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DeliveriesCompanion(')
+          ..write('emailId: $emailId, ')
+          ..write('senderPubkey: $senderPubkey, ')
+          ..write('recipientPubkey: $recipientPubkey, ')
+          ..write('smtpAddresses: $smtpAddresses, ')
+          ..write('eventId: $eventId, ')
+          ..write('relays: $relays, ')
+          ..write('blobSha256: $blobSha256, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class Tombstones extends Table with TableInfo<Tombstones, TombstoneRow> {
   @override
   final GeneratedDatabase attachedDatabase;
@@ -6696,6 +7193,11 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
     'unsealed_rumor_id',
     'CREATE INDEX unsealed_rumor_id ON unsealed (rumor_id)',
   );
+  late final Deliveries deliveries = Deliveries(this);
+  late final Index deliveriesSender = Index(
+    'deliveries_sender',
+    'CREATE INDEX deliveries_sender ON deliveries (sender_pubkey)',
+  );
   late final Tombstones tombstones = Tombstones(this);
   late final Settings settings = Settings(this);
   late final SenderListDecryptions senderListDecryptions =
@@ -6741,6 +7243,8 @@ abstract class _$NostrMailDatabase extends GeneratedDatabase {
     giftWrapsRecipientStage,
     unsealed,
     unsealedRumorId,
+    deliveries,
+    deliveriesSender,
     tombstones,
     settings,
     senderListDecryptions,
@@ -8839,6 +9343,261 @@ typedef $UnsealedProcessedTableManager =
       UnsealedRow,
       PrefetchHooks Function()
     >;
+typedef $DeliveriesCreateCompanionBuilder =
+    DeliveriesCompanion Function({
+      required String emailId,
+      required String senderPubkey,
+      required String recipientPubkey,
+      Value<String> smtpAddresses,
+      required String eventId,
+      required String relays,
+      Value<String?> blobSha256,
+      Value<int> rowid,
+    });
+typedef $DeliveriesUpdateCompanionBuilder =
+    DeliveriesCompanion Function({
+      Value<String> emailId,
+      Value<String> senderPubkey,
+      Value<String> recipientPubkey,
+      Value<String> smtpAddresses,
+      Value<String> eventId,
+      Value<String> relays,
+      Value<String?> blobSha256,
+      Value<int> rowid,
+    });
+
+class $DeliveriesFilterComposer
+    extends Composer<_$NostrMailDatabase, Deliveries> {
+  $DeliveriesFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get emailId => $composableBuilder(
+    column: $table.emailId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get senderPubkey => $composableBuilder(
+    column: $table.senderPubkey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get smtpAddresses => $composableBuilder(
+    column: $table.smtpAddresses,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get eventId => $composableBuilder(
+    column: $table.eventId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get relays => $composableBuilder(
+    column: $table.relays,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get blobSha256 => $composableBuilder(
+    column: $table.blobSha256,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $DeliveriesOrderingComposer
+    extends Composer<_$NostrMailDatabase, Deliveries> {
+  $DeliveriesOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get emailId => $composableBuilder(
+    column: $table.emailId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get senderPubkey => $composableBuilder(
+    column: $table.senderPubkey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get smtpAddresses => $composableBuilder(
+    column: $table.smtpAddresses,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get eventId => $composableBuilder(
+    column: $table.eventId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get relays => $composableBuilder(
+    column: $table.relays,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get blobSha256 => $composableBuilder(
+    column: $table.blobSha256,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $DeliveriesAnnotationComposer
+    extends Composer<_$NostrMailDatabase, Deliveries> {
+  $DeliveriesAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get emailId =>
+      $composableBuilder(column: $table.emailId, builder: (column) => column);
+
+  GeneratedColumn<String> get senderPubkey => $composableBuilder(
+    column: $table.senderPubkey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get recipientPubkey => $composableBuilder(
+    column: $table.recipientPubkey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get smtpAddresses => $composableBuilder(
+    column: $table.smtpAddresses,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get eventId =>
+      $composableBuilder(column: $table.eventId, builder: (column) => column);
+
+  GeneratedColumn<String> get relays =>
+      $composableBuilder(column: $table.relays, builder: (column) => column);
+
+  GeneratedColumn<String> get blobSha256 => $composableBuilder(
+    column: $table.blobSha256,
+    builder: (column) => column,
+  );
+}
+
+class $DeliveriesTableManager
+    extends
+        RootTableManager<
+          _$NostrMailDatabase,
+          Deliveries,
+          DeliveryRow,
+          $DeliveriesFilterComposer,
+          $DeliveriesOrderingComposer,
+          $DeliveriesAnnotationComposer,
+          $DeliveriesCreateCompanionBuilder,
+          $DeliveriesUpdateCompanionBuilder,
+          (
+            DeliveryRow,
+            BaseReferences<_$NostrMailDatabase, Deliveries, DeliveryRow>,
+          ),
+          DeliveryRow,
+          PrefetchHooks Function()
+        > {
+  $DeliveriesTableManager(_$NostrMailDatabase db, Deliveries table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $DeliveriesFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $DeliveriesOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $DeliveriesAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> emailId = const Value.absent(),
+                Value<String> senderPubkey = const Value.absent(),
+                Value<String> recipientPubkey = const Value.absent(),
+                Value<String> smtpAddresses = const Value.absent(),
+                Value<String> eventId = const Value.absent(),
+                Value<String> relays = const Value.absent(),
+                Value<String?> blobSha256 = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DeliveriesCompanion(
+                emailId: emailId,
+                senderPubkey: senderPubkey,
+                recipientPubkey: recipientPubkey,
+                smtpAddresses: smtpAddresses,
+                eventId: eventId,
+                relays: relays,
+                blobSha256: blobSha256,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String emailId,
+                required String senderPubkey,
+                required String recipientPubkey,
+                Value<String> smtpAddresses = const Value.absent(),
+                required String eventId,
+                required String relays,
+                Value<String?> blobSha256 = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DeliveriesCompanion.insert(
+                emailId: emailId,
+                senderPubkey: senderPubkey,
+                recipientPubkey: recipientPubkey,
+                smtpAddresses: smtpAddresses,
+                eventId: eventId,
+                relays: relays,
+                blobSha256: blobSha256,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<Deliveries, DeliveryRow>(table),
+                  BaseReferences<_$NostrMailDatabase, Deliveries, DeliveryRow>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $DeliveriesProcessedTableManager =
+    ProcessedTableManager<
+      _$NostrMailDatabase,
+      Deliveries,
+      DeliveryRow,
+      $DeliveriesFilterComposer,
+      $DeliveriesOrderingComposer,
+      $DeliveriesAnnotationComposer,
+      $DeliveriesCreateCompanionBuilder,
+      $DeliveriesUpdateCompanionBuilder,
+      (
+        DeliveryRow,
+        BaseReferences<_$NostrMailDatabase, Deliveries, DeliveryRow>,
+      ),
+      DeliveryRow,
+      PrefetchHooks Function()
+    >;
 typedef $TombstonesCreateCompanionBuilder =
     TombstonesCompanion Function({
       required String eventId,
@@ -10359,6 +11118,8 @@ class $NostrMailDatabaseManager {
       $GiftWrapsTableManager(_db, _db.giftWraps);
   $UnsealedTableManager get unsealed =>
       $UnsealedTableManager(_db, _db.unsealed);
+  $DeliveriesTableManager get deliveries =>
+      $DeliveriesTableManager(_db, _db.deliveries);
   $TombstonesTableManager get tombstones =>
       $TombstonesTableManager(_db, _db.tombstones);
   $SettingsTableManager get settings =>

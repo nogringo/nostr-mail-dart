@@ -1,3 +1,24 @@
+## Unreleased
+
+- The delivery of a sent email, recipient by recipient:
+  `watchDelivery(emailId)` emits an `EmailDelivery` as the broadcast and
+  Blossom upload queues retry, or null for an email this device did not send.
+  Each `RecipientDelivery` lists the relays the recipient reads the email from
+  and, for an email sent as a Blossom blob, the servers it reads the blob
+  from, each a `UrlDelivery` with its refusal or last error. Bcc recipients
+  are included, a bridge stands for the addresses it relays to, and the
+  sender's own copy comes apart as `selfCopy`. A recipient is delivered once
+  one of its relays holds the event and one of its servers holds the blob.
+  `retryDelivery(emailId)` pushes again whatever a relay or server still owes.
+  Only the emails sent from this device from this version on are known.
+- **Breaking**: require `blossom_upload_queue_shim_for_ndk: ^0.12.0`. A queue
+  passed to `create` comes from that version, whose changelog lists what
+  changes. A server answering 413 or 415 refuses a blob for good: a recipient
+  whose servers all refuse it is not delivered.
+- Schema 10: the first open rebuilds the computed tables from the NDK cache,
+  without network or signer. The new `deliveries` table survives later schema
+  changes; `clearLocalAccountData` and `clearAllLocalData` empty it.
+
 ## 7.0.0
 
 - **Breaking**: require `sync_engine_shim_for_ndk: ^0.9.0`. The engine

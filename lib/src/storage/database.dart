@@ -10,7 +10,8 @@ class NostrMailDatabase extends _$NostrMailDatabase {
   NostrMailDatabase(super.e);
 
   /// The tables holding what no rebuild can recompute: NIP-44 output, whose
-  /// only other source is the signer, and every approval it asks its user for.
+  /// only other source is the signer, and every approval it asks its user for,
+  /// and what each send queued for its recipients.
   /// A schema change leaves them alone; only [clearAll] on the repositories
   /// empties them.
   static const _rawTables = {
@@ -18,6 +19,7 @@ class NostrMailDatabase extends _$NostrMailDatabase {
     'settings',
     'sender_list_decryptions',
     'draft_decryptions',
+    'deliveries',
   };
 
   /// Bump on any schema change. Everything outside [_rawTables] is a
@@ -25,7 +27,7 @@ class NostrMailDatabase extends _$NostrMailDatabase {
   /// recreates it instead of migrating. Indexes are dropped either way: they
   /// hold nothing of their own, and `createAll` would trip over one it finds.
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   bool _droppedProjection = false;
 

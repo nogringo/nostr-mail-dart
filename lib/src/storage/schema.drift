@@ -98,6 +98,24 @@ CREATE TABLE unsealed (
 ) AS UnsealedRow;
 CREATE INDEX unsealed_rumor_id ON unsealed (rumor_id);
 
+-- What a send queued for each recipient of a Sent email. Raw: the recipients'
+-- wraps are encrypted to them, so nothing else ties them to the email.
+CREATE TABLE deliveries (
+  email_id TEXT NOT NULL,
+  sender_pubkey TEXT NOT NULL,
+  -- A Nostr recipient, the sender for its own copy, or a bridge.
+  recipient_pubkey TEXT NOT NULL,
+  -- JSON array of the addresses a bridge relays to, empty otherwise.
+  smtp_addresses TEXT NOT NULL DEFAULT '[]',
+  -- The gift wrap, or the public event the recipient reads.
+  event_id TEXT NOT NULL,
+  -- JSON array of the relays the recipient reads event_id from.
+  relays TEXT NOT NULL,
+  blob_sha256 TEXT,
+  PRIMARY KEY (email_id, recipient_pubkey)
+) AS DeliveryRow;
+CREATE INDEX deliveries_sender ON deliveries (sender_pubkey);
+
 CREATE TABLE tombstones (
   event_id TEXT NOT NULL PRIMARY KEY,
   recipient_pubkey TEXT NOT NULL,

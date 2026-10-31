@@ -14,10 +14,13 @@ class MockBlossomServer {
   final int port;
   HttpServer? _server;
 
+  /// Status every upload is refused with, when set.
+  final int? rejectUploadsWith;
+
   /// report kind
   static const int kReport = 1984;
 
-  MockBlossomServer({this.port = 3000});
+  MockBlossomServer({this.port = 3000, this.rejectUploadsWith});
 
   Router _createRouter() {
     final router = Router();
@@ -57,6 +60,10 @@ class MockBlossomServer {
 
     // PUT /upload - Upload Blob
     router.put('/upload', (Request request) async {
+      if (rejectUploadsWith case final status?) {
+        return Response(status, body: 'refused by the mock');
+      }
+
       // Check for authorization header
       final authHeader = request.headers['authorization'];
 

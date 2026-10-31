@@ -14,6 +14,7 @@ import '../models/email.dart';
 import '../models/recipient.dart';
 import '../services/bridge_resolver.dart';
 import '../services/email_parser.dart';
+import '../storage/delivery_repository.dart';
 import '../storage/email_repository.dart';
 import '../storage/gift_wrap_repository.dart';
 import '../storage/models/email_record.dart';
@@ -35,6 +36,7 @@ class EmailSender {
   final BlossomCache _blossomCache;
   final EmailRepository _emailRepo;
   final GiftWrapRepository _giftWrapRepo;
+  final DeliveryRepository _deliveryRepo;
   final List<String> _defaultBlossomServers;
   final Map<String, String>? nip05Overrides;
 
@@ -46,7 +48,8 @@ class EmailSender {
     this._blossomUploadQueue,
     this._blossomCache,
     this._emailRepo,
-    this._giftWrapRepo, {
+    this._giftWrapRepo,
+    this._deliveryRepo, {
     List<String>? defaultBlossomServers,
     this.nip05Overrides,
   }) : _parser = EmailParser(),
@@ -330,6 +333,7 @@ class EmailSender {
     // The self-copy rumor is always built (it is the scheduler's display
     // context and the future Sent copy); only its delivery is gated on keepCopy.
     late final Nip01Event senderRumor;
+    final targets = <DeliveryTarget>[];
 
     final baseTags = <List<String>>[];
     if (mailFrom != null) baseTags.add(['mail-from', mailFrom]);
@@ -418,6 +422,16 @@ class EmailSender {
       }
 
       await delivery.deliverEvent(signedPublicEvent, publicEventRelays);
+      for (final (i, pubkey) in publicRecipientPubkeys.indexed) {
+        targets.add(
+          DeliveryTarget(
+            recipientPubkey: pubkey,
+            eventId: signedPublicEvent.id,
+            relays: recipientReadRelays[i],
+            blobSha256: signedPublicEvent.getFirstTag('x'),
+          ),
+        );
+      }
 
       final bccTags = List<List<String>>.from(recipientTags)
         ..add(['public-ref', signedPublicEvent.id, ...writeRelays]);
@@ -433,11 +447,17 @@ class EmailSender {
       final signedBccRumor = await _ndk.accounts.sign(bccRumor);
 
       final bccFutures = bccRecipientPubkeys.map((pubkey) async {
-        await delivery.deliverGiftWrap(signedBccRumor, pubkey);
+        final wrap = await delivery.deliverGiftWrap(signedBccRumor, pubkey);
+        targets.add(_wrapTarget(pubkey, wrap, signedBccRumor));
       });
 
       if (keepCopy) {
-        await _deliverSelfCopy(delivery, senderRumor, senderPubkey);
+        final wrap = await _deliverSelfCopy(
+          delivery,
+          senderRumor,
+          senderPubkey,
+        );
+        targets.add(_wrapTarget(senderPubkey, wrap, senderRumor));
       }
 
       await Future.wait(bccFutures);
@@ -474,7 +494,8 @@ class EmailSender {
         // Reuse the pre-built sender rumor so rumor.id stays stable:
         // when the gift wrap comes back via sync, the dedup is a no-op.
         if (keepCopy && pubkey == senderPubkey) {
-          await _deliverSelfCopy(delivery, senderRumor, pubkey);
+          final wrap = await _deliverSelfCopy(delivery, senderRumor, pubkey);
+          targets.add(_wrapTarget(pubkey, wrap, senderRumor));
           return;
         }
 
@@ -493,7 +514,8 @@ class EmailSender {
             ? await _ndk.accounts.sign(emailEvent)
             : emailEvent;
 
-        await delivery.deliverGiftWrap(eventToPublish, pubkey);
+        final wrap = await delivery.deliverGiftWrap(eventToPublish, pubkey);
+        targets.add(_wrapTarget(pubkey, wrap, eventToPublish));
       });
 
       await Future.wait(sendFutures);
@@ -510,10 +532,32 @@ class EmailSender {
       content: recipientBody,
       signRumor: signRumor,
       delivery: delivery,
+      targets: targets,
     );
+
+    if (keepCopy && delivery.saveSelfCopy) {
+      await _deliveryRepo.saveAll(
+        senderRumor.id,
+        senderPubkey: senderPubkey,
+        targets: targets,
+      );
+    }
 
     return senderRumor;
   }
+
+  DeliveryTarget _wrapTarget(
+    String recipientPubkey,
+    OutgoingEvent wrap,
+    Nip01Event rumor, {
+    List<String> smtpAddresses = const [],
+  }) => DeliveryTarget(
+    recipientPubkey: recipientPubkey,
+    smtpAddresses: smtpAddresses,
+    eventId: wrap.event.id,
+    relays: wrap.relays,
+    blobSha256: rumor.getFirstTag('x'),
+  );
 
   /// A reader looks for a blob on its own servers, the sender's and the
   /// defaults, so each participant without a list falls back to the defaults.
@@ -572,6 +616,7 @@ class EmailSender {
     required String content,
     required bool signRumor,
     required Delivery delivery,
+    required List<DeliveryTarget> targets,
   }) async {
     if (rcptToByBridge.isEmpty) return;
 
@@ -595,7 +640,10 @@ class EmailSender {
         createdAt: delivery.rumorCreatedAt,
       );
       final rumor = signRumor ? await _ndk.accounts.sign(event) : event;
-      await delivery.deliverGiftWrap(rumor, bridgePubkey);
+      final wrap = await delivery.deliverGiftWrap(rumor, bridgePubkey);
+      targets.add(
+        _wrapTarget(bridgePubkey, wrap, rumor, smtpAddresses: entry.value),
+      );
     });
     await Future.wait(futures);
   }
@@ -638,7 +686,7 @@ class EmailSender {
   /// Delivers the sender's own wrap and, when the Sent copy was saved locally,
   /// records the wrap too: a deletion needs its id, and the sync may not have
   /// brought it back yet.
-  Future<void> _deliverSelfCopy(
+  Future<OutgoingEvent> _deliverSelfCopy(
     Delivery delivery,
     Nip01Event rumor,
     String senderPubkey,
