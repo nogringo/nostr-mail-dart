@@ -129,28 +129,33 @@ class WatchManager {
     // the first default DM relay serves nothing anonymously, the sync engine
     // already holds an authenticated connection to that set, and a relay that
     // stays silent instead of refusing never triggers a late authentication.
-    _open(
-      _ndk.requests.subscription(
-        filter: emailFilter(pubkey)..limit = 0,
-        explicitRelays: dmRelays,
-        cacheWrite: true,
-        auth: authFor(_ndk, pubkey, fromStart: true),
-      ),
-      generation,
-      process: _sync.onGiftWrap,
-    );
+    // NDK sends a request with no explicit relay to its bootstrap relays.
+    if (dmRelays.isNotEmpty) {
+      _open(
+        _ndk.requests.subscription(
+          filter: emailFilter(pubkey)..limit = 0,
+          explicitRelays: dmRelays,
+          cacheWrite: true,
+          auth: authFor(_ndk, pubkey, fromStart: true),
+        ),
+        generation,
+        process: _sync.onGiftWrap,
+      );
+    }
 
     // Public emails, published to the read relays of those they mention
-    _open(
-      _ndk.requests.subscription(
-        filter: publicEmailFilter(pubkey)..limit = 0,
-        explicitRelays: readRelays,
-        cacheWrite: true,
-        auth: auth,
-      ),
-      generation,
-      process: _sync.onPublicEmail,
-    );
+    if (readRelays.isNotEmpty) {
+      _open(
+        _ndk.requests.subscription(
+          filter: publicEmailFilter(pubkey)..limit = 0,
+          explicitRelays: readRelays,
+          cacheWrite: true,
+          auth: auth,
+        ),
+        generation,
+        process: _sync.onPublicEmail,
+      );
+    }
 
     // Labels published in clear by earlier versions
     _open(

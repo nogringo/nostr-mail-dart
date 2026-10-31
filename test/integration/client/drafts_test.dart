@@ -9,6 +9,7 @@ import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_user.dart';
+import '../../helpers/until_past.dart';
 import '../../helpers/wait_for_broadcasts.dart';
 import '../../mocks/mock_blossom_server.dart';
 import '../../mocks/mock_relay.dart';
@@ -157,6 +158,7 @@ void main() {
     expect((await phone.client.getDrafts()).single.subject, 'Plans for Friday');
 
     await waitForBroadcasts(phone.client.broadcastQueue);
+    await untilPast(wrapsOn(relay)[first.draftId]!);
 
     await desktop.client.fetchRecent();
     final synced = (await desktop.client.getDrafts()).single;
@@ -174,7 +176,9 @@ void main() {
 
     expect(await phone.client.getDrafts(), isEmpty);
     expect(await phone.client.getDraftMime(draft.draftId), isNull);
-    expect(wrapsOn(relay)[draft.draftId]!.content, isEmpty);
+    final blank = wrapsOn(relay)[draft.draftId]!;
+    expect(blank.content, isEmpty);
+    await untilPast(blank);
 
     await desktop.client.fetchRecent();
     expect(await desktop.client.getDrafts(), isEmpty);
@@ -277,10 +281,11 @@ void main() {
     ).create();
     addTearDown(() async => await laptop.destroy());
 
+    await untilPast(wrapsOn(private)[gone.draftId]!);
     await laptop.client.fetchRecent();
-    expect((await laptop.client.getDrafts()).map((d) => d.subject), [
-      'Fresh',
-      'Kept',
-    ]);
+    expect(
+      (await laptop.client.getDrafts()).map((d) => d.subject),
+      unorderedEquals(['Fresh', 'Kept']),
+    );
   });
 }

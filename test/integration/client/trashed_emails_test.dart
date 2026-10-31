@@ -52,7 +52,7 @@ void main() {
         db: db,
         syncEngine: testSyncEngine(ndk, db),
         blossomCache: await openTestBlossomCache('trashed_emails_test'),
-        defaultDmRelays: [relay.url],
+        indexerRelays: [relay.url],
         defaultNip65Relays: [relay.url],
       );
     });

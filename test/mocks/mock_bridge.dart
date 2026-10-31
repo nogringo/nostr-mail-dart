@@ -14,6 +14,7 @@ import 'package:nostr_mail/src/utils/recipient_resolver.dart';
 import 'package:sembast/sembast_memory.dart' hide Filter;
 import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 
+import '../helpers/publish_relay_lists.dart';
 import '../helpers/test_blossom_cache.dart';
 
 class MockBridge {
@@ -64,6 +65,10 @@ class MockBridge {
       pubkey: keyPair.publicKey,
       privkey: keyPair.privateKey!,
     );
+    final dmRelays = defaultDmRelays;
+    if (dmRelays != null) {
+      await publishRelayLists(ndk, dmRelays: dmRelays, nip65Relays: dmRelays);
+    }
 
     driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
     database = NostrMailDatabase(NativeDatabase.memory());
@@ -81,7 +86,7 @@ class MockBridge {
       db: db,
       syncEngine: syncEngine,
       blossomCache: await openTestBlossomCache('bridge_$domain'),
-      defaultDmRelays: defaultDmRelays,
+      indexerRelays: defaultDmRelays ?? const [],
       defaultNip65Relays: defaultDmRelays,
       defaultBlossomServers: defaultBlossomServers,
       nip05Overrides: nip05Overrides,

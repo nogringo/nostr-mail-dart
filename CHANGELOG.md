@@ -18,6 +18,27 @@
 - Schema 10: the first open rebuilds the computed tables from the NDK cache,
   without network or signer. The new `deliveries` table survives later schema
   changes; `clearLocalAccountData` and `clearAllLocalData` empty it.
+- **Breaking**: an account receives its emails on its DM relays (kind 10050),
+  or on its NIP-65 read relays when it publishes no DM relay list. Nothing
+  stands in for an account that publishes neither: gift wraps no longer go to
+  the default DM relays, nor public emails to the default NIP-65 relays. A
+  send that would reach such an account throws the new
+  `UnreachableRecipientsException` before anything is saved, uploaded or
+  enqueued, scheduled sends included. `recipients` lists the recipients it
+  cannot reach, an SMTP recipient when its bridge is one of them, and
+  `sender` says the sender's own copy has nowhere to go. The To and Cc of a
+  public email need NIP-65 read relays.
+- **Breaking**: relay lists are looked up on the new `indexerRelays` of
+  `create`, `defaultIndexerRelays` by default: the NIP-65 there, every other
+  list on the write relays that NIP-65 names. The logged account must have a
+  NIP-65 on those indexers. `defaultDmRelays` is gone from `create`, and the
+  internal broadcast and Blossom upload queues look lists up on
+  `indexerRelays` alone: give the sync engine the same `discoveryRelays`
+  instead of adding the default relays to them. No request goes to NDK's
+  bootstrap relays.
+- A relay list lookup that no relay answered throws `NetworkRequiredException`
+  with the `relay-lists` operation, instead of passing for a missing list.
+  Looking up another account's lists never authenticates (NIP-42).
 
 ## 7.0.0
 

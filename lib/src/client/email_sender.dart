@@ -330,6 +330,47 @@ class EmailSender {
     final targetPubkeys = {...toNostr, ...ccNostr, ...bccNostr};
     if (keepCopy) targetPubkeys.add(senderPubkey);
 
+    // Looked up before anything is saved or enqueued: a target with no relay
+    // stops the whole send, not the part of it still ahead.
+    final wrapPubkeys = {
+      if (isPublic) ...bccNostr else ...targetPubkeys,
+      if (isPublic && keepCopy) senderPubkey,
+      ...rcptToByBridge.keys,
+    };
+    Future<Map<String, List<String>>> relaysOf(
+      Set<String> pubkeys,
+      Future<List<String>> Function(String pubkey) lookUp,
+    ) async =>
+        Map.fromIterables(pubkeys, await Future.wait(pubkeys.map(lookUp)));
+    final (dmRelays, readRelays) = await (
+      relaysOf(wrapPubkeys, _relays.getDmRelays),
+      relaysOf(
+        isPublic ? publicRecipientPubkeys : const <String>{},
+        _relays.getReadRelays,
+      ),
+    ).wait;
+    final unreachable = {
+      for (final MapEntry(:key, :value) in [
+        ...dmRelays.entries,
+        ...readRelays.entries,
+      ])
+        if (value.isEmpty) key,
+    };
+    if (unreachable.isNotEmpty) {
+      final bridgeUnreachable = rcptToByBridge.keys.any(unreachable.contains);
+      throw UnreachableRecipientsException(
+        [...to, ...cc, ...bcc]
+            .where(
+              (r) => switch (r) {
+                NostrRecipient(:final pubkey) => unreachable.contains(pubkey),
+                SmtpRecipient() => bridgeUnreachable,
+              },
+            )
+            .toList(),
+        sender: keepCopy && unreachable.contains(senderPubkey),
+      );
+    }
+
     // The self-copy rumor is always built (it is the scheduler's display
     // context and the future Sent copy); only its delivery is gated on keepCopy.
     late final Nip01Event senderRumor;
@@ -385,13 +426,10 @@ class EmailSender {
       // NIP-65: the author's write relays, and the read relays of everyone it
       // tags, which is where they look for it. BCC recipients are not tagged
       // and get a wrap instead.
-      final (writeRelays, recipientReadRelays) = await (
-        _relays.getWriteRelays(senderPubkey),
-        Future.wait(publicRecipientPubkeys.map(_relays.getReadRelays)),
-      ).wait;
+      final writeRelays = await _relays.getWriteRelays(senderPubkey);
       final publicEventRelays = {
         ...writeRelays,
-        ...recipientReadRelays.expand((relays) => relays),
+        ...readRelays.values.expand((relays) => relays),
       }.toList();
 
       // Persist the sender's local copy before any broadcast is enqueued.
@@ -422,12 +460,12 @@ class EmailSender {
       }
 
       await delivery.deliverEvent(signedPublicEvent, publicEventRelays);
-      for (final (i, pubkey) in publicRecipientPubkeys.indexed) {
+      for (final pubkey in publicRecipientPubkeys) {
         targets.add(
           DeliveryTarget(
             recipientPubkey: pubkey,
             eventId: signedPublicEvent.id,
-            relays: recipientReadRelays[i],
+            relays: readRelays[pubkey]!,
             blobSha256: signedPublicEvent.getFirstTag('x'),
           ),
         );
@@ -447,7 +485,11 @@ class EmailSender {
       final signedBccRumor = await _ndk.accounts.sign(bccRumor);
 
       final bccFutures = bccRecipientPubkeys.map((pubkey) async {
-        final wrap = await delivery.deliverGiftWrap(signedBccRumor, pubkey);
+        final wrap = await delivery.deliverGiftWrap(
+          signedBccRumor,
+          pubkey,
+          dmRelays[pubkey]!,
+        );
         targets.add(_wrapTarget(pubkey, wrap, signedBccRumor));
       });
 
@@ -456,6 +498,7 @@ class EmailSender {
           delivery,
           senderRumor,
           senderPubkey,
+          dmRelays[senderPubkey]!,
         );
         targets.add(_wrapTarget(senderPubkey, wrap, senderRumor));
       }
@@ -494,7 +537,12 @@ class EmailSender {
         // Reuse the pre-built sender rumor so rumor.id stays stable:
         // when the gift wrap comes back via sync, the dedup is a no-op.
         if (keepCopy && pubkey == senderPubkey) {
-          final wrap = await _deliverSelfCopy(delivery, senderRumor, pubkey);
+          final wrap = await _deliverSelfCopy(
+            delivery,
+            senderRumor,
+            pubkey,
+            dmRelays[pubkey]!,
+          );
           targets.add(_wrapTarget(pubkey, wrap, senderRumor));
           return;
         }
@@ -514,7 +562,11 @@ class EmailSender {
             ? await _ndk.accounts.sign(emailEvent)
             : emailEvent;
 
-        final wrap = await delivery.deliverGiftWrap(eventToPublish, pubkey);
+        final wrap = await delivery.deliverGiftWrap(
+          eventToPublish,
+          pubkey,
+          dmRelays[pubkey]!,
+        );
         targets.add(_wrapTarget(pubkey, wrap, eventToPublish));
       });
 
@@ -526,6 +578,7 @@ class EmailSender {
     await _publishToBridges(
       senderPubkey: senderPubkey,
       rcptToByBridge: rcptToByBridge,
+      dmRelays: dmRelays,
       fromAddress: fromAddress,
       explicitMailFrom: mailFrom,
       baseTags: recipientTags,
@@ -610,6 +663,7 @@ class EmailSender {
   Future<void> _publishToBridges({
     required String senderPubkey,
     required Map<String, List<String>> rcptToByBridge,
+    required Map<String, List<String>> dmRelays,
     required String? fromAddress,
     required String? explicitMailFrom,
     required List<List<String>> baseTags,
@@ -640,7 +694,11 @@ class EmailSender {
         createdAt: delivery.rumorCreatedAt,
       );
       final rumor = signRumor ? await _ndk.accounts.sign(event) : event;
-      final wrap = await delivery.deliverGiftWrap(rumor, bridgePubkey);
+      final wrap = await delivery.deliverGiftWrap(
+        rumor,
+        bridgePubkey,
+        dmRelays[bridgePubkey]!,
+      );
       targets.add(
         _wrapTarget(bridgePubkey, wrap, rumor, smtpAddresses: entry.value),
       );
@@ -690,9 +748,11 @@ class EmailSender {
     Delivery delivery,
     Nip01Event rumor,
     String senderPubkey,
+    List<String> relays,
   ) => delivery.deliverGiftWrap(
     rumor,
     senderPubkey,
+    relays,
     onBuilt: delivery.saveSelfCopy
         ? (wrap) => _giftWrapRepo.saveOpened(
             wrap.event,
@@ -706,8 +766,12 @@ class EmailSender {
   Future<OutgoingEvent> _buildGiftWrap(
     Nip01Event rumor,
     String recipientPubkey,
+    List<String> relays,
   ) async {
-    // What toGiftWrap does, split so the seal stays in hand.
+    // What toGiftWrap does, split so the seal stays in hand. For a scheduled
+    // send the rumor is dated at the schedule time; ndk randomizes the seal and
+    // gift wrap in the 2 days before it, so the envelope never reveals the
+    // email was pre-built.
     final seal = await _ndk.giftWrap.sealRumor(
       rumor: rumor,
       recipientPubkey: recipientPubkey,
@@ -718,14 +782,6 @@ class EmailSender {
       eventSignerFactory: _ndk.giftWrap.eventSignerFactory,
       randomizeCreatedAtBefore: rumor.createdAt,
     );
-    // Gift wraps go to the recipient's DM relays (NIP-17). For a scheduled send
-    // the rumor is dated at the schedule time; ndk randomizes the seal and gift
-    // wrap in the 2 days before it, so the envelope never reveals the email was
-    // pre-built.
-    final dmRelays = await _relays.getDmRelays(
-      recipientPubkey,
-      auth: const AuthPolicy.never(),
-    );
-    return OutgoingEvent(giftWrapEvent, dmRelays, seal: seal);
+    return OutgoingEvent(giftWrapEvent, relays, seal: seal);
   }
 }

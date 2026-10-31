@@ -23,11 +23,13 @@ void main() {
     final sender = await TestUser(
       'outbox_sender_${DateTime.now().microsecondsSinceEpoch}',
       defaultDmRelays: [directory.url],
+      publishesRelayLists: false,
     ).create();
     addTearDown(() async => sender.destroy());
     final recipient = await TestUser(
       'outbox_recipient_${DateTime.now().microsecondsSinceEpoch}',
       defaultDmRelays: [directory.url],
+      publishesRelayLists: false,
     ).create();
     addTearDown(() async => recipient.destroy());
 

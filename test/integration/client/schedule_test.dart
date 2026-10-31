@@ -6,6 +6,7 @@ import 'package:nostr_mail/nostr_mail.dart';
 import 'package:nostr_mail/src/utils/blob_fetcher.dart';
 import 'package:test/test.dart';
 
+import '../../helpers/publish_relay_lists.dart';
 import '../../helpers/test_user.dart';
 import '../../mocks/mock_relay.dart';
 
@@ -18,7 +19,7 @@ void main() {
       addTearDown(() async => await relay.stopServer());
 
       final dvm = Bip340.generatePrivateKey();
-      final recipient = Bip340.generatePrivateKey();
+      final recipient = await listedKeyPair([relay.url]);
 
       final sender = await TestUser(
         'scheduler sender',
@@ -136,7 +137,7 @@ void main() {
     addTearDown(() async => await relay.stopServer());
 
     final dvm = Bip340.generatePrivateKey();
-    final recipient = Bip340.generatePrivateKey();
+    final recipient = await listedKeyPair([relay.url]);
 
     final sender = await TestUser(
       'scheduler blossom sender',

@@ -10,6 +10,8 @@ import 'package:nostr_mail/src/storage/database.dart';
 import 'package:sembast/sembast_memory.dart' hide Filter;
 import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 
+import 'publish_relay_lists.dart';
+
 class TestUser {
   String id;
   List<String>? defaultDmRelays;
@@ -20,6 +22,10 @@ class TestUser {
   Map<String, String>? nip05Overrides;
   String? schedulerDvm;
   List<String>? schedulerDvmReadRelays;
+
+  /// Whether [create] publishes the account's relay lists on the default
+  /// relays, as the app does for every account it creates.
+  bool publishesRelayLists;
 
   /// Another device of the same account when set.
   final KeyPair? _existingKeyPair;
@@ -40,16 +46,18 @@ class TestUser {
     this.nip05Overrides,
     this.schedulerDvm,
     this.schedulerDvmReadRelays,
+    this.publishesRelayLists = true,
     KeyPair? keyPair,
   }) : _existingKeyPair = keyPair;
 
   Future<TestUser> create() async {
     keyPair = _existingKeyPair ?? Bip340.generatePrivateKey();
+    final relays = {...?defaultDmRelays, ...?defaultNip65Relays}.toList();
     ndk = Ndk(
       NdkConfig(
         eventVerifier: Bip340EventVerifier(),
         cache: MemCacheManager(),
-        bootstrapRelays: {...?defaultDmRelays, ...?defaultNip65Relays}.toList(),
+        bootstrapRelays: relays,
       ),
     );
 
@@ -57,6 +65,14 @@ class TestUser {
       pubkey: keyPair.publicKey,
       privkey: keyPair.privateKey!,
     );
+    final dmRelays = defaultDmRelays;
+    if (publishesRelayLists && dmRelays != null) {
+      await publishRelayLists(
+        ndk,
+        dmRelays: dmRelays,
+        nip65Relays: defaultNip65Relays ?? dmRelays,
+      );
+    }
 
     driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
     database = NostrMailDatabase(NativeDatabase.memory());
@@ -78,7 +94,7 @@ class TestUser {
       db: db,
       blossomCache: blossomCache,
       syncEngine: syncEngine,
-      defaultDmRelays: defaultDmRelays,
+      indexerRelays: relays,
       defaultNip65Relays: defaultNip65Relays ?? defaultDmRelays,
       defaultBlossomServers: defaultBlossomServers,
       nip05Overrides: nip05Overrides,

@@ -7,6 +7,7 @@ import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
 import '../../helpers/test_user.dart';
+import '../../helpers/until_past.dart';
 import '../../helpers/wait_for_broadcasts.dart';
 import '../../mocks/mock_relay.dart';
 
@@ -58,6 +59,9 @@ void main() {
 
     await desktop.client.allowSender('bob');
     await waitForBroadcasts(desktop.client.broadcastQueue);
+    await untilPast(
+      listEvents().reduce((a, b) => a.createdAt > b.createdAt ? a : b),
+    );
     await phone.client.fetchRecent();
     expect(await phone.client.getSenderVerdict('bob'), SenderVerdict.allow);
 
@@ -76,12 +80,7 @@ void main() {
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     expect(second.createdAt, greaterThan(first.createdAt));
 
-    // Dated ahead of the clock, and the sync engine never asks for the future.
-    await Future.delayed(
-      DateTime.fromMillisecondsSinceEpoch(
-        second.createdAt * 1000,
-      ).difference(DateTime.now()),
-    );
+    await untilPast(second);
     await desktop.client.fetchRecent();
     expect(await desktop.client.getSenderVerdict('bob'), SenderVerdict.block);
   });

@@ -26,6 +26,7 @@ void main() {
       '${name}_${DateTime.now().microsecondsSinceEpoch}',
       defaultDmRelays: [dmRelay.url],
       defaultNip65Relays: [nip65Relay.url],
+      publishesRelayLists: false,
       keyPair: keyPair,
     ).create();
     addTearDown(() async => await user.destroy());

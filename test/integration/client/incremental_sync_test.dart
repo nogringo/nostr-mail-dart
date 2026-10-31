@@ -1,10 +1,10 @@
 import 'package:ndk/ndk.dart';
-import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:sembast/sembast_memory.dart' hide Filter;
 import 'package:sync_engine_shim_for_ndk/sync_engine_shim_for_ndk.dart';
 import 'package:test/test.dart';
 
+import '../../helpers/publish_relay_lists.dart';
 import '../../helpers/test_blossom_cache.dart';
 import '../../helpers/test_database.dart';
 import '../../helpers/test_user.dart';
@@ -24,7 +24,7 @@ void main() {
     ).create();
     addTearDown(alice.destroy);
 
-    final keys = Bip340.generatePrivateKey();
+    final keys = await listedKeyPair([relay.url]);
     for (var i = 0; i < 5; i++) {
       await alice.client.send(
         to: [NostrRecipient.fromPubkey(keys.publicKey)],
@@ -59,7 +59,7 @@ void main() {
       db: db,
       blossomCache: await openTestBlossomCache('page_bob'),
       syncEngine: engine,
-      defaultDmRelays: [relay.url],
+      indexerRelays: [relay.url],
       defaultNip65Relays: [relay.url],
     );
     addTearDown(() async {

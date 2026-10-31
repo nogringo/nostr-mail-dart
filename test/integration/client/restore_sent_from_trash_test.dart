@@ -1,7 +1,7 @@
-import 'package:ndk/shared/nips/nip19/nip19.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
+import '../../helpers/publish_relay_lists.dart';
 import '../../helpers/test_user.dart';
 import '../../helpers/wait_for_broadcasts.dart';
 import '../../mocks/mock_relay.dart';
@@ -25,11 +25,7 @@ void main() {
 
     await sender.client.send(
       to: [
-        NostrRecipient.fromPubkey(
-          Nip19.decode(
-            'npub1krtvaf2gw0ukuvgxvf7kxjz8s3zd6agfk87cnpcdha0s8xuscj2qly5eac',
-          ),
-        ),
+        NostrRecipient.fromPubkey((await listedKeyPair([relay.url])).publicKey),
       ],
       subject: 'Restore sent message',
       body: 'This message should return to Sent after restore.',

@@ -9,11 +9,13 @@ void main() {
   Future<TestUser> user(
     String name,
     MockRelay relay, {
+    MockRelay? nip65Relay,
     MockBlossomServer? blossom,
   }) async {
     final u = await TestUser(
       name,
       defaultDmRelays: [relay.url],
+      defaultNip65Relays: nip65Relay == null ? null : [nip65Relay.url],
       defaultBlossomServers: [
         if (blossom != null) 'http://localhost:${blossom.port}',
       ],
@@ -72,8 +74,18 @@ void main() {
         rejectEventMessage: 'blocked: not on the list',
       ),
     );
-    final sender = await user('delivery_blocked_sender', relay);
-    final recipient = await user('delivery_blocked_recipient', relay);
+    // The relay refuses every event, relay lists included.
+    final directory = await startRelay(MockRelay(name: 'delivery-directory'));
+    final sender = await user(
+      'delivery_blocked_sender',
+      relay,
+      nip65Relay: directory,
+    );
+    final recipient = await user(
+      'delivery_blocked_recipient',
+      relay,
+      nip65Relay: directory,
+    );
 
     await sender.client.send(
       to: [NostrRecipient.fromPubkey(recipient.keyPair.publicKey)],

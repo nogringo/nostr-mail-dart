@@ -2,6 +2,7 @@ import 'package:ndk/ndk.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
+import '../../helpers/publish_relay_lists.dart';
 import '../../helpers/test_user.dart';
 import '../../mocks/mock_relay.dart';
 
@@ -21,14 +22,10 @@ void main() {
       await sender.client.send(
         to: [
           NostrRecipient.fromPubkey(
-            Nip19.decode(
-              'npub1gvs8c59ndm3xyq2jz7hpww2z5xd4y9ppuvr42wwvramn38qrmkaqdqhdag',
-            ),
+            (await listedKeyPair([relay.url])).publicKey,
           ),
           NostrRecipient.fromPubkey(
-            Nip19.decode(
-              'npub10xqd0n0mmm0wma2qq6ycq2y5dn7dxqj6awhfa60mesm9qccw2rfszasxh5',
-            ),
+            (await listedKeyPair([relay.url])).publicKey,
           ),
         ],
         subject: 'subject',
@@ -73,15 +70,14 @@ void main() {
         await sender.create();
         addTearDown(() async => await sender.destroy());
 
-        const publicRecipientNpub =
-            'npub1gvs8c59ndm3xyq2jz7hpww2z5xd4y9ppuvr42wwvramn38qrmkaqdqhdag';
+        final publicRecipient = await listedKeyPair([relay.url]);
 
         final bccUser = TestUser('bcc', defaultDmRelays: [relay.url]);
         await bccUser.create();
         addTearDown(() async => await bccUser.destroy());
 
         await sender.client.send(
-          to: [NostrRecipient.fromPubkey(Nip19.decode(publicRecipientNpub))],
+          to: [NostrRecipient.fromPubkey(publicRecipient.publicKey)],
           bcc: [NostrRecipient.fromPubkey(bccUser.keyPair.publicKey)],
           subject: 'Public with BCC',
           body: 'Hello everyone (and secret Bob)',

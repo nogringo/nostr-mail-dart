@@ -1,9 +1,9 @@
 import 'package:enough_mail_plus/enough_mail.dart';
-import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:ndk/shared/nips/nip19/nip19.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
+import '../../helpers/publish_relay_lists.dart';
 import '../../helpers/test_user.dart';
 import '../../mocks/mock_bridge.dart';
 import '../../mocks/mock_relay.dart';
@@ -130,7 +130,7 @@ void main() {
 
         final fromAddress =
             '${Nip19.encodePubKey(user.keyPair.publicKey)}@bridge.com';
-        final publicRecipient = Bip340.generatePrivateKey();
+        final publicRecipient = await listedKeyPair([relay.url]);
 
         await user.client.send(
           from: MailAddress(null, fromAddress),

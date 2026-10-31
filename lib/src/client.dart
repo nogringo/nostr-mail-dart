@@ -138,13 +138,19 @@ class NostrMailClient {
   /// [create] starts it, which is idempotent, but never stops nor disposes it.
   /// Stop it when the app goes to the background, and share it with the other
   /// SDKs reading the same relays. The requests name the account's relay
-  /// lists, which the engine looks up on its `discoveryRelays`: add
-  /// [defaultDmRelays] and [defaultNip65Relays] there, or a list published
-  /// only on them is never found.
+  /// lists, which the engine looks up on its `discoveryRelays`: give it the
+  /// same [indexerRelays].
   ///
-  /// [defaultDmRelays] stand in for the DM relays (kind 10050) of an account
-  /// that publishes none, [defaultNip65Relays] for its NIP-65 relays (kind
-  /// 10002).
+  /// [indexerRelays] are where every NIP-65 (kind 10002) is looked up, and
+  /// every other list is looked up on the write relays that NIP-65 names. The
+  /// logged account must have a NIP-65 there: its other lists are found
+  /// through it, and it receives on its read relays when it has no DM relay
+  /// list.
+  ///
+  /// [defaultNip65Relays] stand in for the NIP-65 write relays of an account
+  /// that publishes none. Nothing stands in for where an account receives: its
+  /// DM relays (kind 10050), else its NIP-65 read relays. A send to an account
+  /// with neither throws [UnreachableRecipientsException].
   ///
   /// Pass [broadcastQueue] to share a single queue across SDKs, tune its
   /// parameters, or inject a custom one in tests. When you provide your own
@@ -157,8 +163,7 @@ class NostrMailClient {
   /// URLs, so the queue looks them up itself instead of holding the call.
   /// When [broadcastQueue] is null, the client instantiates and starts an
   /// internal `OfflineBroadcast.withNdk(ndk, db: db)` that looks the lists up
-  /// on the public indexers plus the default relays, and
-  /// `NostrMailClient.dispose()` disposes it.
+  /// on [indexerRelays], and `NostrMailClient.dispose()` disposes it.
   ///
   /// [blossomCache] is the local blob store that holds the encrypted bytes
   /// of large emails until every Blossom server has acked the upload. The
@@ -179,7 +184,7 @@ class NostrMailClient {
     required Database db,
     required BlossomCache blossomCache,
     required SyncEngine syncEngine,
-    List<String>? defaultDmRelays,
+    List<String> indexerRelays = defaultIndexerRelays,
     List<String>? defaultNip65Relays,
     List<String>? defaultBlossomServers,
     Map<String, String>? nip05Overrides,
@@ -203,7 +208,7 @@ class NostrMailClient {
 
     final relayResolver = RelayResolver(
       ndk,
-      defaultDmRelays: defaultDmRelays,
+      indexerRelays: indexerRelays,
       defaultNip65Relays: defaultNip65Relays,
     );
     final OfflineBroadcast queue;
@@ -212,16 +217,10 @@ class NostrMailClient {
       queue = broadcastQueue;
       ownsQueue = false;
     } else {
-      // The queue resolves the relay sets it is given, and looks the lists up
-      // on the public indexers only. Add our own relays: an account whose
-      // NIP-65 lives there alone would otherwise never resolve.
       queue = OfflineBroadcast.withNdk(
         ndk,
         db: db,
-        relayListDiscoveryRelays: {
-          ...defaultIndexerRelays,
-          ...relayResolver.defaultRelays,
-        },
+        relayListDiscoveryRelays: indexerRelays,
       );
       queue.start();
       ownsQueue = true;
@@ -233,15 +232,11 @@ class NostrMailClient {
       blossomQueue = blossomUploadQueue;
       ownsBlossomQueue = false;
     } else {
-      // Same discovery relays as the broadcast queue, for the same reason.
       blossomQueue = OfflineBlossomUpload.withNdk(
         ndk,
         cache: blossomCache,
         store: SembastUploadQueueStore(db),
-        serverListDiscoveryRelays: {
-          ...defaultIndexerRelays,
-          ...relayResolver.defaultRelays,
-        },
+        serverListDiscoveryRelays: indexerRelays,
       );
       blossomQueue.start();
       ownsBlossomQueue = true;

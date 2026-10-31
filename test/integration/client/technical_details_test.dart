@@ -4,6 +4,7 @@ import 'package:nostr_mail/nostr_mail.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
 
+import '../../helpers/publish_relay_lists.dart';
 import '../../helpers/test_blossom_cache.dart';
 import '../../helpers/test_database.dart';
 import '../../mocks/mock_relay.dart';
@@ -18,7 +19,7 @@ void main() {
     final db = await databaseFactoryMemory.openDatabase('db');
 
     final keyPair = Bip340.generatePrivateKey();
-    final recipientKeyPair = Bip340.generatePrivateKey();
+    final recipientKeyPair = await listedKeyPair([relay.url]);
 
     final ndk = Ndk(
       NdkConfig(
@@ -34,6 +35,11 @@ void main() {
       pubkey: keyPair.publicKey,
       privkey: keyPair.privateKey!,
     );
+    await publishRelayLists(
+      ndk,
+      dmRelays: [relay.url],
+      nip65Relays: [relay.url],
+    );
 
     final client = await NostrMailClient.create(
       ndk: ndk,
@@ -41,7 +47,7 @@ void main() {
       db: db,
       syncEngine: testSyncEngine(ndk, db),
       blossomCache: await openTestBlossomCache('technical_details_test'),
-      defaultDmRelays: [relay.url],
+      indexerRelays: [relay.url],
       defaultNip65Relays: [relay.url],
     );
 

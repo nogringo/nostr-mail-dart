@@ -11,10 +11,14 @@ class OutgoingEvent {
   OutgoingEvent(this.event, this.relays, {this.seal});
 }
 
-/// Wraps a rumor into a NIP-59 gift wrap for [recipientPubkey], returning the
-/// gift wrap and the relays it should go to.
+/// Wraps a rumor into a NIP-59 gift wrap for [recipientPubkey], bound for the
+/// [relays] it receives on.
 typedef GiftWrapBuilder =
-    Future<OutgoingEvent> Function(Nip01Event rumor, String recipientPubkey);
+    Future<OutgoingEvent> Function(
+      Nip01Event rumor,
+      String recipientPubkey,
+      List<String> relays,
+    );
 
 /// Hook invoked after an event and its destination relays are fully resolved,
 /// immediately before the event is persisted to the broadcast queue.
@@ -39,7 +43,8 @@ abstract class Delivery {
   Future<void> deliverEvent(Nip01Event event, List<String> relays);
   Future<OutgoingEvent> deliverGiftWrap(
     Nip01Event rumor,
-    String recipientPubkey, {
+    String recipientPubkey,
+    List<String> relays, {
     OnGiftWrapBuilt? onBuilt,
   });
 }
@@ -85,10 +90,11 @@ class BroadcastDelivery implements Delivery {
   @override
   Future<OutgoingEvent> deliverGiftWrap(
     Nip01Event rumor,
-    String recipientPubkey, {
+    String recipientPubkey,
+    List<String> relays, {
     OnGiftWrapBuilt? onBuilt,
   }) async {
-    final out = await _buildGiftWrap(rumor, recipientPubkey);
+    final out = await _buildGiftWrap(rumor, recipientPubkey, relays);
     await onBuilt?.call(out);
     await _beforePublish?.call(out.event, out.relays);
     await _queue.broadcast(
@@ -122,10 +128,11 @@ class ScheduleDelivery implements Delivery {
   @override
   Future<OutgoingEvent> deliverGiftWrap(
     Nip01Event rumor,
-    String recipientPubkey, {
+    String recipientPubkey,
+    List<String> relays, {
     OnGiftWrapBuilt? onBuilt,
   }) async {
-    final out = await _buildGiftWrap(rumor, recipientPubkey);
+    final out = await _buildGiftWrap(rumor, recipientPubkey, relays);
     await onBuilt?.call(out);
     items.add(out);
     return out;

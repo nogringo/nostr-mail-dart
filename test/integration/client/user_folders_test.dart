@@ -4,6 +4,7 @@ import 'package:nostr_mail/nostr_mail.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:test/test.dart';
 
+import '../../helpers/publish_relay_lists.dart';
 import '../../helpers/test_blossom_cache.dart';
 import '../../helpers/test_database.dart';
 import '../../helpers/test_sync_engine.dart';
@@ -36,6 +37,11 @@ void main() {
         pubkey: keyPair.publicKey,
         privkey: keyPair.privateKey!,
       );
+      await publishRelayLists(
+        ndk,
+        dmRelays: [relay.url],
+        nip65Relays: [relay.url],
+      );
 
       client = await NostrMailClient.create(
         ndk: ndk,
@@ -43,7 +49,7 @@ void main() {
         db: db,
         syncEngine: testSyncEngine(ndk, db),
         blossomCache: await openTestBlossomCache('user_folders_test'),
-        defaultDmRelays: [relay.url],
+        indexerRelays: [relay.url],
         defaultNip65Relays: [relay.url],
       );
     });
@@ -134,7 +140,11 @@ void main() {
 
     test('trash remembers the user folder and restore goes back', () async {
       await client.send(
-        to: [NostrRecipient.fromPubkey(Bip340.generatePrivateKey().publicKey)],
+        to: [
+          NostrRecipient.fromPubkey(
+            (await listedKeyPair([relay.url])).publicKey,
+          ),
+        ],
         subject: 'Invoice 42',
         body: 'Due next week.',
       );
@@ -165,7 +175,11 @@ void main() {
         match: const MailMatch(subject: ['invoice']),
       );
       await client.send(
-        to: [NostrRecipient.fromPubkey(Bip340.generatePrivateKey().publicKey)],
+        to: [
+          NostrRecipient.fromPubkey(
+            (await listedKeyPair([relay.url])).publicKey,
+          ),
+        ],
         subject: 'Invoice 42',
         body: 'Due next week.',
       );
@@ -187,7 +201,9 @@ void main() {
       () async {
         await client.send(
           to: [
-            NostrRecipient.fromPubkey(Bip340.generatePrivateKey().publicKey),
+            NostrRecipient.fromPubkey(
+              (await listedKeyPair([relay.url])).publicKey,
+            ),
           ],
           subject: 'Invoice 42',
           body: 'Due next week.',

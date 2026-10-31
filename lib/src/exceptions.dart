@@ -1,3 +1,5 @@
+import 'models/recipient.dart';
+
 class NostrMailException implements Exception {
   final String message;
   NostrMailException(this.message);
@@ -14,6 +16,25 @@ class BridgeResolutionException extends NostrMailException {
 class RecipientResolutionException extends NostrMailException {
   RecipientResolutionException(String recipient)
     : super('Failed to resolve recipient: $recipient');
+}
+
+/// Thrown by a send, before anything is saved or enqueued, when some of its
+/// targets publish no relay to receive on: neither a DM relay list (kind
+/// 10050) nor NIP-65 read relays.
+class UnreachableRecipientsException extends NostrMailException {
+  /// An SMTP recipient is here when its bridge is unreachable.
+  final List<Recipient> recipients;
+
+  /// Whether the sender's own copy has nowhere to go.
+  final bool sender;
+
+  UnreachableRecipientsException(this.recipients, {this.sender = false})
+    : super('No relay to reach ${_describe(recipients, sender)}');
+
+  static String _describe(List<Recipient> recipients, bool sender) => [
+    for (final r in recipients) r.mailAddress.email,
+    if (sender) 'the sender',
+  ].join(', ');
 }
 
 class EmailParseException extends NostrMailException {

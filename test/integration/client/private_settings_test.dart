@@ -47,7 +47,7 @@ void main() {
           db: db,
           syncEngine: testSyncEngine(ndk, db),
           blossomCache: await openTestBlossomCache('private_settings_a'),
-          defaultDmRelays: [relay.url],
+          indexerRelays: [relay.url],
           defaultNip65Relays: [relay.url],
         );
         addTearDown(() async => await clientA.dispose());
@@ -71,7 +71,7 @@ void main() {
           db: db2,
           syncEngine: testSyncEngine(ndk, db2),
           blossomCache: await openTestBlossomCache('private_settings_b'),
-          defaultDmRelays: [relay.url],
+          indexerRelays: [relay.url],
           defaultNip65Relays: [relay.url],
         );
         addTearDown(() async => await clientB.dispose());
@@ -124,7 +124,7 @@ void main() {
         db: db,
         syncEngine: testSyncEngine(ndk, db),
         blossomCache: blossomCache,
-        defaultDmRelays: [relay.url],
+        indexerRelays: [relay.url],
         defaultNip65Relays: [relay.url],
       );
     });
@@ -156,7 +156,7 @@ void main() {
           db: db,
           syncEngine: testSyncEngine(ndk, db),
           blossomCache: blossomCache,
-          defaultDmRelays: [relay.url],
+          indexerRelays: [relay.url],
           defaultNip65Relays: [relay.url],
         );
 
@@ -291,7 +291,7 @@ void main() {
           db: freshDb,
           syncEngine: testSyncEngine(ndk, freshDb),
           blossomCache: blossomCache,
-          defaultDmRelays: relays ?? [relay.url],
+          indexerRelays: relays ?? [relay.url],
           defaultNip65Relays: relays ?? [relay.url],
         );
         addTearDown(fresh.dispose);

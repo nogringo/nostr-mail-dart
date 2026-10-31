@@ -1,8 +1,8 @@
 import 'package:ndk/ndk.dart';
-import 'package:ndk/shared/nips/nip01/bip340.dart';
 import 'package:nostr_mail/nostr_mail.dart';
 import 'package:test/test.dart';
 
+import '../../helpers/publish_relay_lists.dart';
 import '../../helpers/test_user.dart';
 import '../../helpers/wait_for_broadcasts.dart';
 import '../../mocks/mock_relay.dart';
@@ -20,7 +20,9 @@ void main() {
     addTearDown(() async => await sender.destroy());
 
     await sender.client.send(
-      to: [NostrRecipient.fromPubkey(Bip340.generatePrivateKey().publicKey)],
+      to: [
+        NostrRecipient.fromPubkey((await listedKeyPair([relay.url])).publicKey),
+      ],
       subject: 'Deleted right away',
       body: 'Gone before the sync ever brings it back.',
     );

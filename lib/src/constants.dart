@@ -80,7 +80,7 @@ const maxSignerAttempts = 3;
 /// body and attachments.
 const maxProcessingConcurrency = 8;
 
-/// Default DM relays used when user has no relay list configured
+/// DM relays recommended for the kind 10050 of a new account
 const recommendedDmRelays = ['wss://relay.nmail.li', 'wss://auth.nostr1.com'];
 
 /// Default NIP-65 relays used when user has no relay list configured

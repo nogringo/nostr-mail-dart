@@ -40,7 +40,7 @@ void main() async {
   final syncEngine = SyncEngine(
     ndk,
     store: SembastSyncStore(db),
-    discoveryRelays: {...defaultIndexerRelays, ...recommendedDmRelays},
+    discoveryRelays: defaultIndexerRelays,
   );
 
   // The mail store. A real app opens `NativeDatabase(File(...))` on native
