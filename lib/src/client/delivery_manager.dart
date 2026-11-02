@@ -6,11 +6,13 @@ import 'package:rxdart/rxdart.dart';
 import '../constants.dart';
 import '../models/email_delivery.dart';
 import '../storage/delivery_repository.dart';
+import 'relay_resolver.dart';
 
 /// Follows a Sent email through the broadcast and Blossom upload queues.
 class DeliveryManager {
   final Ndk _ndk;
   final DeliveryRepository _repo;
+  final RelayResolver _relayResolver;
   final OfflineBroadcast _broadcastQueue;
   final OfflineBlossomUpload _blossomUploadQueue;
   final List<String>? _defaultBlossomServers;
@@ -18,6 +20,7 @@ class DeliveryManager {
   DeliveryManager(
     this._ndk,
     this._repo,
+    this._relayResolver,
     this._broadcastQueue,
     this._blossomUploadQueue, {
     this._defaultBlossomServers,
@@ -48,17 +51,62 @@ class DeliveryManager {
     ]).asyncMap((states) => _build(emailId, senderPubkey, states));
   }
 
+  /// Each recipient the queue finds listing no relay when it looks their
+  /// relays up after the send, as it settles them while this is listened to.
+  Stream<UnreachableDelivery> watchUnreachable() async* {
+    var lookingUp = <String, QueuedBroadcast>{};
+    await for (final pending in _broadcastQueue.watchPending()) {
+      final next = {
+        for (final b in pending)
+          if (b.pendingRelaySet != null && b.pubkey != null) b.key: b,
+      };
+      for (final MapEntry(:key, value: b) in lookingUp.entries) {
+        if (next.containsKey(key)) continue;
+        final settled = await _broadcastQueue.get(b.id, pubkey: b.pubkey);
+        if (settled == null ||
+            settled.status != BroadcastStatus.failed ||
+            settled.relays.isNotEmpty) {
+          continue;
+        }
+        for (final (emailId, target) in await _repo.findByEventId(
+          b.id,
+          senderPubkey: b.pubkey!,
+        )) {
+          yield UnreachableDelivery(
+            emailId: emailId,
+            senderPubkey: b.pubkey!,
+            recipientPubkey: target.recipientPubkey,
+            smtpAddresses: target.smtpAddresses,
+          );
+        }
+      }
+      lookingUp = next;
+    }
+  }
+
   /// Pushes again every event and blob of [emailId] that some relay or server
-  /// still owes.
+  /// still owes, and looks again for the relays of a recipient found with
+  /// none. A lookup still pending is left to the queue's own retries.
   Future<void> retry(String emailId, {required String senderPubkey}) async {
     final targets = await _repo.getAll(emailId, senderPubkey: senderPubkey);
-    for (final eventId in targets.map((t) => t.eventId).toSet()) {
+    for (final target in {for (final t in targets) t.eventId: t}.values) {
       final broadcast = await _broadcastQueue.get(
-        eventId,
+        target.eventId,
         pubkey: senderPubkey,
       );
-      if (broadcast != null && broadcast.status != BroadcastStatus.delivered) {
-        await _broadcastQueue.rebroadcast(eventId, pubkey: senderPubkey);
+      if (broadcast == null ||
+          broadcast.status == BroadcastStatus.delivered ||
+          broadcast.pendingRelaySet != null) {
+        continue;
+      }
+      if (broadcast.relays.isEmpty) {
+        await _broadcastQueue.broadcast(
+          broadcast.event,
+          relaySet: _relayResolver.dmRelaySet([target.recipientPubkey]),
+          pubkey: senderPubkey,
+        );
+      } else {
+        await _broadcastQueue.rebroadcast(target.eventId, pubkey: senderPubkey);
       }
     }
     for (final sha256 in targets.map((t) => t.blobSha256).nonNulls.toSet()) {
@@ -84,10 +132,15 @@ class DeliveryManager {
       if (broadcast == null) return null;
       if (target.blobSha256 != null && upload == null) return null;
 
+      final lookedUp = target.relays.isEmpty;
       final recipient = RecipientDelivery(
         pubkey: target.recipientPubkey,
         smtpAddresses: target.smtpAddresses,
-        relays: _relays(target.relays, broadcast),
+        relays: _relays(lookedUp ? broadcast.relays : target.relays, broadcast),
+        unreachable:
+            lookedUp &&
+            broadcast.relays.isEmpty &&
+            broadcast.status == BroadcastStatus.failed,
         blob: upload == null
             ? null
             : BlobDelivery(

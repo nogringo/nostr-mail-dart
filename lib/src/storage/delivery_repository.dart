@@ -15,7 +15,8 @@ class DeliveryTarget {
   /// The gift wrap, or the public event the recipient reads.
   final String eventId;
 
-  /// The relays the recipient reads [eventId] from.
+  /// The relays the recipient reads [eventId] from. Empty when the broadcast
+  /// queue looks them up.
   final List<String> relays;
 
   /// The blob holding the email, when it is too large to travel inline.
@@ -68,17 +69,31 @@ class DeliveryRepository {
                   d.senderPubkey.equals(senderPubkey),
             ))
             .get();
-    return [
-      for (final row in rows)
-        DeliveryTarget(
-          recipientPubkey: row.recipientPubkey,
-          smtpAddresses: (jsonDecode(row.smtpAddresses) as List).cast<String>(),
-          eventId: row.eventId,
-          relays: (jsonDecode(row.relays) as List).cast<String>(),
-          blobSha256: row.blobSha256,
-        ),
-    ];
+    return [for (final row in rows) _target(row)];
   }
+
+  /// The emails, and the target in each, that [eventId] was sent to.
+  Future<List<(String emailId, DeliveryTarget target)>> findByEventId(
+    String eventId, {
+    required String senderPubkey,
+  }) async {
+    final rows =
+        await (_db.select(_db.deliveries)..where(
+              (d) =>
+                  d.eventId.equals(eventId) &
+                  d.senderPubkey.equals(senderPubkey),
+            ))
+            .get();
+    return [for (final row in rows) (row.emailId, _target(row))];
+  }
+
+  DeliveryTarget _target(DeliveryRow row) => DeliveryTarget(
+    recipientPubkey: row.recipientPubkey,
+    smtpAddresses: (jsonDecode(row.smtpAddresses) as List).cast<String>(),
+    eventId: row.eventId,
+    relays: (jsonDecode(row.relays) as List).cast<String>(),
+    blobSha256: row.blobSha256,
+  );
 
   /// Delete the deliveries sent by [senderPubkey], or pass `null` to wipe
   /// the entire store across all accounts.

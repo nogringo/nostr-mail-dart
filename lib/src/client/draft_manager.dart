@@ -48,6 +48,9 @@ class DraftManager {
     String? draftId,
     String? mailFrom,
   }) async {
+    // TODO: save locally without the signer, which only syncs the draft: keep
+    // unsigned versions in a table that survives schema changes, with the
+    // created_at of the save, and sign, upload and broadcast them later.
     final account = _signingAccount();
     final pubkey = account.pubkey;
     draftId ??= _newDraftId();

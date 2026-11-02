@@ -40,11 +40,17 @@ abstract class Delivery {
   /// Whether to persist the sender's local Sent copy during the send.
   bool get saveSelfCopy;
 
+  /// Whether a gift wrap can leave before its recipient's relays are known.
+  bool get looksUpRelays;
+
   Future<void> deliverEvent(Nip01Event event, List<String> relays);
+
+  /// [relays] is null when no relay answered the lookup, which only a
+  /// [looksUpRelays] delivery accepts.
   Future<OutgoingEvent> deliverGiftWrap(
     Nip01Event rumor,
     String recipientPubkey,
-    List<String> relays, {
+    List<String>? relays, {
     OnGiftWrapBuilt? onBuilt,
   });
 }
@@ -57,18 +63,23 @@ abstract class Delivery {
 ///
 /// The relays are resolved here and queued as a `UrlSet.explicit`: a send
 /// reports the exact relay list it targets through [BeforePublish], and the
-/// same list goes in the `public-ref` tag of a public email.
+/// same list goes in the `public-ref` tag of a public email. A gift wrap whose
+/// relays could not be looked up, offline for one, is queued with
+/// [receivingRelays] instead, for the queue to resolve once a relay answers,
+/// and reports no relay.
 class BroadcastDelivery implements Delivery {
   final OfflineBroadcast _queue;
   final GiftWrapBuilder _buildGiftWrap;
   final BeforePublish? _beforePublish;
   final String senderPubkey;
+  final UrlSet Function(String pubkey) receivingRelays;
   final int _now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
   BroadcastDelivery(
     this._queue,
     this._buildGiftWrap,
     this._beforePublish, {
     required this.senderPubkey,
+    required this.receivingRelays,
   });
 
   @override
@@ -76,6 +87,9 @@ class BroadcastDelivery implements Delivery {
 
   @override
   bool get saveSelfCopy => true;
+
+  @override
+  bool get looksUpRelays => true;
 
   @override
   Future<void> deliverEvent(Nip01Event event, List<String> relays) async {
@@ -91,15 +105,21 @@ class BroadcastDelivery implements Delivery {
   Future<OutgoingEvent> deliverGiftWrap(
     Nip01Event rumor,
     String recipientPubkey,
-    List<String> relays, {
+    List<String>? relays, {
     OnGiftWrapBuilt? onBuilt,
   }) async {
-    final out = await _buildGiftWrap(rumor, recipientPubkey, relays);
+    final out = await _buildGiftWrap(
+      rumor,
+      recipientPubkey,
+      relays ?? const [],
+    );
     await onBuilt?.call(out);
     await _beforePublish?.call(out.event, out.relays);
     await _queue.broadcast(
       out.event,
-      relaySet: UrlSet.explicit(out.relays),
+      relaySet: relays == null
+          ? receivingRelays(recipientPubkey)
+          : UrlSet.explicit(out.relays),
       pubkey: senderPubkey,
     );
     return out;
@@ -120,6 +140,10 @@ class ScheduleDelivery implements Delivery {
   @override
   bool get saveSelfCopy => false;
 
+  /// The scheduler publishes to the relays it is handed.
+  @override
+  bool get looksUpRelays => false;
+
   @override
   Future<void> deliverEvent(Nip01Event event, List<String> relays) async {
     items.add(OutgoingEvent(event, relays));
@@ -129,10 +153,10 @@ class ScheduleDelivery implements Delivery {
   Future<OutgoingEvent> deliverGiftWrap(
     Nip01Event rumor,
     String recipientPubkey,
-    List<String> relays, {
+    List<String>? relays, {
     OnGiftWrapBuilt? onBuilt,
   }) async {
-    final out = await _buildGiftWrap(rumor, recipientPubkey, relays);
+    final out = await _buildGiftWrap(rumor, recipientPubkey, relays!);
     await onBuilt?.call(out);
     items.add(out);
     return out;

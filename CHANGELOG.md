@@ -11,6 +11,19 @@
   one of its relays holds the event and one of its servers holds the blob.
   `retryDelivery(emailId)` pushes again whatever a relay or server still owes.
   Only the emails sent from this device from this version on are known.
+- A send no longer stops at a recipient whose relay lists no relay answered
+  for, offline for one: its gift wrap is saved and enqueued, and the
+  broadcast queue looks its relays up once a relay answers. Its
+  `RecipientDelivery` lists no relay until then, and fails with the new
+  `unreachable` when the lookup finds none. `watchUnreachableDeliveries()`
+  emits an `UnreachableDelivery` for each such recipient of the logged
+  account as the queue settles it, and `retryDelivery` looks its relays up
+  again. `beforePublish` gets an empty relay list for that gift wrap. A
+  scheduled send still needs every lookup answered and throws
+  `NetworkRequiredException` otherwise. The To and Cc of a public email and
+  the bridge of an SMTP recipient are still looked up at send time. The queue
+  looks the relays up with its own `relayListFn`, which
+  `OfflineBroadcast.withNdk` builds with NDK's default NIP-42 policy.
 - **Breaking**: require `blossom_upload_queue_shim_for_ndk: ^0.12.0`. A queue
   passed to `create` comes from that version, whose changelog lists what
   changes. A server answering 413 or 415 refuses a blob for good: a recipient
@@ -38,7 +51,8 @@
   bootstrap relays.
 - A relay list lookup that no relay answered throws `NetworkRequiredException`
   with the `relay-lists` operation, instead of passing for a missing list.
-  Looking up another account's lists never authenticates (NIP-42).
+  The client's own lookups of another account's lists never authenticate
+  (NIP-42).
 - `getReadRelays(pubkey)` returns the NIP-65 read relays of a pubkey. A
   recipient with some can be sent any email, public or private, so a composer
   can tell before sending; an empty list is a recipient without a usable

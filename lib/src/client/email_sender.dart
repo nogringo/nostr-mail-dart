@@ -151,8 +151,13 @@ class EmailSender {
   /// relayed content. The grouping matters: a public email's To/Cc go in the
   /// public event while Bcc is gift-wrapped privately.
   ///
+  /// A gift wrap whose recipient's relays no relay answered for is queued
+  /// anyway, and the queue looks them up once it can. The recipient's delivery
+  /// fails if it then lists none.
+  ///
   /// [beforePublish] is called with each fully built outgoing event and the
-  /// exact resolved relay list immediately before the event is enqueued.
+  /// exact resolved relay list immediately before the event is enqueued, empty
+  /// for a gift wrap whose relays the queue looks up.
   Future<void> sendMime(
     MimeMessage message, {
     required List<Recipient> to,
@@ -179,6 +184,7 @@ class EmailSender {
         _buildGiftWrap,
         beforePublish,
         senderPubkey: _pubkey!,
+        receivingRelays: (pubkey) => _relays.dmRelaySet([pubkey]),
       ),
     );
   }
@@ -331,30 +337,41 @@ class EmailSender {
     if (keepCopy) targetPubkeys.add(senderPubkey);
 
     // Looked up before anything is saved or enqueued: a target with no relay
-    // stops the whole send, not the part of it still ahead.
+    // stops the whole send, not the part of it still ahead. A gift wrap target
+    // no relay answered for is left to the queue to look up.
     final wrapPubkeys = {
       if (isPublic) ...bccNostr else ...targetPubkeys,
       if (isPublic && keepCopy) senderPubkey,
       ...rcptToByBridge.keys,
     };
-    Future<Map<String, List<String>>> relaysOf(
+    Future<Map<String, T>> relaysOf<T>(
       Set<String> pubkeys,
-      Future<List<String>> Function(String pubkey) lookUp,
+      Future<T> Function(String pubkey) lookUp,
     ) async =>
         Map.fromIterables(pubkeys, await Future.wait(pubkeys.map(lookUp)));
     final (dmRelays, readRelays) = await (
-      relaysOf(wrapPubkeys, _relays.getDmRelays),
+      relaysOf(wrapPubkeys, _relays.findDmRelays),
       relaysOf(
         isPublic ? publicRecipientPubkeys : const <String>{},
         _relays.getReadRelays,
       ),
     ).wait;
+    final notLookedUp = [
+      for (final MapEntry(:key, :value) in dmRelays.entries)
+        if (value == null) key,
+    ];
+    if (notLookedUp.isNotEmpty && !delivery.looksUpRelays) {
+      throw NetworkRequiredException(
+        'relay-lists',
+        'no relay answered for ${notLookedUp.join(', ')}',
+      );
+    }
     final unreachable = {
       for (final MapEntry(:key, :value) in [
         ...dmRelays.entries,
         ...readRelays.entries,
       ])
-        if (value.isEmpty) key,
+        if (value != null && value.isEmpty) key,
     };
     if (unreachable.isNotEmpty) {
       final bridgeUnreachable = rcptToByBridge.keys.any(unreachable.contains);
@@ -488,7 +505,7 @@ class EmailSender {
         final wrap = await delivery.deliverGiftWrap(
           signedBccRumor,
           pubkey,
-          dmRelays[pubkey]!,
+          dmRelays[pubkey],
         );
         targets.add(_wrapTarget(pubkey, wrap, signedBccRumor));
       });
@@ -498,7 +515,7 @@ class EmailSender {
           delivery,
           senderRumor,
           senderPubkey,
-          dmRelays[senderPubkey]!,
+          dmRelays[senderPubkey],
         );
         targets.add(_wrapTarget(senderPubkey, wrap, senderRumor));
       }
@@ -541,7 +558,7 @@ class EmailSender {
             delivery,
             senderRumor,
             pubkey,
-            dmRelays[pubkey]!,
+            dmRelays[pubkey],
           );
           targets.add(_wrapTarget(pubkey, wrap, senderRumor));
           return;
@@ -565,7 +582,7 @@ class EmailSender {
         final wrap = await delivery.deliverGiftWrap(
           eventToPublish,
           pubkey,
-          dmRelays[pubkey]!,
+          dmRelays[pubkey],
         );
         targets.add(_wrapTarget(pubkey, wrap, eventToPublish));
       });
@@ -663,7 +680,7 @@ class EmailSender {
   Future<void> _publishToBridges({
     required String senderPubkey,
     required Map<String, List<String>> rcptToByBridge,
-    required Map<String, List<String>> dmRelays,
+    required Map<String, List<String>?> dmRelays,
     required String? fromAddress,
     required String? explicitMailFrom,
     required List<List<String>> baseTags,
@@ -697,7 +714,7 @@ class EmailSender {
       final wrap = await delivery.deliverGiftWrap(
         rumor,
         bridgePubkey,
-        dmRelays[bridgePubkey]!,
+        dmRelays[bridgePubkey],
       );
       targets.add(
         _wrapTarget(bridgePubkey, wrap, rumor, smtpAddresses: entry.value),
@@ -748,7 +765,7 @@ class EmailSender {
     Delivery delivery,
     Nip01Event rumor,
     String senderPubkey,
-    List<String> relays,
+    List<String>? relays,
   ) => delivery.deliverGiftWrap(
     rumor,
     senderPubkey,

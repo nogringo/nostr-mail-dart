@@ -326,6 +326,7 @@ class NostrMailClient {
       deliveries: DeliveryManager(
         ndk,
         deliveryRepo,
+        relayResolver,
         queue,
         blossomQueue,
         defaultBlossomServers: defaultBlossomServers,
@@ -1179,9 +1180,17 @@ class NostrMailClient {
       _deliveries.watch(emailId, senderPubkey: _requirePubkey());
 
   /// Pushes again every event and blob of the Sent email [emailId] that some
-  /// relay or server still owes, refusals included.
+  /// relay or server still owes, refusals included, and looks again for the
+  /// relays of a recipient found with none.
   Future<void> retryDelivery(String emailId) =>
       _deliveries.retry(emailId, senderPubkey: _requirePubkey());
+
+  /// Each recipient of an email the logged account sent from this device that
+  /// turned out to list no relay when the queue looked them up after the send,
+  /// as the queue settles them while this is listened to.
+  Stream<UnreachableDelivery> watchUnreachableDeliveries() => _deliveries
+      .watchUnreachable()
+      .where((d) => d.senderPubkey == _ndk.accounts.getPublicKey());
 
   // ── Scheduling ──────────────────────────────────────────────────────────
 

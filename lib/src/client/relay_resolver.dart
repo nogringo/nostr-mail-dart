@@ -38,6 +38,13 @@ class RelayResolver {
   Future<List<String>> getDmRelays(String pubkey) =>
       _resolve(dmRelaySet([pubkey]));
 
+  /// [getDmRelays], or null when no relay answered the lookup.
+  Future<List<String>?> findDmRelays(String pubkey) async =>
+      switch (await resolveUrlSet(dmRelaySet([pubkey]), _lookUp)) {
+        UrlsResolved(:final urls) => urls,
+        UrlsUnavailable() => null,
+      };
+
   /// The NIP-65 write relays of [pubkey], or the defaults when it publishes
   /// none.
   Future<List<String>> getWriteRelays(String pubkey) =>
