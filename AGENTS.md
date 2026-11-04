@@ -1,7 +1,7 @@
 # nostr_mail — Agent Guide
 
 > Dart SDK for sending and receiving emails over the Nostr protocol using NIP-59 gift-wrapped messages.
-> Version: 7.0.0 | Dart SDK: ^3.12.0 | Platforms: Android, iOS, Linux, macOS, Web, Windows
+> Version: 8.0.0 | Dart SDK: ^3.12.0 | Platforms: Android, iOS, Linux, macOS, Web, Windows
 
 ---
 
@@ -19,6 +19,7 @@
 - Public email posts (signed kind 1301, optionally with BCC gift wraps)
 - Email drafts as **NIP-37** draft wraps (kind 31234, `k` 1301) holding the self-copy rumor, on the private relays ([Drafts](https://github.com/nogringo/nostr-mail-client/blob/main/docs/drafts-protocol.md))
 - Real-time inbox watching via unified `MailEvent` stream
+- Delivery of each sent email followed recipient by recipient, through the broadcast and Blossom upload queues
 
 ### Key NIPs Implemented
 
@@ -89,6 +90,7 @@ lib/
     │   ├── inline_signature.dart# A signature ready to send: cid: HTML + inline image parts
     │   ├── sender_verdict.dart  # SenderVerdict: allow or block
     │   ├── encrypted_blob.dart  # AES-GCM blob metadata
+    │   ├── email_delivery.dart  # EmailDelivery, RecipientDelivery, UrlDelivery, UnreachableDelivery
     │   ├── draft.dart           # Draft: a listing entry of a saved draft
     │   └── unwrapped_gift_wrap.dart # Seal + Rumor pair
     ├── client/
@@ -100,7 +102,8 @@ lib/
     │   ├── settings_manager.dart# Private settings CRUD + cache
     │   ├── signature_image_manager.dart # Signature images: encrypted Blossom blobs, cid: inlining
     │   ├── draft_manager.dart   # saveDraft, deleteDraft, list and watch drafts (NIP-37)
-    │   └── relay_resolver.dart  # Shared helper: resolve DM & write relays (NIP-17/65)
+    │   ├── delivery_manager.dart# watchDelivery, retryDelivery: a sent email through both queues
+    │   └── relay_resolver.dart  # Shared helper: resolve DM, write & read relays (NIP-17/65)
     ├── storage/
     │   ├── schema.drift              # Tables, indexes, email_states view, FTS5 index + triggers
     │   ├── database.dart             # NostrMailDatabase (drift), drop-and-recreate on version change
@@ -113,6 +116,7 @@ lib/
     │   ├── match_repository.dart     # Emails held by a folder/tag match condition
     │   ├── sender_repository.dart    # Senders list entries and their decryptions
     │   ├── draft_repository.dart     # Current version of each draft and the decryptions of its wraps
+    │   ├── delivery_repository.dart  # What each send queued for each recipient
     │   ├── legacy_sembast_cleanup.dart # Drops the stores kept in sembast before 3.0.0
     │   └── models/
     │       ├── email_record.dart     # Stored columns + state derived from labels on read
@@ -145,6 +149,8 @@ test/
 │   └── mock_bridge.dart         # SMTP bridge simulator using NostrMailClient
 └── helpers/
     ├── allow_sender.dart        # allowSender(), an allow verdict seeded in the store
+    ├── publish_relay_lists.dart # publishRelayLists(), listedKeyPair(): the relay lists a send needs
+    ├── until_past.dart          # untilPast(), waits out an event dated ahead of the clock
     ├── test_user.dart           # Helper: create user + NDK + both databases + client
     ├── test_database.dart       # testDatabase(), in-memory drift store
     ├── test_blossom_cache.dart  # In-memory BlossomCache
@@ -158,9 +164,9 @@ test/
 - **`RelayResolver`** eliminates duplication of `_getDmRelays()` / `_getWriteRelays()` across managers.
 - **`MailSync`** (in `mail_sync.dart`) declares what the caller-provided `SyncEngine` (`sync_engine_shim_for_ndk`) must keep available, then rebuilds the local stores from the NDK cache. It never queries a relay itself.
 - **`filters.dart`** is the single source of truth for all Nostr query filters used by the SDK (8 filter categories). `MailSync` uses them both as sync declarations and as cache reads, and `WatchManager` for its subscriptions, so filters can never diverge.
-- **Relational storage**: the schema lives in `lib/src/storage/schema.drift`. `labels` is the source of truth for an email's state: the `email_states` view derives `folder` (most recent `folder:` label; else, for received mail, `spam` when its sender is blocked and `requests` when it has no verdict; else the first user folder whose `match` holds, in display order (`sortEntries`); else `sent`/`inbox` from sender == recipient), `is_read` and `is_starred`, so nothing is copied onto the email row and a label landing before its email needs no special handling. It holds one row per label event, not per label, with the gift wrap that carried it: two devices can apply the same label before either sees the other, and removing it names every event. `matches` holds the user folders and tags whose `match` condition holds each email. It is computed in Dart, since SQLite folds the case of ASCII only: `EmailRepository.save` indexes the email it saves, and `SettingsRepository.save` rebuilds the account when the conditions change. `sender_ops` holds one row per entry of each senders list event, and the `sender_verdicts` view resolves the verdict of each sender key from them; `emails.sender_key` is computed in Dart for the same reason as `matches`. Attachment refs are rows of `attachments` (cascade on delete). Search is an FTS5 external-content index over `emails` kept by triggers, so `search()` matches words and prefixes, case and accent insensitive.
+- **Relational storage**: the schema lives in `lib/src/storage/schema.drift`. `labels` is the source of truth for an email's state: the `email_states` view derives `folder` (most recent `folder:` label; else, for received mail, `spam` when its sender is blocked and `requests` when it has no verdict; else the first user folder whose `match` holds, in display order (`sortEntries`); else `sent`/`inbox` from sender == recipient), `is_read` and `is_starred`, so nothing is copied onto the email row and a label landing before its email needs no special handling. It holds one row per label event, not per label, with the gift wrap that carried it: two devices can apply the same label before either sees the other, and removing it names every event. `matches` holds the user folders and tags whose `match` condition holds each email. It is computed in Dart, since SQLite folds the case of ASCII only: `EmailRepository.save` indexes the email it saves, and `SettingsRepository.save` rebuilds the account when the conditions change. `sender_ops` holds one row per entry of each senders list event, and the `sender_verdicts` view resolves the verdict of each sender key from them; `emails.sender_key` is computed in Dart for the same reason as `matches`. Attachment refs are rows of `attachments` (cascade on delete). Search is an FTS5 external-content index over `emails` kept by triggers, so `search()` matches words and prefixes, case and accent insensitive. `deliveries` holds one row per recipient of each email sent from this device (the gift wrap or public event, the relays it reads it from, the blob), since nothing else ties a wrap encrypted to a recipient back to its email.
 - **`EmailRecord.folder` / `isRead` / `isStarred` / `labels`** are filled on read and ignored by `save()`.
-- **Schema changes**: edit `schema.drift`, bump `NostrMailDatabase.schemaVersion`, regenerate. Any version mismatch drops and recreates every table; the next pass rebuilds them from the NDK cache.
+- **Schema changes**: edit `schema.drift`, bump `NostrMailDatabase.schemaVersion`, regenerate. Any version mismatch drops and recreates every table but the raw ones (`_rawTables`: decryptions, settings, `deliveries`), which hold what no rebuild can recompute; the next pass rebuilds the others from the NDK cache.
 
 ---
 
@@ -181,8 +187,8 @@ await NostrMailClient.create({
   required Database db,           // Sembast database shared with the queues, the scheduler and the sync engine
   required BlossomCache blossomCache, // Local blob store for large emails
   required SyncEngine syncEngine, // sync_engine_shim_for_ndk; started here, never stopped
-  List<String>? defaultDmRelays,
-  List<String>? defaultNip65Relays,
+  List<String> indexerRelays = defaultIndexerRelays, // where every NIP-65 is looked up; give the sync engine the same discoveryRelays
+  List<String>? defaultNip65Relays, // write relays of an account with no NIP-65; never where an account receives
   List<String>? defaultBlossomServers,
   Map<String, String>? nip05Overrides, // For testing / local resolution
   OfflineBroadcast? broadcastQueue,
@@ -203,6 +209,12 @@ await NostrMailClient.create({
 - `send({List<MailAddress> to, cc, bcc, required subject, required body, ...})`
 - `sendMime(MimeMessage, ...)` — lower-level, resolves all recipients automatically
 - `repost(Nip01Event)` — NIP-18 generic repost
+- A send whose recipient (or own copy) publishes neither a DM relay list nor NIP-65 read relays throws `UnreachableRecipientsException` before anything is saved, uploaded or enqueued. `getReadRelays(pubkey)` lets a composer tell beforehand: a recipient with some can be sent any email.
+
+**Delivery:**
+- `watchDelivery(emailId)`: an `EmailDelivery` per update of the queues, null for an email this device did not send. One `RecipientDelivery` per recipient (Bcc included, a bridge standing for its addresses, `selfCopy` apart), each listing its relays and, for a Blossom email, its servers as `UrlDelivery`. Delivered once one relay holds the event and one server the blob.
+- `retryDelivery(emailId)`: pushes again what a relay or server still owes, and looks up again the relays of a recipient found with none.
+- `watchUnreachableDeliveries()`: each recipient the queue found listing no relay when it looked them up after the send.
 
 **Reading:**
 - `getEmails()`, `getInboxEmails()`, `getSentEmails()` — paginated, excludes trashed by default
@@ -260,7 +272,7 @@ await NostrMailClient.create({
    await relay.startServer();
    addTearDown(() async => relay.stopServer());
    ```
-5. **TestUser helper** encapsulates key generation, NDK init, both databases (`user.database` for repositories, `user.db` for sembast), and `NostrMailClient` instantiation.
+5. **TestUser helper** encapsulates key generation, NDK init, both databases (`user.database` for repositories, `user.db` for sembast), and `NostrMailClient` instantiation. Its relays are both the bootstrap and the `indexerRelays`, and it publishes its kind 10050 and 10002 there (`publishesRelayLists: false` to skip them), since a send cannot reach an account without them. `listedKeyPair(relays)` gives a reachable recipient without a client.
 6. **MockBlossomServer ports**: the port is fixed (3000 when none is given), never picked by the OS. Give each test file its own (`MockBlossomServer(port: 3461)`), one no other file uses, as for `MockRelay`'s `explicitPort`.
 
 ### Running Tests Reliably
@@ -305,11 +317,13 @@ dart test test/integration   # mock relays and Blossom servers
 
 ### Relay Selection
 - **`RelayResolver`** is a shared helper instantiated once in `NostrMailClient` and injected into all managers.
-- **DM relays**: read from NIP-17 kind 10050 event; fallback to `recommendedDmRelays`.
+- **DM relays** (where an account receives gift wraps): its NIP-17 kind 10050, else its NIP-65 read relays. Never a default: nobody reads an email left there, so an account with neither is unreachable. `recommendedDmRelays` only seeds the 10050 of a new account.
 - **Write relays**: read from NIP-65 kind 10002 event; fallback to `recommendedNip65Relays` (`defaultNip65Relays` of `create`).
-- **Read relays**: the other half of the same kind 10002. A public email goes to the sender's write relays and to the read relays of every tagged recipient, and is received on the account's own read relays.
-- Both lists are fetched on-demand, but `MailSync` declares metadata & relay list events (kinds 0, 10002, 10050, 10063) in its write-relay sync request, so subsequent `RelayResolver` calls usually hit cache.
-- `getDmRelays()` takes an optional `auth`. `EmailSender` passes `AuthPolicy.never()` when it resolves a recipient's relays: the wrap goes out under an ephemeral key, so authenticating to find out where to send it would attach the real sender to the send. Every other lookup targets the logged account and keeps the default.
+- **Read relays**: the other half of the same kind 10002, with no fallback. A public email goes to the sender's write relays and to the read relays of every tagged recipient, and is received on the account's own read relays.
+- **Lookups**: a NIP-65 is looked up on `indexerRelays` (`defaultIndexerRelays` by default), every other list on the write relays that NIP-65 names; the internal broadcast and Blossom upload queues use the same relays. No request goes to NDK's bootstrap relays. A lookup no relay answered throws `NetworkRequiredException('relay-lists')`: it is not a list that does not exist. The lists are read through the NDK cache, and `MailSync` declares metadata & relay list events (kinds 0, 10002, 10050, 10063) in its write-relay sync request, so `RelayResolver` calls usually hit it.
+- **Send**: every target is looked up before anything is saved, uploaded or enqueued, so an unreachable one (empty list) stops the whole send with `UnreachableRecipientsException`. A gift wrap target no relay answered for is enqueued anyway with its `UrlSet`, and the broadcast queue looks it up once a relay answers; `watchUnreachableDeliveries` reports one found with none. A scheduled send, the To and Cc of a public email and the bridge of an SMTP recipient still need their lookup answered at send time.
+- `RelayResolver` looks every list up with `AuthPolicy.never()`: a wrap goes out under an ephemeral key, so authenticating to find out where to send it would attach the real sender to the send.
+- `WatchManager` opens no gift wrap or public email subscription on an empty relay set: NDK would send it to its bootstrap relays.
 
 ### Relay Authentication (NIP-42)
 `auth` is not a neutral parameter: left unset, ndk authenticates as whoever is logged in *when the challenge lands*, so a request drawn for one account can go out under another's identity. Every account-scoped request therefore names its account. `authFor()` in `lib/src/client/request_auth.dart` resolves it from the pubkey the request was drawn for, and returns `AuthPolicy.never()` for an account that cannot sign, which is what a pubkey-only login already got in practice.
@@ -317,9 +331,9 @@ dart test test/integration   # mock relays and Blossom servers
 `AuthPolicy.allow()` is the default choice: anonymous first, authenticated once a relay refuses. `AuthPolicy.require()` sends on a connection bound to the account from the start, so it costs a second socket per relay of the set and answers the challenge of any relay that sends one, including relays that would have served the request anonymously; with a NIP-46 signer that is a round trip each. It is reserved for the gift wrap subscription and the sync engine's requests, both on DM relays, where `wss://auth.nostr1.com` serves nothing anonymously. Requests covering write relays use `allow()`: `require()` there would send nothing at all for a pubkey-only login, since a request that cannot be authenticated reaches no relay, and public emails, labels, deletions and metadata do not need an identity.
 
 ### Sync (sync_engine_shim_for_ndk)
-NDK's `fetchedRanges` is broken and is no longer used. The caller passes a `SyncEngine` from `sync_engine_shim_for_ndk`, which tracks its own coverage per relay/filter pair, paginates, backs off per relay, and adds the 2-day NIP-59 margin on kind 1059. `MailSync` declares five `SyncRequest`s, split by relay set: gift wraps on DM relays, deletions on DM + write relays, public emails on read relays, labels published in clear by earlier versions / the senders list / reposts / settings / metadata (kind 10013 included) on write relays, and drafts on the private relays and the write relays together: a draft is saved on the private relays, or the write relays when the account has none, so drafts saved before the account listed private relays, or by a client ignoring them, stay on the write relays. Those relay sets are `UrlSet`s built by `RelayResolver` (`dmRelaySet`, `writeRelaySet`, `readRelaySet`, `draftReadRelaySet`, and `draftWriteRelaySet` for saving): they name the account's lists, falling back to `defaultDmRelays` (DM relays) or `defaultNip65Relays` (the others), and the engine reads them again on every pass, looking them up on its `discoveryRelays`. A relay list change is therefore followed without redrawing the handles. Test engines set `discoveryRelays` to their ndk's bootstrap relays, the mock relays: the default public indexers would take the suite off line. The live subscription and a replay can hand over the same gift wrap at once, so `onGiftWrap` shares one processing per wrap id. Each round replays the senders list first, so the emails it announces are already routed. Gift-wrapped labels come with the gift wraps. Each request names the active account as its `authPubkey`, so it goes out on a NIP-42 authenticated connection from the first page: `wss://auth.nostr1.com`, the first default DM relay, serves nothing without it. The pubkey is part of the request identity, so switching account redraws the handles and starts from a blank coverage, and a pubkey-only login syncs nothing at all since it cannot answer a challenge.
+NDK's `fetchedRanges` is broken and is no longer used. The caller passes a `SyncEngine` from `sync_engine_shim_for_ndk`, which tracks its own coverage per relay/filter pair, paginates, backs off per relay, and adds the 2-day NIP-59 margin on kind 1059. `MailSync` declares five `SyncRequest`s, split by relay set: gift wraps on DM relays, deletions on DM + write relays, public emails on read relays, labels published in clear by earlier versions / the senders list / reposts / settings / metadata (kind 10013 included) on write relays, and drafts on the private relays and the write relays together: a draft is saved on the private relays, or the write relays when the account has none, so drafts saved before the account listed private relays, or by a client ignoring them, stay on the write relays. Those relay sets are `UrlSet`s built by `RelayResolver` (`dmRelaySet`, `writeRelaySet`, `readRelaySet`, `draftReadRelaySet`, and `draftWriteRelaySet` for saving): they name the account's lists, with the fallbacks of Relay Selection (DM relays to the NIP-65 read relays, write relays to `defaultNip65Relays`), and the engine reads them again on every pass, looking them up on its `discoveryRelays`, which should be the client's `indexerRelays`. A relay list change is therefore followed without redrawing the handles. Test engines set `discoveryRelays` to their ndk's bootstrap relays, the mock relays: the default public indexers would take the suite off line. The live subscription and a replay can hand over the same gift wrap at once, so `onGiftWrap` shares one processing per wrap id. Each round replays the senders list first, so the emails it announces are already routed. Gift-wrapped labels come with the gift wraps. Each request names the active account as its `authPubkey`, so it goes out on a NIP-42 authenticated connection from the first page: `wss://auth.nostr1.com`, one of the `recommendedDmRelays`, serves nothing without it. The pubkey is part of the request identity, so switching account redraws the handles and starts from a blank coverage, and a pubkey-only login syncs nothing at all since it cannot answer a challenge.
 
-The engine never returns events: it fills the NDK cache. The cache is therefore the source of truth for raw events, and the drift tables are a projection rebuilt from it by `_processFromCache`. A held request revisits its windows every `maxStaleness` on its own, so `MailSync` watches each handle's `SyncRequestStatus.progress` for as long as it holds the handle, and replays the cache on every page that brought events. Mail therefore lands without anyone polling the SDK, and surfaces during a long backfill instead of after it. Replays are serialised through `_replayCache`: asking while a round runs queues a single follow-up, so pages coalesce and no event is processed twice. Every handler is idempotent, so replaying the whole cache costs one lookup per already-known event, and an event whose processing failed is retried on the next pass unless its recorded failure says another attempt cannot help. A schema bump just drops the tables; the next pass rebuilds them without network.
+The engine never returns events: it fills the NDK cache. The cache is therefore the source of truth for raw events, and the drift tables are a projection rebuilt from it by `_processFromCache`. A held request revisits its windows every `maxStaleness` on its own, so `MailSync` watches each handle's `SyncRequestStatus.progress` for as long as it holds the handle, and replays the cache on every page that brought events. Mail therefore lands without anyone polling the SDK, and surfaces during a long backfill instead of after it. Replays are serialised through `_replayCache`: asking while a round runs queues a single follow-up, so pages coalesce and no event is processed twice. Every handler is idempotent, so replaying the whole cache costs one lookup per already-known event, and an event whose processing failed is retried on the next pass unless its recorded failure says another attempt cannot help. A schema bump just drops the computed tables; the next pass rebuilds them without network.
 
 ### Labels
 The protocol is [Nostr Mail Labels](https://github.com/nogringo/protocols/blob/main/nostr-mail-labels.md). A label is a kind 1985 signed by the account, wrapped **without a seal** in a gift wrap addressed to the account itself and published to its DM relays. `MailSync` dispatches a wrap on the kind it yields: a seal holds an email, a kind 1985 is a label, accepted only when authored by the account with a valid signature (`eventVerifier.verify`), since anyone can address a wrap to it. Removal is a kind 5 naming the label's wrap with `["k", "1059"]`. A 1985 published in clear by an earlier version is still applied, and removed by its own id with `["k", "1985"]`. A label this device wraps is recorded open (`saveOpened`), so the sync never asks the signer to decrypt it. User folders and tags are `folder:<id>` / `tag:<id>`, named in the private settings ([Nostr Mail Settings](https://github.com/nogringo/protocols/blob/main/nostr-mail-settings.md)); a label naming an id with no entry is kept.

@@ -1,4 +1,4 @@
-## Unreleased
+## 8.0.0
 
 - The delivery of a sent email, recipient by recipient:
   `watchDelivery(emailId)` emits an `EmailDelivery` as the broadcast and
